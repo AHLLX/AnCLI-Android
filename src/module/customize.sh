@@ -11,8 +11,7 @@ BIN_DIR="${ANCLI_DIR}/bin"
 UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 
 PROOT_URL="https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-aarch64-static"
-PROOT_MIRROR="https://ghfast.top/${PROOT_URL}"
-UBUNTU_URL="https://${UBUNTU_MIRROR}/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
+UBUNTU_PATH="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
 ui_print "============================================"
 ui_print "  AnCLI Bootstrap Installer v1.1.0"
@@ -26,14 +25,27 @@ mkdir -p "$ROOTFS" "$BIN_DIR"
 # 2. Download PRoot
 if [ ! -x "$BIN_DIR/proot" ]; then
     ui_print ">> Downloading PRoot v5.3.0..."
-    if ! curl -f -L --connect-timeout 10 --max-time 60 --progress-bar \
-        -o "$BIN_DIR/proot" "$PROOT_URL" 2>/dev/null || [ ! -s "$BIN_DIR/proot" ]; then
-        ui_print ">> Direct download failed, trying mirror..."
-        curl -f -L --connect-timeout 10 --max-time 120 --progress-bar \
-            -o "$BIN_DIR/proot" "$PROOT_MIRROR" || abort "Failed to download PRoot"
+    success=0
+    # Try direct GitHub download, then various mirror proxies
+    for source in \
+        "$PROOT_URL" \
+        "https://gh-proxy.com/${PROOT_URL}" \
+        "https://ghfast.top/${PROOT_URL}" \
+        "https://gh.moeyy.cn/${PROOT_URL}"; do
+        
+        ui_print ">> Trying source: $source"
+        if curl -f -L --connect-timeout 20 --max-time 120 --progress-bar \
+            -o "$BIN_DIR/proot" "$source" 2>/dev/null && [ -s "$BIN_DIR/proot" ]; then
+            success=1
+            break
+        fi
+    done
+    
+    if [ "$success" -ne 1 ]; then
+        abort "Failed to download PRoot from all available sources"
     fi
     chmod 755 "$BIN_DIR/proot"
-    ui_print ">> PRoot downloaded."
+    ui_print ">> PRoot downloaded successfully."
 else
     ui_print ">> PRoot already present, skipping."
 fi
@@ -42,9 +54,27 @@ fi
 if [ ! -f "$ROOTFS/bin/bash" ]; then
     ui_print ">> Downloading Ubuntu Base (arm64)..."
     TAR_PATH="$ANCLI_DIR/ubuntu-base.tar.gz"
-    curl -f -L --connect-timeout 30 --progress-bar \
-        -o "$TAR_PATH" "$UBUNTU_URL" || abort "Failed to download Ubuntu Base"
-    ui_print ">> Ubuntu Base downloaded."
+    success=0
+    
+    # Try Tsinghua TUNA first, then fallback to USTC and official ports mirror
+    for mirror in \
+        "https://${UBUNTU_MIRROR}/${UBUNTU_PATH}" \
+        "https://mirrors.tuna.tsinghua.edu.cn/${UBUNTU_PATH}" \
+        "https://mirrors.ustc.edu.cn/${UBUNTU_PATH}" \
+        "https://ports.ubuntu.com/${UBUNTU_PATH}"; do
+        
+        ui_print ">> Trying mirror: $mirror"
+        if curl -f -L --connect-timeout 20 --max-time 180 --progress-bar \
+            -o "$TAR_PATH" "$mirror" 2>/dev/null && [ -s "$TAR_PATH" ]; then
+            success=1
+            break
+        fi
+    done
+    
+    if [ "$success" -ne 1 ]; then
+        abort "Failed to download Ubuntu Base from all available mirrors"
+    fi
+    ui_print ">> Ubuntu Base downloaded successfully."
 
     ui_print ">> Extracting rootfs (this may take a minute)..."
     tar -xf "$TAR_PATH" -C "$ROOTFS" || abort "Failed to extract rootfs (corrupted download?)"
