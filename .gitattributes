@@ -1,0 +1,12 @@
+# Force LF for shell scripts (CRLF breaks Android/Linux shell execution)
+*.sh text eol=lf
+system/bin/ancli text eol=lf
+update-binary text eol=lf
+updater-script text eol=lf
+
+# Keep Python as LF too (runs inside proot Linux)
+*.py text eol=lf
+
+# JSON/Markdown: auto
+*.json text eol=auto
+*.md text eol=auto

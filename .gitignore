@@ -1,0 +1,16 @@
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build outputs
+*.zip
+
+# Agent/tool config (not part of the project)
+.agents/
+.mimocode/

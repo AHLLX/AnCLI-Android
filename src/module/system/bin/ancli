@@ -1,0 +1,2 @@
+#!/system/bin/sh
+exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -w /root /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
