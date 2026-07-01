@@ -11,6 +11,7 @@ BIN_DIR="${ANCLI_DIR}/bin"
 UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.ustc.edu.cn}"
 
 PROOT_URL="https://github.com/proot-me/proot/releases/download/v5.4.0/proot-v5.4.0-aarch64-static"
+PROOT_MIRROR="https://ghfast.top/${PROOT_URL}"
 UBUNTU_URL="https://${UBUNTU_MIRROR}/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.1-base-arm64.tar.gz"
 
 ui_print "============================================"
@@ -25,8 +26,12 @@ mkdir -p "$ROOTFS" "$BIN_DIR"
 # 2. Download PRoot
 if [ ! -x "$BIN_DIR/proot" ]; then
     ui_print ">> Downloading PRoot v5.4.0..."
-    curl -L --connect-timeout 15 --progress-bar \
-        -o "$BIN_DIR/proot" "$PROOT_URL" || abort "Failed to download PRoot"
+    if ! curl -L --connect-timeout 10 --max-time 60 --progress-bar \
+        -o "$BIN_DIR/proot" "$PROOT_URL" 2>/dev/null || [ ! -s "$BIN_DIR/proot" ]; then
+        ui_print ">> Direct download failed, trying mirror..."
+        curl -L --connect-timeout 10 --max-time 120 --progress-bar \
+            -o "$BIN_DIR/proot" "$PROOT_MIRROR" || abort "Failed to download PRoot"
+    fi
     chmod 755 "$BIN_DIR/proot"
     ui_print ">> PRoot downloaded."
 else

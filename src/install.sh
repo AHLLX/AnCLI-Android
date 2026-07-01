@@ -11,6 +11,7 @@ err()  { printf "${R}[X]${NC} %s\n" "$1"; exit 1; }
 info() { printf "${C}>${NC} %s\n" "$1"; }
 
 MODULE_URL="https://github.com/AHLLX/AnCLI-Android/releases/latest/download/ancli-module.zip"
+MIRROR_URL="https://ghfast.top/https://github.com/AHLLX/AnCLI-Android/releases/latest/download/ancli-module.zip"
 TMP_ZIP="/data/local/tmp/ancli-module.zip"
 
 echo "=================================================="
@@ -32,8 +33,15 @@ fi
 info "Detected root manager: $ROOT_MGR"
 info "Downloading AnCLI module..."
 
-curl -L --connect-timeout 15 --progress-bar \
-    -o "$TMP_ZIP" "$MODULE_URL" || err "Download failed"
+if curl -L --connect-timeout 10 --max-time 60 --progress-bar \
+    -o "$TMP_ZIP" "$MODULE_URL" 2>/dev/null && [ -s "$TMP_ZIP" ]; then
+    ok "Downloaded from GitHub"
+else
+    info "Direct download failed, trying mirror..."
+    curl -L --connect-timeout 10 --max-time 120 --progress-bar \
+        -o "$TMP_ZIP" "$MIRROR_URL" || err "Download failed (both sources)"
+    ok "Downloaded from mirror"
+fi
 
 ok "Module downloaded to $TMP_ZIP"
 echo ""
