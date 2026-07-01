@@ -76,7 +76,7 @@ def generate_wrapper(executable, env_dict=None):
         for k, v in env_dict.items():
             exports += f'export {k}={shlex.quote(v)}\n'
             
-    wrapper = f'#!/system/bin/sh\n{exports}exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -w /root /usr/bin/env {executable} "$@"\n'
+    wrapper = f'#!/system/bin/sh\n{exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nexec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root /usr/bin/env {executable} "$@"\n'
     
     # 1. Systemless module (post-reboot)
     sys_bin = f"{MOD_DIR}/system/bin"
