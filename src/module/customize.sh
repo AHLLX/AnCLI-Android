@@ -105,10 +105,16 @@ if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
 
     cat > "$ROOTFS/root/setup.sh" << 'SETUP'
 #!/bin/bash
+set -eu
 export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-apt-get update -y
+
+# Run update and install with GPG verification disabled to bypass PRoot syscall compatibility issues
+apt-get update -y -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true
 apt-get install -y --no-install-recommends \
+    -o Acquire::AllowInsecureRepositories=true \
+    -o Acquire::AllowUnauthenticated=true \
+    --allow-unauthenticated \
     ca-certificates curl python3 python3-pip git nodejs npm
 apt-get clean
 SETUP
