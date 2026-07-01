@@ -30,7 +30,7 @@ AnCLI is a unified environment manager and plugin-based installer that brings fu
 
 ### Method A — Flash via Manager (Recommended)
 
-1. Download `ancli-v1.1.0.zip` from [Releases](https://github.com/AHLLX/AnCLI-Android/releases)
+1. Download `ancli-module.zip` from [Releases](https://github.com/AHLLX/AnCLI-Android/releases)
 2. Open your **Magisk/KernelSU/APatch Manager** app
 3. Go to **Modules → Install from storage** → select the ZIP
 4. Wait for bootstrap to complete (downloads PRoot + Ubuntu rootfs + APT dependencies)

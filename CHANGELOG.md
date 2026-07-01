@@ -23,14 +23,14 @@
 - Richer install metadata (timestamps, env key tracking)
 
 **Infrastructure**
-- PRoot upgraded to **v5.4.0** (better Android 15+ compatibility)
+- PRoot upgraded to **v5.3.0** (better Android 15+ compatibility)
 - Configurable mirror via `ANCLI_MIRROR` env var
 - Idempotent bootstrap (skips APT if dependencies already installed)
 - `.gitattributes` enforces LF line endings for all shell/Python scripts
 
 ### 📦 Installation
 
-Download `ancli-v1.1.0.zip` below and flash it via your root Manager app.
+Download `ancli-module.zip` below and flash it via your root Manager app.
 
 Or use the CLI bootstrap:
 ```bash

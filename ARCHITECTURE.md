@@ -10,7 +10,7 @@ This document outlines the internal design, lifecycle, security model, and confi
 Android runs on a modified Linux kernel but replaces standard GNU libraries (glibc) with Android's own Bionic C library. This means standard Linux binaries (such as native Go binaries for `opencode`, or complex Python wheels with C-extensions for `aider`) will instantly crash with "missing library" or "executable not found" errors on Android. Compiling every single tool specifically for Android Bionic (the Termux approach) is unsustainable and leads to fragmentation.
 
 ### 1.2 The Proot Solution
-AnCLI bypasses the Bionic limitation by utilizing `proot` v5.4.0 — a user-space implementation of `chroot`, `mount --bind`, and `binfmt_misc` — to create a fully isolated Debian/Ubuntu environment that natively provides `glibc`.
+AnCLI bypasses the Bionic limitation by utilizing `proot` v5.3.0 — a user-space implementation of `chroot`, `mount --bind`, and `binfmt_misc` — to create a fully isolated Debian/Ubuntu environment that natively provides `glibc`.
 1. **Bootstrap**: `customize.sh` downloads the official `ubuntu-base-arm64` rootfs tarball (approx. 30MB) from a configurable mirror.
 2. **Extraction**: It extracts this pristine root filesystem locally to `/data/local/tmp/ancli/rootfs`.
 3. **Mount Mapping**: It uses `proot` to transparently map Android's physical device nodes (`/dev`, `/proc`, `/sys`) into this rootfs. This satisfies APT and Node.js networking and hardware-polling requirements.
@@ -137,7 +137,7 @@ graph TD
     C --> E["AnCLI Bash Wrapper"]
     D --> E
     E --> F["Inject Configured Environment Variables"]
-    F --> G["Proot v5.4.0 Execution Engine"]
+    F --> G["Proot v5.3.0 Execution Engine"]
     G --> H["Ubuntu Glibc Rootfs Namespace"]
     H --> I["Execute Node.js / Python Binary"]
 ```
