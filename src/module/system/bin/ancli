@@ -1,3 +1,4 @@
 #!/system/bin/sh
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+export HOME=/root
 exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -w /root /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

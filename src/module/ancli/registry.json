@@ -5,8 +5,8 @@
       "name": "Aider",
       "description": "AI pair programming in your terminal",
       "author": "Paul Gauthier",
-      "install_cmd": "pip install aider-chat",
-      "update_cmd": "pip install --upgrade aider-chat",
+      "install_cmd": "pip install --break-system-packages aider-chat",
+      "update_cmd": "pip install --upgrade --break-system-packages aider-chat",
       "uninstall_cmd": "pip uninstall -y aider-chat",
       "env_vars": [
         "ANTHROPIC_API_KEY",
@@ -54,8 +54,8 @@
       "name": "MiMo Code",
       "description": "Terminal AI agent tailored for Android/Proot",
       "author": "XiaomiMiMo",
-      "install_cmd": "pip install mimocode",
-      "update_cmd": "pip install --upgrade mimocode",
+      "install_cmd": "pip install --break-system-packages mimocode",
+      "update_cmd": "pip install --upgrade --break-system-packages mimocode",
       "uninstall_cmd": "pip uninstall -y mimocode",
       "env_vars": [
         "OPENAI_API_KEY"
@@ -71,9 +71,9 @@
       "name": "Antigravity CLI (agy)",
       "description": "Google's powerful terminal agent (Native Go Binary)",
       "author": "Google",
-      "install_cmd": "curl -sL https://raw.githubusercontent.com/google/antigravity/main/install.sh | bash",
+      "install_cmd": "curl -sL https://antigravity.google/cli/install.sh | bash",
       "update_cmd": "agy update",
-      "uninstall_cmd": "rm -f /usr/local/bin/agy",
+      "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
       "env_vars": [],
       "optional_env_vars": [
         "GEMINI_API_KEY",

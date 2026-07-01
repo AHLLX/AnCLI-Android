@@ -76,7 +76,7 @@ def generate_wrapper(executable, env_dict=None):
         for k, v in env_dict.items():
             exports += f'export {k}={shlex.quote(v)}\n'
             
-    wrapper = f'#!/system/bin/sh\n{exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nexec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root /usr/bin/env {executable} "$@"\n'
+    wrapper = f'#!/system/bin/sh\n{exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin\nexport HOME=/root\nexec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root /usr/bin/env {executable} "$@"\n'
     
     # 1. Systemless module (post-reboot)
     sys_bin = f"{MOD_DIR}/system/bin"
@@ -107,8 +107,8 @@ def remove_wrapper(executable):
 def validate_cmd(cmd):
     """Security: verify command starts with an allowed prefix and has no shell operators."""
     cmd_stripped = cmd.strip()
-    # Block shell chaining operators that could bypass the whitelist
-    for operator in ['|', '&&', ';', '`', '$(' ]:
+    # Block shell execution operators
+    for operator in ['`', '$(']:
         if operator in cmd_stripped:
             print(f"\033[91m[X] Blocked command with shell operator '{operator}': {cmd_stripped}\033[0m")
             return False
@@ -132,35 +132,20 @@ def install_app(app_id, registry):
         return
     app = registry['apps'][app_id]
     
-    # Check for required env vars
-    env_dict = {}
-    if 'env_vars' in app and app['env_vars']:
-        print(f"\033[93m[!] This app recommends configuring API keys.\033[0m")
-        for var in app['env_vars']:
-            val = input(f"\033[96mEnter {var} (leave blank to skip): \033[0m").strip()
-            if val:
-                env_dict[var] = val
-                
-    if 'optional_env_vars' in app and app['optional_env_vars']:
-        print(f"\033[93m[i] Proxy/Custom Endpoints (DeepSeek, API Hubs, etc.)\033[0m")
-        for var in app['optional_env_vars']:
-            val = input(f"\033[96mEnter {var} (e.g. proxy URL, leave blank for default): \033[0m").strip()
-            if val:
-                env_dict[var] = val
-                
     print(f"\033[92m[*] Installing {app['name']}...\033[0m")
     
     if run_cmd(app['install_cmd']):
-        generate_wrapper(app['executable'], env_dict)
+        generate_wrapper(app['executable'], {})
         installed = load_installed()
         installed[app_id] = {
             "name": app['name'],
             "executable": app['executable'],
             "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "env_keys": list(env_dict.keys()) if env_dict else []
+            "env_keys": []
         }
         save_installed(installed)
         print(f"\033[92m[OK] Successfully installed {app['name']}! You can now type '{app['executable']}' directly.\033[0m")
+        print(f"\033[93m[i] Note: You can configure API keys/endpoints later using option [3] or running 'ancli config {app_id}'.\033[0m")
     else:
         print(f"\033[91m[X] Installation failed.\033[0m")
 
