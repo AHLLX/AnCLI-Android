@@ -1,101 +1,92 @@
-# AnCLI (Android CLI) 🚀
+# AnCLI (Android CLI)
 
-> Your reliable "Uncle" for effortlessly running any desktop-class CLI/TUI tool natively on Android.
+AnCLI is a unified environment manager and installer designed to run standard Linux command-line (CLI) tools on rooted Android devices. By bootstrapping a minimal Ubuntu Base rootfs via PRoot, it bypasses Android's Bionic C library limitations, allowing you to run Node.js, Python, and Go-based CLI utilities natively and systemlessly.
 
-[中文文档](README.zh.md) | [Technical Architecture](ARCHITECTURE.md)
+## Features
 
-AnCLI is a unified environment manager and plugin-based installer that brings full-blooded Linux command-line tools to Android root environments. Packaged as a standard **Magisk/KernelSU/APatch module**, it bootstraps a pristine Ubuntu Base Rootfs via `proot`, bypassing Android's Bionic C library limitations to let you run Node.js, Python, and Go-based CLI tools seamlessly.
+- **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Commands are automatically mounted to `/system/bin` on boot, with instant-access symlinks injected into dynamic root paths (reboot-free after app installation).
+- **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
+- **Boot Service**: Built-in service automatically restores DNS configurations and file permissions on every boot.
+- **Dynamic Configuration Injection**: Prompts for required environment variables (e.g., API keys, custom endpoints) during installation and bakes them securely into execution wrappers.
+- **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
+- **Security Hardened**: Implements command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 
-## 🎯 Key Features
+## Supported Applications
+*(Fetched dynamically from the cloud registry)*
+- **Aider** (AI pair programming terminal agent)
+- **Claude Code** (Anthropic's official terminal agent)
+- **OpenCode** (Open-source terminal-based coding agent)
+- **MiMo Code** (Terminal agent tailored for Android/Proot)
+- **Antigravity CLI (agy)** (Google's terminal agent)
 
-- **Native Module Integration (Magisk/KernelSU/APatch)**: Installs as a standard systemless module via your root Manager app. Auto-injects `ancli` into `/system/bin` on boot, plus instant access via KSU/AP dynamic bin paths — **no reboot required after app installation**.
-- **OTA Auto-Update**: The module supports `updateJson`, so your root Manager automatically checks for new AnCLI versions and lets you upgrade with one tap.
-- **Boot Self-Repair**: Built-in `service.sh` automatically fixes DNS config and file permissions on every boot — no manual maintenance needed.
-- **Python-Powered App Store**: The core manager is built in pure Python (stdlib only), providing colorful interactive menus, robust plugin configuration parsing, and secure environment variable injection.
-- **Cloud Plugin Registry**: AnCLI doesn't hardcode apps. It fetches its supported application registry from a GitHub-hosted JSON file with 3-retry fallback. Anyone can submit a PR to add a new CLI app!
-- **Zero-Prefix Execution**: Installed a tool? Just type `aider` or `claude`. No `ancli run aider` required.
-- **Security Hardened**: Command whitelist validation, shell operator blocking, path traversal protection, and `shlex.quote()` escaping for all injected environment variables.
-- **The "Fat Base" Approach**: By leveraging the official `ubuntu-base` image and `apt-get`, all installed CLI apps share the same robust Glibc, Python, Node.js, and Git base.
+## Installation
 
-## 📦 Supported Applications
-*(Pulled dynamically from the Cloud Registry)*
-- [x] **Aider** (AI pair programming in your terminal)
-- [x] **Claude Code** (Anthropic's official terminal agent)
-- [x] **Antigravity CLI (agy)** (Google's powerful terminal agent)
-- [x] **OpenCode** (Open-source AI coding agent)
-- [x] **MiMo Code** (Terminal agent tailored for Android)
-- [ ] *Your plugin here!*
+### Method A: Flashing via Root Manager (Recommended)
 
-## 🚀 Installation
+1. Download `ancli-module.zip` from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+2. Open your **Magisk/KernelSU/APatch Manager** app.
+3. Navigate to **Modules** -> **Install from storage** and select the ZIP file.
+4. After the bootstrap installation finishes, open any root terminal and run `ancli`.
 
-### Method A — Flash via Manager (Recommended)
+### Method B: CLI Bootstrap
 
-1. Download `ancli-module.zip` from [Releases](https://github.com/AHLLX/AnCLI-Android/releases)
-2. Open your **Magisk/KernelSU/APatch Manager** app
-3. Go to **Modules → Install from storage** → select the ZIP
-4. Wait for bootstrap to complete (downloads PRoot + Ubuntu rootfs + APT dependencies)
-5. Done! Type `ancli` in any root shell
-
-### Method B — Quick Bootstrap (CLI)
+Run the following command as root in Termux or any terminal emulator:
 
 ```bash
-# Executed as root (su) in Termux or any terminal emulator
 curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/install.sh | sh
 ```
 
-This downloads the module ZIP and guides you through flashing it via your root manager.
+This script detects your active root manager, downloads the module ZIP, and guides you through the installation.
 
-## 💻 Usage
+## Usage
 
-### Interactive Mode
+### Interactive Menu
+Run the package manager interface:
 ```bash
 ancli
 ```
-Opens the App Store menu. Select a number to install, update, uninstall, or reconfigure any app.
 
 ### CLI Mode
 ```bash
-ancli install aider          # Install an app
-ancli uninstall claude-code  # Uninstall an app
-ancli update aider           # Update an installed app
-ancli config aider           # Reconfigure API keys / env vars
-ancli list                   # List all installed apps
-ancli --help                 # Show help
-ancli --version              # Show version
+ancli install <app_id>         # Install an application
+ancli uninstall <app_id>       # Uninstall an application
+ancli update <app_id>          # Update an installed application
+ancli config <app_id>          # Reconfigure environment variables
+ancli list                     # List installed applications
+ancli --help                   # Show help message
+ancli --version                # Show version info
 ```
 
-### After Installing an App
+### Running Installed Tools
+Once a tool is installed, run it directly from any shell without prefixing `ancli`:
 ```bash
-# Just type the tool name directly — zero prefix!
 aider
 claude
 opencode
 ```
 
-## 🗑️ Uninstallation
+## Directory Structure
 
-Simply **remove the AnCLI module** from your Magisk/KernelSU/APatch Manager. The built-in `uninstall.sh` will automatically clean up all rootfs files, wrappers, and dynamic bin links.
-
-## 📂 Directory Structure & File Locations
-
-| Component | Physical Path | Description |
+| Component | Path | Description |
 | :--- | :--- | :--- |
-| **Ubuntu Rootfs** | `/data/local/tmp/ancli/rootfs/` | The core Proot container (full Ubuntu filesystem) |
-| **AnCLI Core** | `/data/local/tmp/ancli/bin/ancli-core.py` | The Python package manager brain |
-| **Installed Apps DB** | `/data/local/tmp/ancli/installed.json` | Tracks installed apps with metadata |
-| **Systemless Module** | `/data/adb/modules/ancli/` | Standard module path (auto-mounts `system/bin/ancli`) |
-| **KSU/AP Wrappers** | `/data/adb/ksu/bin/` or `/data/adb/ap/bin/` | Instant-access shortcuts (no reboot needed) |
-| **NPM Packages** | `.../rootfs/usr/local/lib/node_modules/` | Node.js tools inside Proot |
-| **Pip Packages** | `.../rootfs/usr/local/lib/python3.12/dist-packages/` | Python tools inside Proot |
+| **Ubuntu Rootfs** | `/data/local/tmp/ancli/rootfs/` | Guest container directory tree |
+| **AnCLI Core** | `/data/local/tmp/ancli/bin/ancli-core.py` | Python manager executable |
+| **State Database** | `/data/local/tmp/ancli/installed.json` | Installed application metadata |
+| **Module Directory** | `/data/adb/modules/ancli/` | Magisk/KSU systemless module files |
+| **Dynamic Bin Paths** | `/data/adb/ksu/bin/` or `/data/adb/ap/bin/` | Wrappers for reboot-free access |
 
-## 🌐 Custom Mirror
+## Custom Mirror
 
-For users outside China, override the default USTC mirror:
+To use a specific Ubuntu archive mirror during rootfs bootstrap, export the `ANCLI_MIRROR` variable before installation:
 
 ```bash
-# Set before flashing, or export in your shell
 export ANCLI_MIRROR="archive.ubuntu.com"
 ```
 
-## 📚 Documentation
-For a deep dive into the Proot environment, the dual-injection wrapper mechanism, the module lifecycle, and the Cloud Registry schema, see the [Architecture Document](ARCHITECTURE.md).
+## Uninstallation
+
+Remove the AnCLI module from your Magisk/KernelSU/APatch Manager app. The internal uninstaller will automatically clean up all associated binaries, rootfs directories, and environment wrappers.
+
+## Technical Details
+
+For information on the dual-injection wrapper mechanism, PRoot configuration, and registry schema, see the [Architecture Document](ARCHITECTURE.md).

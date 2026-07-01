@@ -1,101 +1,92 @@
-# AnCLI (Android CLI) 🚀
+# AnCLI (Android CLI)
 
-> 像可靠的大叔 (Uncle) 一样，帮你把各种桌面级 CLI/TUI 环境全搞定！
+AnCLI 是一个为已获取 Root 权限的 Android 设备打造的通用 Linux 命令行工具环境管理器与安装器。它通过 PRoot 在用户态启动底层的 Ubuntu Base 根文件系统，完美绕过了 Android Bionic C 库的限制，使用户能够无缝、免重启地在 Android 设备上运行基于 Node.js、Python 和 Go 的 Linux 命令行工具。
 
-[English](README.md) | [技术架构文档](ARCHITECTURE.md)
+## 功能特性
 
-AnCLI 是一个为 Android Root 环境打造的 **"纯血 Linux 命令行工具通用底座与应用商店"**。它以标准的 **Magisk/KernelSU/APatch 模块**形式安装，通过 `proot` 启动原生 Ubuntu Base 根文件系统，完美绕过 Android Bionic C 库的限制，让你直接无缝运行基于 Node.js、Python 和 Go 的桌面级终端工具。
+- **模块化系统级集成**：支持作为标准的 Magisk/KernelSU/APatch 模块安装。系统启动时自动挂载工具到 `/system/bin`，并即时注入快捷方式到 KSU/AP 动态路径，实现安装工具后无需重启手机即可全局调用。
+- **OTA 自动更新**：支持 root 管理器的 `updateJson` 更新规范，可直接在管理器 App 内检测并一键升级模块。
+- **开机自动维护**：内置引导服务，每次开机时自动修复容器 DNS 配置与关键文件权限，保证环境稳定性。
+- **交互式变量注入**：在安装工具时自动提示输入所需的环境变量（如 API 密钥、自定义中转端），并安全地注入到运行包装器中。
+- **动态云端注册表**：工具的安装、更新和卸载逻辑由托管在 GitHub 上的 JSON 注册表动态解析，支持通过提交 Pull Request 扩展生态。
+- **多重安全加固**：实现命令白名单校验、Shell 链式操作符过滤、环境变量转义和路径遍历防护。
 
-## 🎯 核心亮点
+## 支持的工具生态
+*(由云端注册表动态下发)*
+- **Aider** (终端 AI 结对编程工具)
+- **Claude Code** (Anthropic 官方终端 Agent)
+- **OpenCode** (开源终端 AI 编程工具)
+- **MiMo Code** (专为 Android/Proot 环境定制的终端 Agent)
+- **Antigravity CLI (agy)** (Google 官方高性能终端 Agent)
 
-- **标准模块安装 (Magisk/KernelSU/APatch)**：通过 Manager 应用一键刷入 ZIP 即可。模块框架自动将 `ancli` 挂载到 `/system/bin`，同时注入 KSU/AP 动态路径 —— 安装工具后**无需重启**即可使用。
-- **OTA 自动更新**：模块支持 `updateJson`，Manager 应用会自动检测新版本，一键升级。
-- **开机自修复**：内置 `service.sh` 每次开机自动修复 DNS 配置和文件权限，无需手动维护。
-- **Python 驱动的终端应用商店**：纯 Python 标准库编写的包管理器，提供彩色交互菜单、3 次重试的云端注册表获取、安全的环境变量注入。
-- **云端插件注册表**：通过云端 JSON 文件定义工具安装逻辑。添加新工具只需提交 PR 修改注册表。
-- **无前缀直达**：装完直接用。敲 `aider` 就是 Aider，敲 `claude` 就是 Claude Code。
-- **安全加固**：命令白名单校验、Shell 操作符拦截、路径遍历防护、`shlex.quote()` 转义注入的环境变量。
-- **"大满贯"底座**：底层拉取官方 `ubuntu-base` 镜像，通过 `apt-get` 补齐 `Node.js + Python3 + Git`，彻底杜绝依赖碎片化。
+## 安装方法
 
-## 📦 支持的工具生态
-*(以下列表由云端注册表动态下发)*
-- [x] **Aider** (强大的终端 AI 结对编程神器)
-- [x] **Claude Code** (Anthropic 官方出品的纯终端智能 Agent)
-- [x] **Antigravity CLI (agy)** (Google 官方出品的高性能终端智能体)
-- [x] **OpenCode** (开源的跨语言 AI 编程 Agent)
-- [x] **MiMo Code** (专为 Android/Proot 环境定制的本地终端 Agent)
-- [ ] *欢迎提交 PR 补充！*
+### 方式 A：通过 Root 管理器刷入 (推荐)
 
-## 🚀 安装方式
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-module.zip` 模块包。
+2. 打开你的 **Magisk/KernelSU/APatch Manager** 应用。
+3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
+4. 安装并完成初始化（下载 PRoot + Ubuntu 根文件系统及基础依赖）后，在任意 root 终端输入 `ancli` 即可启动。
 
-### 方式 A — Manager 刷入 (推荐)
+### 方式 B：命令行快速安装
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 下载 `ancli-module.zip`
-2. 打开 **Magisk/KernelSU/APatch Manager** 应用
-3. 进入 **模块 → 从存储安装** → 选择 ZIP 文件
-4. 等待初始化完成（自动下载 PRoot + Ubuntu 根文件系统 + APT 依赖）
-5. 完成！在任意 root shell 中输入 `ancli` 即可
-
-### 方式 B — 命令行快速安装
+在 Termux 或任意终端中获取 root 权限 (`su`) 后执行：
 
 ```bash
-# 在 Termux 或任意终端中获取 root 权限 (su) 后执行：
 curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/install.sh | sh
 ```
 
-此脚本会自动检测你的 root 管理器，下载模块 ZIP 并引导你完成安装。
+此脚本会自动检测当前的 root 管理器，下载对应的模块 ZIP 并引导完成刷入。
 
-## 💻 使用方法
+## 使用说明
 
-### 交互模式
+### 交互菜单
+启动包管理器主界面：
 ```bash
 ancli
 ```
-呼出应用商店菜单，输入数字序号即可安装、更新、卸载或重新配置任意工具。
 
 ### 命令行模式
 ```bash
-ancli install aider          # 安装工具
-ancli uninstall claude-code  # 卸载工具
-ancli update aider           # 更新已安装的工具
-ancli config aider           # 重新配置 API Key / 环境变量
-ancli list                   # 列出所有已安装的工具
-ancli --help                 # 显示帮助信息
-ancli --version              # 显示版本号
+ancli install <app_id>         # 安装工具
+ancli uninstall <app_id>       # 卸载工具
+ancli update <app_id>          # 更新已安装的工具
+ancli config <app_id>          # 重新配置环境变量 (API Key 等)
+ancli list                     # 列出已安装的工具列表
+ancli --help                   # 显示帮助信息
+ancli --version                # 显示版本号
 ```
 
-### 安装工具后直接使用
+### 运行已安装的工具
+工具安装完成后，可直接在终端中调用，无需添加 `ancli` 前缀：
 ```bash
-# 无前缀直达！敲工具名就能用
 aider
 claude
 opencode
 ```
 
-## 🗑️ 卸载
+## 路径说明
 
-直接在 Magisk/KernelSU/APatch Manager 中**删除 AnCLI 模块**即可。内置的 `uninstall.sh` 会自动清理所有 rootfs 文件、wrapper 脚本和动态 bin 链接。
-
-## 📂 核心路径与安装位置指南
-
-| 组件 | 物理路径 | 说明 |
+| 组件 | 物理路径 (宿主机视角) | 说明 |
 | :--- | :--- | :--- |
-| **Ubuntu 底座 (Rootfs)** | `/data/local/tmp/ancli/rootfs/` | Proot 容器（完整 Ubuntu 文件系统） |
-| **AnCLI 控制大脑** | `/data/local/tmp/ancli/bin/ancli-core.py` | Python 包管理器主程序 |
-| **已安装应用数据库** | `/data/local/tmp/ancli/installed.json` | 跟踪已安装应用及其元数据 |
-| **模块目录** | `/data/adb/modules/ancli/` | 标准模块路径（自动挂载 `system/bin/ancli`） |
-| **即时快捷命令** | `/data/adb/ksu/bin/` 或 `/data/adb/ap/bin/` | 免重启的全局命令存放处 |
-| **NPM 软件** | `.../rootfs/usr/local/lib/node_modules/` | Proot 内的 Node.js 全局包 |
-| **Pip 软件** | `.../rootfs/usr/local/lib/python3.12/dist-packages/` | Proot 内的 Python 全局包 |
+| **Ubuntu 根文件系统** | `/data/local/tmp/ancli/rootfs/` | 完整的 Ubuntu 容器文件目录 |
+| **AnCLI 包管理器** | `/data/local/tmp/ancli/bin/ancli-core.py` | 包管理器 Python 主程序 |
+| **安装状态数据库** | `/data/local/tmp/ancli/installed.json` | 记录已安装工具及其配置元数据 |
+| **模块目录** | `/data/adb/modules/ancli/` | Magisk/KSU 挂载模块目录 |
+| **即时命令路径** | `/data/adb/ksu/bin/` 或 `/data/adb/ap/bin/` | 免重启直接调用的 wrapper 路径 |
 
-## 🌐 自定义镜像源
+## 自定义镜像源
 
-海外用户可以覆盖默认的 USTC 镜像：
+如果需要在初始化过程中使用国内特定镜像源（默认使用清华 TUNA 镜像），可在安装前在 shell 中导出 `ANCLI_MIRROR` 变量：
 
 ```bash
-# 安装前设置，或在 shell 中导出
-export ANCLI_MIRROR="archive.ubuntu.com"
+export ANCLI_MIRROR="mirrors.ustc.edu.cn"
 ```
 
-## 📚 详细文档
-关于底层 Proot 实现原理、双重注入免重启机制、模块生命周期以及云端注册表规范，请参阅 [技术架构详细文档](ARCHITECTURE.md)。
+## 卸载方法
+
+直接在 Magisk/KernelSU/APatch 管理器中**删除 AnCLI 模块**即可。内置的卸载脚本会自动清理所有的 rootfs 容器文件、二进制程序、wrapper 脚本和动态 bin 链接。
+
+## 技术架构
+
+关于双重注入免重启原理、PRoot 挂载细节及云端配置协议，请参阅 [技术架构详细文档](ARCHITECTURE.md)。

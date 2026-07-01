@@ -1,6 +1,6 @@
 ## AnCLI v1.1.0 — Module-Based Architecture
 
-### 🚀 What's New
+### What's New
 
 **Architecture Overhaul**
 - Packaged as a standard **Magisk/KernelSU/APatch systemless module**
@@ -28,7 +28,7 @@
 - Idempotent bootstrap (skips APT if dependencies already installed)
 - `.gitattributes` enforces LF line endings for all shell/Python scripts
 
-### 📦 Installation
+### Installation
 
 Download `ancli-module.zip` below and flash it via your root Manager app.
 
