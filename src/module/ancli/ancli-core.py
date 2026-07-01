@@ -277,38 +277,42 @@ def print_help():
 """)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        # CLI Mode
-        action = sys.argv[1]
-        app_id = sys.argv[2] if len(sys.argv) > 2 else None
+    try:
+        if len(sys.argv) > 1:
+            # CLI Mode
+            action = sys.argv[1]
+            app_id = sys.argv[2] if len(sys.argv) > 2 else None
 
-        if action in ("--help", "-h"):
-            print_help()
-            sys.exit(0)
-        elif action == "--version":
-            print(f"AnCLI v{VERSION}")
-            sys.exit(0)
+            if action in ("--help", "-h"):
+                print_help()
+                sys.exit(0)
+            elif action == "--version":
+                print(f"AnCLI v{VERSION}")
+                sys.exit(0)
 
-        registry = fetch_registry()
-        if action == "install" and app_id:
-            install_app(app_id, registry)
-        elif action == "uninstall" and app_id:
-            uninstall_app(app_id, registry)
-        elif action == "update" and app_id:
-            update_app(app_id, registry)
-        elif action == "config" and app_id:
-            reconfigure_app(app_id, registry)
-        elif action == "list":
-            installed = load_installed()
-            if not installed:
-                print("\033[93m[i] No apps installed yet. Run 'ancli' to browse the App Store.\033[0m")
+            registry = fetch_registry()
+            if action == "install" and app_id:
+                install_app(app_id, registry)
+            elif action == "uninstall" and app_id:
+                uninstall_app(app_id, registry)
+            elif action == "update" and app_id:
+                update_app(app_id, registry)
+            elif action == "config" and app_id:
+                reconfigure_app(app_id, registry)
+            elif action == "list":
+                installed = load_installed()
+                if not installed:
+                    print("\033[93m[i] No apps installed yet. Run 'ancli' to browse the App Store.\033[0m")
+                else:
+                    print("\033[1;36m=== Installed Apps ===\033[0m")
+                    for aid, info in installed.items():
+                        date = info.get('installed_at', 'unknown')
+                        print(f"  \033[92m{aid}\033[0m: {info.get('name', aid)} (installed: {date})")
             else:
-                print("\033[1;36m=== Installed Apps ===\033[0m")
-                for aid, info in installed.items():
-                    date = info.get('installed_at', 'unknown')
-                    print(f"  \033[92m{aid}\033[0m: {info.get('name', aid)} (installed: {date})")
+                print_help()
         else:
-            print_help()
-    else:
-        # Interactive Menu Mode
-        show_menu()
+            # Interactive Menu Mode
+            show_menu()
+    except (KeyboardInterrupt, EOFError):
+        print("\n\033[93m[!] Operation cancelled by user. Exiting.\033[0m")
+        sys.exit(0)
