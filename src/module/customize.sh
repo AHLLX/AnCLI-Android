@@ -8,11 +8,11 @@
 ANCLI_DIR="/data/local/tmp/ancli"
 ROOTFS="${ANCLI_DIR}/rootfs"
 BIN_DIR="${ANCLI_DIR}/bin"
-UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.ustc.edu.cn}"
+UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 
 PROOT_URL="https://github.com/proot-me/proot/releases/download/v5.4.0/proot-v5.4.0-aarch64-static"
 PROOT_MIRROR="https://ghfast.top/${PROOT_URL}"
-UBUNTU_URL="https://${UBUNTU_MIRROR}/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.1-base-arm64.tar.gz"
+UBUNTU_URL="https://${UBUNTU_MIRROR}/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
 ui_print "============================================"
 ui_print "  AnCLI Bootstrap Installer v1.1.0"
