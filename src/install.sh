@@ -33,12 +33,12 @@ fi
 info "Detected root manager: $ROOT_MGR"
 info "Downloading AnCLI module..."
 
-if curl -L --connect-timeout 10 --max-time 60 --progress-bar \
+if curl -f -L --connect-timeout 10 --max-time 60 --progress-bar \
     -o "$TMP_ZIP" "$MODULE_URL" 2>/dev/null && [ -s "$TMP_ZIP" ]; then
     ok "Downloaded from GitHub"
 else
     info "Direct download failed, trying mirror..."
-    curl -L --connect-timeout 10 --max-time 120 --progress-bar \
+    curl -f -L --connect-timeout 10 --max-time 120 --progress-bar \
         -o "$TMP_ZIP" "$MIRROR_URL" || err "Download failed (both sources)"
     ok "Downloaded from mirror"
 fi
