@@ -666,6 +666,13 @@ def print_help():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # Ensure critical mount points exist in the container so host bindings (e.g. -b /storage) succeed
+    for d in ["/storage", "/sdcard", "/data/adb"]:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+
     try:
         if len(sys.argv) > 1:
             action = sys.argv[1]
