@@ -162,9 +162,9 @@ def _write_wrapper_to_paths(executable, wrapper):
     """Write a wrapper script to the systemless module path and all instant-access paths."""
     # 1. Systemless module (post-reboot)
     sys_bin = f"{MOD_DIR}/system/bin"
-    os.makedirs(sys_bin, exist_ok=True)
     sys_path = f"{sys_bin}/{executable}"
     try:
+        os.makedirs(sys_bin, exist_ok=True)
         if os.path.exists(sys_path):
             os.remove(sys_path)
         with open(sys_path, "w") as f:
