@@ -5,6 +5,14 @@
 - **Root Cause**: When executing from `/storage/emulated/0/...` (which `/sdcard` symlinks to), `proot` failed to locate the directory inside the Ubuntu rootfs because only `/sdcard` was explicitly bound.
 - **Fix**: The PRoot wrapper generator now explicitly binds `-b /storage` alongside `-b /sdcard`, ensuring all nested and symlinked storage paths resolve correctly within the guest container without triggering `proot warning: can't chdir`.
 
+**Node.js / Bun TTY Input Hangs (Black Screen/Garbage Chars)**
+- **Root Cause**: Node.js and Bun use modern `io_uring` polling by default, which PRoot's syscall interception mechanism on Android does not support properly. This caused interactive TUIs (like MiMo Code and Claude Code) to freeze their event loop and fail to read standard input, echoing raw ANSI codes like `^[[3~`.
+- **Fix**: Injected `export UV_USE_IO_URING=0` and `export BUN_FEATURE_FLAG_IO_URING=0` into the execution wrappers, forcing standard `epoll` fallback and completely restoring flawless keyboard interactivity for Node-based tools.
+
+**Core Engine Updates Failing to Propagate to Existing Apps**
+- **Root Cause**: The `ancli repair` command previously skipped wrapper regeneration if a wrapper file already existed, preventing core engine bug fixes (like the storage and `io_uring` fixes above) from applying to already-installed applications.
+- **Fix**: `ancli repair` now unconditionally regenerates all wrappers for installed apps, guaranteeing they always run on the latest AnCLI engine logic without requiring a reinstall.
+
 ---
 
 ## AnCLI v1.1.0 — Global Instant Access & UX Polish

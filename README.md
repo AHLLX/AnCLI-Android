@@ -11,6 +11,7 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 - **Dynamic Configuration Injection**: Prompts for environment variables (e.g., API keys, custom endpoints) during installation and bakes them securely into execution wrappers.
 - **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
 - **Escaping & Proxy 直通**: Bypasses ADB character escaping bugs via Python urllib direct downloads, and dynamically forwards host proxy settings into the guest container.
+- **PRoot Syscall Stabilization**: Automatically mitigates Android kernel `io_uring` and `epoll` translation bugs, ensuring modern Node.js and Bun interactive TUIs (like MiMo and Claude Code) can process raw keyboard input flawlessly without event loop blocking.
 - **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 
 ## Supported Applications
