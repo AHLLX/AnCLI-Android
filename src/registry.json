@@ -44,7 +44,7 @@
       "description": "Google's powerful terminal agent (Native Go Binary)",
       "author": "Google",
       "install_mode": "proot",
-      "install_cmd": "curl -sL https://antigravity.google/cli/install.sh | bash",
+      "install_cmd": "curl -sL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin",
       "update_cmd": "agy update",
       "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
       "env_vars": [],
