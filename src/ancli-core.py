@@ -20,14 +20,14 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 
 # Allowed command prefixes for security validation
-ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy ")
+ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy ", "bash ", "sh ")
 
 # ---------------------------------------------------------------------------
 # Registry & State

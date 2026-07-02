@@ -1,6 +1,6 @@
 {
-  "version": "v1.3.0",
-  "versionCode": 11,
-  "zipUrl": "https://github.com/AHLLX/AnCLI-Android/releases/download/v1.3.0/ancli-module.zip",
+  "version": "v1.3.1",
+  "versionCode": 12,
+  "zipUrl": "https://github.com/AHLLX/AnCLI-Android/releases/download/v1.3.1/ancli-module.zip",
   "changelog": "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/CHANGELOG.md"
 }

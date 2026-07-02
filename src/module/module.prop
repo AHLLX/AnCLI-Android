@@ -1,7 +1,7 @@
 id=ancli
 name=AnCLI Core
-version=v1.3.0
-versionCode=11
+version=v1.3.1
+versionCode=12
 author=AHLLX
 description=Unified environment manager for CLI tools on Android (Proot + Ubuntu)
 updateJson=https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json
