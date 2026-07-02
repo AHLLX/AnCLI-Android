@@ -19,7 +19,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.4"
+VERSION = "1.2.5"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -297,10 +297,11 @@ def _install_termux(app_id, app):
 def _install_proot(app_id, app, registry_version="unknown"):
     """Install a tool inside the Ubuntu PRoot container."""
     # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands
+    # We check physical file paths directly (avoid depending on 'which' command)
     check_curl_cmd = (
         f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -w /root "
         f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
-        f"which curl >/dev/null 2>&1"
+        f"test -x /usr/bin/curl -o -x /usr/local/bin/curl"
     )
     if subprocess.run(check_curl_cmd, shell=True).returncode != 0:
         print("\033[96m[i] Container is missing 'curl'. Auto-installing dependencies via apt...\033[0m")
