@@ -19,7 +19,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.3"
+VERSION = "1.2.4"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -172,11 +172,11 @@ def run_cmd(cmd, in_proot=False):
         return False
     
     if in_proot:
-        # Wrap command so it executes safely inside the Ubuntu container's bash environment
+        # Wrap command with pipefail to ensure piping errors (like missing curl) are caught correctly
         proot_cmd = (
             f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root "
             f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
-            f"HOME=/root bash -c {shlex.quote(cmd)}"
+            f"HOME=/root bash -c {shlex.quote('set -o pipefail; ' + cmd)}"
         )
         print(f"\033[96m> [PRoot] {cmd}\033[0m")
         result = subprocess.run(proot_cmd, shell=True)
@@ -296,6 +296,21 @@ def _install_termux(app_id, app):
 
 def _install_proot(app_id, app, registry_version="unknown"):
     """Install a tool inside the Ubuntu PRoot container."""
+    # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands
+    check_curl_cmd = (
+        f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -w /root "
+        f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
+        f"which curl >/dev/null 2>&1"
+    )
+    if subprocess.run(check_curl_cmd, shell=True).returncode != 0:
+        print("\033[96m[i] Container is missing 'curl'. Auto-installing dependencies via apt...\033[0m")
+        # Run silent apt-get update & install
+        apt_cmd = "apt-get update -qy && apt-get install -qy curl ca-certificates"
+        if not run_cmd(apt_cmd, in_proot=True):
+            print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
+        else:
+            print("\033[92m[OK] 'curl' and certificates installed successfully.\033[0m")
+
     runtime_env = app.get('runtime_env', [])
     if run_cmd(app['install_cmd'], in_proot=True):
         generate_proot_wrapper(app['executable'], {}, runtime_env)
