@@ -219,8 +219,9 @@ def repair_env(registry=None):
                 print(f"  \033[93m[!] Wrapper for '{app_id}' missing, regenerating...\033[0m")
                 app_reg = registry['apps'].get(app_id) if registry else None
                 runtime_env = app_reg.get('runtime_env', []) if app_reg else []
-                # Re-generate wrapper (user keys will need to be reconfigured via 'ancli config')
-                generate_proot_wrapper(exec_name, {}, runtime_env)
+                # Use stored environment config if available
+                stored_env = info.get('env', {})
+                generate_proot_wrapper(exec_name, stored_env if stored_env else None, runtime_env)
         print("\033[92m[OK] Wrapper integrity check complete.\033[0m")
     else:
         print("\033[90m[i] No installed apps to repair.\033[0m")
@@ -236,7 +237,10 @@ def install_app(app_id, registry):
 
     print(f"\033[92m[*] Installing {app['name']}...\033[0m")
     print(f"\033[96m[i] Backend: proot\033[0m")
-    _install_proot(app_id, app)
+    # Fetch registry version if available (registry may have version info, e.g. registry['version'] or we assume unknown)
+    # The registry version is often stored at registry['version'] but let's check registry['apps'][app_id].get('version')
+    reg_ver = app.get('version', registry.get('version', 'unknown'))
+    _install_proot(app_id, app, reg_ver)
 
 def _install_termux(app_id, app):
     """Install a Node.js tool via the Termux host runtime."""
@@ -265,7 +269,7 @@ def _install_termux(app_id, app):
     else:
         print(f"\033[91m[X] Installation failed.\033[0m")
 
-def _install_proot(app_id, app):
+def _install_proot(app_id, app, registry_version="unknown"):
     """Install a tool inside the Ubuntu PRoot container."""
     runtime_env = app.get('runtime_env', [])
     if run_cmd(app['install_cmd']):
@@ -275,8 +279,9 @@ def _install_proot(app_id, app):
             "name": app['name'],
             "executable": app['executable'],
             "install_mode": "proot",
+            "installed_version": registry_version,
             "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "env_keys": [],
+            "env": {},  # Stores persisted user API keys / configs
         }
         save_installed(installed)
         print(f"\033[92m[OK] Successfully installed {app['name']}! Type '{app['executable']}' to run.\033[0m")
@@ -292,13 +297,9 @@ def uninstall_app(app_id, registry):
         return
     app = registry['apps'].get(app_id, {})
     cmd = app.get('uninstall_cmd', f"echo 'No uninstall cmd for {app_id}'")
-    install_mode = installed[app_id].get('install_mode', 'proot')
     print(f"\033[93m[*] Uninstalling {app.get('name', app_id)}...\033[0m")
 
-    if install_mode == 'termux_host':
-        run_termux_cmd(cmd)
-    else:
-        run_cmd(cmd)
+    run_cmd(cmd)
 
     remove_wrapper(app.get('executable', app_id))
     del installed[app_id]
@@ -306,39 +307,31 @@ def uninstall_app(app_id, registry):
     print(f"\033[92m[OK] Successfully uninstalled.\033[0m")
 
 def update_app(app_id, registry):
-    """Update an installed app and regenerate its wrapper."""
+    """Update an installed app, regenerate wrapper using cached env, and update version."""
     installed = load_installed()
     if app_id not in installed:
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
         return
     app = registry['apps'].get(app_id, {})
     cmd = app.get('update_cmd', f"echo 'No update cmd for {app_id}'")
-    install_mode = installed[app_id].get('install_mode', app.get('install_mode', 'proot'))
     print(f"\033[93m[*] Updating {app.get('name', app_id)}...\033[0m")
 
-    success = False
-    if install_mode == 'termux_host':
-        termux_bin, _ = check_termux()
-        if not termux_bin:
-            print(f"\033[91m[X] Termux not found. Cannot update Node.js tool.\033[0m")
-            return
-        success = run_termux_cmd(cmd)
-    else:
-        success = run_cmd(cmd)
-
-    if success:
-        # Regenerate wrapper
-        existing_keys = installed[app_id].get('env_keys', [])
-        if existing_keys:
-            print(f"\033[93m[i] Existing env vars preserved: {', '.join(existing_keys)}\033[0m")
-        if install_mode == 'termux_host':
-            generate_termux_wrapper(app.get('executable', app_id))
-        else:
-            runtime_env = app.get('runtime_env', [])
-            generate_proot_wrapper(app.get('executable', app_id), None, runtime_env)
+    if run_cmd(cmd):
+        # Extract persisted env keys
+        cached_env = installed[app_id].get('env', {})
+        if cached_env:
+            print(f"\033[92m[i] Re-injecting stored configuration keys: {', '.join(cached_env.keys())}\033[0m")
+        
+        runtime_env = app.get('runtime_env', [])
+        # Regenerate wrapper, baking in the cached user keys
+        generate_proot_wrapper(app.get('executable', app_id), cached_env if cached_env else None, runtime_env)
+        
+        # Update metadata
+        reg_ver = app.get('version', registry.get('version', 'unknown'))
+        installed[app_id]['installed_version'] = reg_ver
         installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
         save_installed(installed)
-        print(f"\033[92m[OK] Successfully updated {app.get('name', app_id)}.\033[0m")
+        print(f"\033[92m[OK] Successfully updated {app.get('name', app_id)} to v{reg_ver}.\033[0m")
 
 def reconfigure_app(app_id, registry):
     """Reconfigure env vars and regenerate wrapper for an installed app."""
@@ -347,7 +340,6 @@ def reconfigure_app(app_id, registry):
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
         return
     app = registry['apps'].get(app_id, {})
-    install_mode = installed[app_id].get('install_mode', app.get('install_mode', 'proot'))
     env_dict = {}
     all_vars = app.get('env_vars', []) + app.get('optional_env_vars', [])
     if not all_vars:
@@ -355,17 +347,20 @@ def reconfigure_app(app_id, registry):
         return
     print(f"\033[96m[*] Reconfiguring {app.get('name', app_id)}...\033[0m")
     for var in all_vars:
-        val = input(f"\033[96mEnter {var} (leave blank to skip): \033[0m").strip()
+        # Prompt, showing previous value as hint
+        prev_val = installed[app_id].get('env', {}).get(var, '')
+        hint = f" [{prev_val}]" if prev_val else ""
+        val = input(f"\033[96mEnter {var}{hint} (leave blank to keep/skip): \033[0m").strip()
+        
         if val:
             env_dict[var] = val
+        elif prev_val:
+            env_dict[var] = prev_val  # Keep existing value if skipped
 
-    if install_mode == 'termux_host':
-        generate_termux_wrapper(app.get('executable', app_id), env_dict if env_dict else None)
-    else:
-        runtime_env = app.get('runtime_env', [])
-        generate_proot_wrapper(app.get('executable', app_id), env_dict if env_dict else None, runtime_env)
+    runtime_env = app.get('runtime_env', [])
+    generate_proot_wrapper(app.get('executable', app_id), env_dict if env_dict else None, runtime_env)
 
-    installed[app_id]['env_keys'] = list(env_dict.keys())
+    installed[app_id]['env'] = env_dict
     save_installed(installed)
     print(f"\033[92m[OK] Reconfigured and wrapper regenerated.\033[0m")
 
@@ -471,8 +466,27 @@ if __name__ == "__main__":
                     print("\033[1;36m=== Installed Apps ===\033[0m")
                     for aid, info in installed.items():
                         date = info.get('installed_at', 'unknown')
-                        mode = info.get('install_mode', 'proot')
-                        print(f"  \033[92m{aid}\033[0m: {info.get('name', aid)} [{mode}] (installed: {date})")
+                        local_ver = info.get('installed_version', 'unknown')
+                        
+                        # 1. Integrity Check: verify if executable exists inside PRoot's /usr/local/bin
+                        exec_name = info.get('executable', aid)
+                        bin_path = f"{ROOTFS}/usr/local/bin/{exec_name}"
+                        # For aider/mimo it might be in standard path /usr/bin or /usr/local/bin, let's check both
+                        bin_exists = os.path.exists(bin_path) or os.path.exists(f"{ROOTFS}/usr/bin/{exec_name}")
+                        status_tag = "\033[92m[Active]\033[0m" if bin_exists else "\033[91m[Broken: Missing Binary]\033[0m"
+                        
+                        # 2. Check for update available online
+                        update_tag = ""
+                        if registry and aid in registry['apps']:
+                            cloud_ver = registry['apps'][aid].get('version', registry.get('version', 'unknown'))
+                            if cloud_ver != 'unknown' and local_ver != 'unknown' and cloud_ver != local_ver:
+                                update_tag = f" \033[93m(Update Available: v{cloud_ver})\033[0m"
+
+                        print(f"  \033[92m{aid}\033[0m: {info.get('name', aid)} (v{local_ver}) {status_tag}{update_tag}")
+                        print(f"    Installed: {date}")
+                        persisted_keys = list(info.get('env', {}).keys())
+                        if persisted_keys:
+                            print(f"    Configured keys: {', '.join(persisted_keys)}")
             else:
                 print_help()
         else:
