@@ -38,3 +38,20 @@ if [ ! -f "$ANCLI_DIR/hosts" ]; then
         > "$ANCLI_DIR/hosts"
 fi
 chmod 644 "$ANCLI_DIR/hosts" 2>/dev/null || true
+
+# 6. Sync app wrappers from ANCLI_DIR/bin/ to KSU/AP instant-access bin on every boot.
+#    This ensures tools installed via 'ancli install' are globally reachable without
+#    a module reinstall, and that wrapper updates take effect after reboot.
+for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
+    [ -d "$INSTANT_BIN" ] || continue
+    for wrapper in "$ANCLI_DIR/bin/"*; do
+        name="${wrapper##*/}"
+        # Skip core infrastructure files — only sync app wrappers
+        case "$name" in
+            proot|ancli-core.py|ancli|registry.json|installed.json|hosts) continue ;;
+            .*) continue ;;
+        esac
+        [ -f "$wrapper" ] || continue
+        cp -f "$wrapper" "$INSTANT_BIN/$name" 2>/dev/null || true
+    done
+done

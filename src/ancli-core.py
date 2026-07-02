@@ -219,20 +219,31 @@ def _write_wrapper_to_paths(executable, wrapper):
     except Exception as e:
         print(f"\033[93m[!] Warning: Could not write systemless wrapper to {sys_path}: {e}\033[0m")
 
-    # 2. Instant-access paths (KSU / APatch), take effect immediately without reboot
-    for instant_bin in [KSU_BIN, AP_BIN]:
-        if os.path.isdir(instant_bin):
-            try:
+    # 2. Instant-access paths (KSU / APatch), take effect immediately without reboot.
+    # Python open() inside proot is blocked by SELinux for /data/adb paths.
+    # Strategy: write to a tmp file in ANCLI_DIR (always writable from proot), then
+    # use os.system('cp') which forks a host-side root shell that can write to /data/adb.
+    tmp_wrapper = f"{ANCLI_DIR}/bin/.{executable}.tmp"
+    try:
+        with open(tmp_wrapper, "w") as f:
+            f.write(wrapper)
+        os.chmod(tmp_wrapper, 0o755)
+        for instant_bin in [KSU_BIN, AP_BIN]:
+            if os.path.isdir(instant_bin):
                 inst_path = f"{instant_bin}/{executable}"
-                if os.path.exists(inst_path):
-                    os.remove(inst_path)
-                with open(inst_path, "w") as f:
-                    f.write(wrapper)
-                os.chmod(inst_path, 0o755)
-            except Exception as e:
-                # Log warning but do not crash the installer
-                print(f"\033[93m[!] Warning: Could not write instant wrapper to {instant_bin}: {e}\033[0m")
-                print(f"    (The tool will still work after next reboot)\033[0m")
+                ret = os.system(f"cp -f {tmp_wrapper} {inst_path} 2>/dev/null && chmod 755 {inst_path} 2>/dev/null")
+                if ret == 0:
+                    print(f"\033[92m[OK] Instant wrapper written: {inst_path}\033[0m")
+                else:
+                    print(f"\033[93m[!] Warning: Could not write instant wrapper to {inst_path}\033[0m")
+                    print(f"    (The tool will still work after next reboot)\033[0m")
+    except Exception as e:
+        print(f"\033[93m[!] Warning: Could not prepare instant wrapper for {executable}: {e}\033[0m")
+    finally:
+        try:
+            os.remove(tmp_wrapper)
+        except Exception:
+            pass
 
 def remove_wrapper(executable):
     paths = [

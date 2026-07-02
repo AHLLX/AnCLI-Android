@@ -126,15 +126,38 @@ chmod 755 "$BIN_DIR/ancli-core.py"
 # Deploy bundled fallback registry
 cp "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true
 
-# 6. Instant access injection for KSU/AP dynamic paths
-#    (system/bin/ancli is auto-mounted by module framework for post-reboot)
+
+# 6. Instant access injection for KSU/AP dynamic paths.
+#    We inject both 'ancli' and placeholder wrappers for all registry apps.
+#    SELinux only permits overwriting existing files in /data/adb/ksu/bin after boot,
+#    so we MUST pre-create all app entries now (during flash) when the context allows it.
+#    The real wrappers will be written by 'ancli install' or 'ancli repair' later.
+REGISTRY_FILE="$MODPATH/ancli/registry.json"
+
 for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
-    if [ -d "$INSTANT_BIN" ]; then
-        cp "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"
-        chmod 755 "$INSTANT_BIN/ancli"
-        ui_print ">> Instant access: $INSTANT_BIN/ancli"
+    [ -d "$INSTANT_BIN" ] || continue
+
+    # Inject main ancli command
+    cp "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"
+    chmod 755 "$INSTANT_BIN/ancli"
+    ui_print ">> Instant access: $INSTANT_BIN/ancli"
+
+    # Pre-seed placeholder wrappers for all registry apps
+    if [ -f "$REGISTRY_FILE" ]; then
+        # Extract executable names from registry JSON using basic shell parsing
+        executables=$(grep '"executable"' "$REGISTRY_FILE" | sed 's/.*"executable"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        for exe in $executables; do
+            placeholder="$INSTANT_BIN/$exe"
+            if [ ! -f "$placeholder" ]; then
+                # Write a minimal placeholder — will be overwritten by ancli install/repair
+                printf '#!/system/bin/sh\nexec sh /data/local/tmp/ancli/bin/%s "$@"\n' "$exe" > "$placeholder"
+                chmod 755 "$placeholder"
+                ui_print ">> Pre-seeded placeholder: $INSTANT_BIN/$exe"
+            fi
+        done
     fi
 done
+
 
 ui_print ""
 ui_print "=========================================="
