@@ -19,7 +19,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/tmp/ancli-registry.json"   # inside proot rootfs, always writable
@@ -27,14 +27,6 @@ INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 
 # Allowed command prefixes for security validation
 ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy ")
-
-# npm global install paths
-# NPM_GLOBAL: inside bind-mount so binaries survive proot sessions
-# NPM_CACHE:  inside proot rootfs (not bind-mounted) so proot can write freely
-# NPM_HOME:   inside proot rootfs for same reason
-NPM_GLOBAL = f"{ANCLI_DIR}/npm-global"           # host-visible: /data/local/tmp/ancli/npm-global
-NPM_CACHE  = "/var/cache/ancli-npm"              # proot-internal, writable by proot
-NPM_HOME   = "/var/lib/ancli-npm-home"           # proot-internal, writable by proot
 
 # ---------------------------------------------------------------------------
 # Registry & State
@@ -104,11 +96,11 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
         for k, v in env_dict.items():
             exports += f'export {k}={shlex.quote(v)}\n'
 
-    # npm-global/bin is included so npm-installed tools are found inside the container
+    # Injected env vars
     wrapper = (
         f"#!/system/bin/sh\n"
         f"{exports}"
-        f"export PATH={ANCLI_DIR}/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin\n"
+        f"export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin\n"
         f"export HOME=/root\n"
         f"exec {ANCLI_DIR}/bin/proot "
         f"-r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard "
@@ -212,20 +204,6 @@ def _install_termux(app_id, app):
 
 def _install_proot(app_id, app):
     """Install a tool inside the Ubuntu PRoot container."""
-    # Preflight: ensure npm global paths exist if this is an npm-based install.
-    # npm requires --prefix and --cache dirs to already exist to avoid mkdirp
-    # calls on worker threads (which fail under PRoot's ptrace on Android 15).
-    # Note: these dirs live in the bind-mounted /data/local/tmp/ancli/ and may
-    # already be created from the host side; PermissionError here is safe to ignore.
-    if app['install_cmd'].lstrip().startswith('npm '):
-        for d in [NPM_GLOBAL + "/lib/node_modules", NPM_GLOBAL + "/bin",
-                  NPM_CACHE, NPM_HOME + "/.npm/_logs"]:
-            try:
-                os.makedirs(d, exist_ok=True)
-            except PermissionError:
-                pass  # Directory exists on host side via bind-mount; safe to continue
-        print(f"\033[96m[i] npm paths ready.\033[0m")
-
     runtime_env = app.get('runtime_env', [])
     if run_cmd(app['install_cmd']):
         generate_proot_wrapper(app['executable'], {}, runtime_env)
@@ -242,6 +220,7 @@ def _install_proot(app_id, app):
         print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
     else:
         print(f"\033[91m[X] Installation failed.\033[0m")
+
 
 def uninstall_app(app_id, registry):
     installed = load_installed()
