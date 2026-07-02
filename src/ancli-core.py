@@ -101,31 +101,30 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
                 key, _, val = item.partition('=')
                 if key.replace('_', '').isalnum():
                     exports += f'export {key}={shlex.quote(val)}\n'
+                    env_args += f'{key}={shlex.quote(val)} '
     # Inject user-supplied env vars (e.g., API keys)
     if env_dict:
         for k, v in env_dict.items():
             exports += f'export {k}={shlex.quote(v)}\n'
+            env_args += f'{k}={shlex.quote(v)} '
 
     # Injected env vars and dynamic WiFi system proxy auto-inheritance logic on Android Host
-    wrapper = (
-        f"#!/system/bin/sh\n"
-        f"# Dynamic Android Host WiFi system proxy detection & inheritance\n"
-        f"PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)\n"
-        f"if [ -n \"$PROXY_INFO\" ]; then\n"
-        f"    PROXY_HOST=$(echo \"$PROXY_INFO\" | sed -n 's/.*HttpProxy:[[:space:]]*\\[\\([^\\]*\\)\\].*/\\1/p')\n"
-        f"    PROXY_PORT=$(echo \"$PROXY_INFO\" | sed -ne 's/.*HttpProxy:[[:space:]]*\\[[^\\]*\\][[:space:]]*\\([0-9]*\\).*/\\1/p')\n"
-        f"    if [ -n \"$PROXY_HOST\" ] && [ -n \"$PROXY_PORT\" ]; then\n"
-        f"        export http_proxy=\"http://$PROXY_HOST:$PROXY_PORT\"\n"
-        f"        export https_proxy=\"http://$PROXY_HOST:$PROXY_PORT\"\n"
-        f"    fi\n"
-        f"fi\n\n"
-        f"{exports}"
-        f"export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin\n"
-        f"export HOME=/root\n"
-        f"exec {ANCLI_DIR}/bin/proot "
-        f"-r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard "
-        f"-w /root /usr/bin/env {executable} \"$@\"\n"
-    )
+    wrapper = f"""#!/system/bin/sh
+# Dynamic Android Host WiFi system proxy detection & inheritance
+PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)
+if [ -n "$PROXY_INFO" ]; then
+    PROXY_HOST=$(echo "$PROXY_INFO" | sed -n 's/.*HttpProxy:[[:space:]]*\\[\\([^ ]*\\)\\].*/\\1/p')
+    PROXY_PORT=$(echo "$PROXY_INFO" | sed -ne 's/.*HttpProxy:[[:space:]]*\\[[^ ]*\\][[:space:]]*\\([0-9]*\\).*/\\1/p')
+    if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
+        export http_proxy="http://$PROXY_HOST:$PROXY_PORT"
+        export https_proxy="http://$PROXY_HOST:$PROXY_PORT"
+    fi
+fi
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+export HOME=/root
+exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root {env_args} {executable} "$@"
+"""
     _write_wrapper_to_paths(executable, wrapper)
 
 def _write_wrapper_to_paths(executable, wrapper):
