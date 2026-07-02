@@ -374,28 +374,11 @@ def repair_env(registry):
 
         for app_id, info in installed.items():
             exec_name = info.get('executable', app_id)
-            # Check each candidate path — only consider it "missing" if the
-            # parent directory actually exists (same logic as _write_wrapper_to_paths)
-            candidate_paths = [
-                f"{ANCLI_DIR}/bin/{exec_name}",
-                f"{MOD_DIR}/system/bin/{exec_name}",
-                f"{KSU_BIN}/{exec_name}",
-                f"{AP_BIN}/{exec_name}",
-            ]
-            needs_recreate = False
-            for wp in candidate_paths:
-                parent = os.path.dirname(wp)
-                if os.path.isdir(parent) and not os.path.exists(wp):
-                    needs_recreate = True
-                    break
-
-            if needs_recreate:
-                print(f"  \033[93m[!] Wrapper for '{app_id}' missing, regenerating...\033[0m")
-                app_reg = registry['apps'].get(app_id) if registry else None
-                runtime_env = app_reg.get('runtime_env', []) if app_reg else []
-                stored_env = info.get('env', {})
-                generate_proot_wrapper(exec_name, stored_env if stored_env else None, runtime_env)
-        print("\033[92m[OK] Wrapper integrity check complete.\033[0m")
+            app_reg = registry['apps'].get(app_id) if registry and 'apps' in registry else None
+            runtime_env = app_reg.get('runtime_env', []) if app_reg else []
+            stored_env = info.get('env', {})
+            generate_proot_wrapper(exec_name, stored_env if stored_env else None, runtime_env)
+        print("\033[92m[OK] Wrappers updated to latest engine.\033[0m")
     else:
         print("\033[90m[i] No installed apps to repair.\033[0m")
 
