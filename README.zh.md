@@ -93,12 +93,12 @@ export ANCLI_MIRROR="mirrors.ustc.edu.cn"
 
 ## 卸载方法
 
-- **普通卸载（默认）**：在 Magisk/KernelSU/APatch 管理器中删除模块时，系统会**默认安全保留**你的容器系统、已安装的 Python 依赖包和 API 密钥配置，便于升级重装后秒恢复。
-- **彻底清除**：若需要在卸载时彻底清空容器和所有大文件，请在管理器卸载前创建清除标记：
+- **普通卸载（安全且默认）**：在 Magisk/KernelSU/APatch 管理器中删除模块时，系统只会清理模块的挂载入口，而**安全保留**你的完整 Ubuntu 容器系统、已安装的 Python 依赖包和 API 密钥配置。这样你在以后升级重装时能够瞬间恢复环境。
+- **彻底清除（完全卸载）**：如果你想彻底从手机上抹除框架、容器和所有产生的大文件，请在 `ancli` 主菜单中按 `u` 键，然后选择 `[3] Completely uninstall AnCLI` 获取清理指令；或者直接在 root 终端执行以下命令进行物理删除：
   ```bash
-  touch /data/local/tmp/ancli_force_purge
+  rm -rf /data/local/tmp/ancli
   ```
-  或者，在 root 终端中交互式执行包管理器内的 `uninstall.sh` 脚本，并选择 **Full Purge（彻底清除）** 选项。
+  执行完后，再前往管理器中卸载 AnCLI 模块即可。
 
 ## 技术架构
 

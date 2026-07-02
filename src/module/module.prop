@@ -1,7 +1,7 @@
 id=ancli
 name=AnCLI Core
-version=v1.0.2
-versionCode=3
+version=v1.1.0
+versionCode=4
 author=AHLLX
-description=Unified environment manager for CLI tools on Android (Proot + Ubuntu)
+description=Unified CLI environment manager. [Safe Uninstall] Manager removal keeps your data safe. Use 'ancli' menu for full purge.
 updateJson=https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json

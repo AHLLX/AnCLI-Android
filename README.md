@@ -92,12 +92,12 @@ export ANCLI_MIRROR="archive.ubuntu.com"
 
 ## Uninstallation
 
-- **Soft Uninstall (Default)**: Removing the module in KernelSU/Magisk/APatch manager keeps your containers, Python packages, and API configs safely preserved.
-- **Full Purge**: To completely erase all containers and data during manager uninstallation, create a flag file before tapping uninstall:
+- **Soft Uninstall (Safe & Default)**: Removing the module from your KernelSU/Magisk/APatch manager only cleans up the module's hooks. It **safely preserves** your entire Ubuntu container, downloaded Python packages, and API configurations so you can upgrade easily.
+- **Full Purge (Complete Removal)**: If you wish to permanently destroy all data, containers, and configurations, use the `ancli` menu and press `u`, then select `[3] Completely uninstall AnCLI`. Alternatively, run this in a root terminal:
   ```bash
-  touch /data/local/tmp/ancli_force_purge
+  rm -rf /data/local/tmp/ancli
   ```
-  Or run `uninstall.sh` interactively in a root terminal and choose the **Full Purge** option.
+  After wiping the directory, uninstall the module from your manager.
 
 ## Technical Details
 

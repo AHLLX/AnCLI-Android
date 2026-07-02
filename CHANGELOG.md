@@ -1,5 +1,23 @@
-## AnCLI v1.0.2 — Auth Credential Fix & Code Hardening
+## AnCLI v1.1.0 — Global Instant Access & UX Polish
 
+### What's New
+**True "No Reboot" Global Execution for KernelSU**
+- **Root Cause**: KernelSU's SELinux policy enforces a strict prohibition on creating new files within `/data/adb/ksu/bin` after boot, which previously blocked `ancli install` from establishing instant-access wrappers.
+- **Pre-seeded Placeholders**: The module installer (`customize.sh`) now pre-creates executable placeholders for all registry apps during the flash stage (when SELinux is permissive). These placeholders transparently route commands to the actual PRoot wrappers, achieving true instant global access without a reboot.
+- **Boot-time Sync**: `service.sh` now automatically syncs and overwrites placeholders with real PRoot wrappers upon every boot, cementing long-term stability.
+- **Clarified Logs**: Replaced the misleading "Requires Reboot" warning during installation with accurate status reporting.
+
+**Revamped Uninstallation & App Management UX**
+- **Expanded App Store Menu**: The main `ancli` TUI now features a dedicated, highly visible `[u] Uninstall an app` option to prevent feature-discovery issues.
+- **Comprehensive Purge Options**: The uninstallation submenu now provides structured choices:
+  1. Remove a specific app.
+  2. Batch-remove all installed apps (while keeping the Ubuntu container safe).
+  3. Safe-destruct guide: Provides explicit terminal commands (`rm -rf`) for users who wish to entirely obliterate the AnCLI framework from their storage.
+- **Clarified Manager Descriptions**: Updated `module.prop` to explicitly reassure users that uninstalls triggered from the Magisk/KernelSU Manager are **Soft Uninstalls** (data and configs are safely preserved).
+
+---
+
+## AnCLI v1.0.2 — Auth Credential Fix & Code Hardening
 ### Bug Fixes
 
 **agy Stops Working After Terminal Restart (Root Cause Fixed)**
