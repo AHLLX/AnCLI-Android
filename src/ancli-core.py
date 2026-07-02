@@ -612,8 +612,8 @@ def show_menu():
             elif u_choice == '3':
                 print("\n\033[91m⚠️ To completely uninstall AnCLI and remove all files, please exit this menu")
                 print("and run the following command in your root Android shell:\033[0m")
-                print("\n    \033[1;33msh /data/adb/modules/ancli/uninstall.sh\033[0m")
-                print("\n\033[90m(We cannot self-destruct while the environment is currently running)\033[0m")
+                print("\n    \033[1;33mrm -rf /data/local/tmp/ancli\033[0m")
+                print("\n\033[90m(Then simply uninstall the AnCLI module from your Magisk/KernelSU Manager)\033[0m")
 
         elif choice.isdigit() and 1 <= int(choice) <= len(apps):
             app_id = apps[int(choice)-1]
