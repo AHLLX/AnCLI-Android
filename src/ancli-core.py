@@ -581,17 +581,40 @@ def show_menu():
         elif choice.lower() == 'r':
             repair_env(registry)
         elif choice.lower() == 'u':
-            if not installed:
-                print("\033[91mNo apps installed yet.\033[0m")
-                continue
-            print("\n\033[1;36mSelect app to uninstall:\033[0m")
-            installed_list = list(installed.keys())
-            for i, app_id in enumerate(installed_list, 1):
-                app_name = registry['apps'].get(app_id, {}).get('name', app_id)
-                print(f"[{i}] {app_name}")
-            sub = input("Enter number to uninstall (0 to cancel): ").strip()
-            if sub.isdigit() and 1 <= int(sub) <= len(installed_list):
-                uninstall_app(installed_list[int(sub)-1], registry)
+            print("\n\033[1;36m=== 🗑️ Uninstallation Menu ===\033[0m")
+            print("[1] Uninstall a specific app")
+            print("[2] Uninstall ALL apps (keep AnCLI environment)")
+            print("[3] Completely uninstall AnCLI (Framework & All Apps)")
+            print("[0] Cancel")
+            u_choice = input("\033[93mChoose an option: \033[0m").strip()
+            
+            if u_choice == '1':
+                if not installed:
+                    print("\033[91mNo apps installed yet.\033[0m")
+                    continue
+                print("\n\033[1;36mSelect app to uninstall:\033[0m")
+                installed_list = list(installed.keys())
+                for i, app_id in enumerate(installed_list, 1):
+                    app_name = registry['apps'].get(app_id, {}).get('name', app_id)
+                    print(f"[{i}] {app_name}")
+                sub = input("Enter number to uninstall (0 to cancel): ").strip()
+                if sub.isdigit() and 1 <= int(sub) <= len(installed_list):
+                    uninstall_app(installed_list[int(sub)-1], registry)
+            elif u_choice == '2':
+                if not installed:
+                    print("\033[91mNo apps installed yet.\033[0m")
+                    continue
+                confirm = input("\033[91mAre you sure you want to uninstall ALL apps? (y/n): \033[0m").strip().lower()
+                if confirm == 'y':
+                    for app_id in list(installed.keys()):
+                        uninstall_app(app_id, registry)
+                    print("\033[92m[OK] All apps uninstalled.\033[0m")
+            elif u_choice == '3':
+                print("\n\033[91m⚠️ To completely uninstall AnCLI and remove all files, please exit this menu")
+                print("and run the following command in your root Android shell:\033[0m")
+                print("\n    \033[1;33msh /data/adb/modules/ancli/uninstall.sh\033[0m")
+                print("\n\033[90m(We cannot self-destruct while the environment is currently running)\033[0m")
+
         elif choice.isdigit() and 1 <= int(choice) <= len(apps):
             app_id = apps[int(choice)-1]
             if app_id in installed:
