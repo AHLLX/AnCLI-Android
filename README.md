@@ -4,12 +4,13 @@ AnCLI is a unified package manager and environment manager for rooted Android de
 
 ## Features
 
-- **No Node.js or NPM Required**: Node.js-based tools (like Claude Code and OpenCode) are installed as standalone, precompiled Linux-arm64 binaries. No npm or complex JS compilation required.
+- **No Node.js or NPM Required**: Node.js-based tools (like Claude Code, OpenCode, and MiMo Code) are installed as standalone, precompiled Linux-arm64 binaries. No npm or complex JS compilation required.
 - **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Wrappers are mounted to `/system/bin` on boot, with instant-access wrappers injected into dynamic root paths (reboot-free).
 - **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
 - **Dynamic Configuration Injection**: Prompts for environment variables (e.g., API keys, custom endpoints) during installation and bakes them securely into execution wrappers.
 - **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
+- **Escaping & Proxy 直通**: Bypasses ADB character escaping bugs via Python urllib direct downloads, and dynamically forwards host proxy settings into the guest container.
 - **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 
 ## Supported Applications
@@ -67,6 +68,8 @@ Once a tool is installed, run it directly from any shell:
 aider
 claude
 opencode
+mimo
+agy
 ```
 
 ## Directory Structure

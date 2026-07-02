@@ -1,6 +1,6 @@
 # AnCLI Technical Architecture & Deep Dive
 
-This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI (Android CLI) v1.2.2**.
+This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI (Android CLI) v1.0.0**.
 
 ---
 
@@ -28,11 +28,17 @@ Android's Linux kernel is paired with the Bionic C library instead of the standa
 
 In older configurations, running Node.js (`npm`) inside PRoot on Android 15 failed due to a `libuv` thread-interception ptrace bug (asynchronous `mkdir` returned `ENOENT` during npm initialization).
 
-Instead of running npm or trying to bind to a Termux host Node.js runtime (which fails due to SELinux blocking `exec` calls across application domains), **AnCLI v1.2.2 installs Node.js/JS-based tools directly as precompiled native Linux-arm64 binaries**.
+Instead of running npm or trying to bind to a Termux host Node.js runtime (which fails due to SELinux blocking `exec` calls across application domains), **AnCLI v1.0.0 installs Node.js/JS-based tools directly as precompiled native Linux-arm64 binaries**.
 
-1. Tools like **Claude Code** and **OpenCode** publish native standalone executables to their GitHub Releases.
-2. AnCLI downloads these standalone `.tar.gz` packages directly inside the container using `curl` and extracts the executable to `/usr/local/bin`.
+1. Tools like **Claude Code**, **OpenCode**, and **MiMo Code** publish native standalone executables to their GitHub Releases.
+2. AnCLI downloads these standalone `.tar.gz` packages directly inside the container using `curl` or native Python bypass downloads and extracts the executable to `/usr/local/bin`.
 3. The generated wrapper calls this native binary directly via PRoot, completely bypassing `npm` and Node.js compilation.
+
+### 1.3 Eliminating Nested PRoot Conflicts
+
+Older wrapper models executed sub-installers inside another nested `proot` context, which caused ptrace collisions on modern Linux kernels and led to shell execution freezes (e.g. `/system/bin/sh: bash: inaccessible or not found`).
+
+AnCLI v1.0.0 completely decouples inner script runners. All container commands are called directly inside the primary PRoot context using the guest container's `/bin/bash` with `set -o pipefail`.
 
 ---
 
@@ -89,8 +95,7 @@ exec /data/local/tmp/ancli/bin/proot \
 
 ---
 
-## 5. Security Hardening
+## 5. Security & Ownership Hardening
 
-- **Command Whitelist**: Validation constraints on dynamic installation scripts.
-- **Shell Operator Guard**: Prevents pipeline command injection (`$()`, backticks).
-- **Environment Escaping**: Using `shlex.quote()` to sanitize API keys injected into wrapper scripts.
+- **Command Whitelist**: Restricts execution inside the container to trusted prefixes (`pip`, `npm`, `apt-get`, `apt`, `curl`, `rm`, `agy`, `bash`, `sh`).
+- **File Overwrite Protection**: Inodes and database paths like `installed.json` are forcefully deleted before recreating, preventing local permission lock errors (`[Errno 13] Permission denied`) from conflicting host users.
