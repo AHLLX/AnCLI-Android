@@ -572,17 +572,30 @@ def show_menu():
             print(f"[{i}] {app['name']} {mode_tag} - {app['description']} {status}")
 
         print("[r] Repair environment (Fix DNS, permissions, wrappers)")
+        print("[u] Uninstall an app")
         print("[0] Exit")
-        choice = input("\033[93mChoose an option (number): \033[0m").strip()
+        choice = input("\033[93mChoose an option: \033[0m").strip()
 
         if choice == '0':
             break
         elif choice.lower() == 'r':
             repair_env(registry)
+        elif choice.lower() == 'u':
+            if not installed:
+                print("\033[91mNo apps installed yet.\033[0m")
+                continue
+            print("\n\033[1;36mSelect app to uninstall:\033[0m")
+            installed_list = list(installed.keys())
+            for i, app_id in enumerate(installed_list, 1):
+                app_name = registry['apps'].get(app_id, {}).get('name', app_id)
+                print(f"[{i}] {app_name}")
+            sub = input("Enter number to uninstall (0 to cancel): ").strip()
+            if sub.isdigit() and 1 <= int(sub) <= len(installed_list):
+                uninstall_app(installed_list[int(sub)-1], registry)
         elif choice.isdigit() and 1 <= int(choice) <= len(apps):
             app_id = apps[int(choice)-1]
             if app_id in installed:
-                print(f"\n\033[96m[1] Update {app_id}\n[2] Uninstall {app_id}\n[3] Reconfigure env vars\033[0m")
+                print(f"\n\033[96m=== Manage: {app_id} ===\n[1] Update\n[2] Uninstall\n[3] Reconfigure env vars\n[0] Cancel\033[0m")
                 sub = input("Action: ").strip()
                 if sub == '1':
                     update_app(app_id, registry)
