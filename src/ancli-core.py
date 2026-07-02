@@ -52,12 +52,21 @@ def fetch_registry():
             if attempt < 2:
                 print(f"\033[93m[!] Retry {attempt+1}/3: {e}\033[0m")
                 time.sleep(2)
-    # All retries exhausted, fall back to local cache
+    # All retries exhausted, fall back to user local cache
     if os.path.exists(LOCAL_REGISTRY):
         print(f"\033[93m[!] Using local cache (network unavailable: {last_net_err})\033[0m")
         with open(LOCAL_REGISTRY, "r") as f:
             return json.load(f)
-    print(f"\033[91m[X] Failed to fetch registry and no local cache found: {last_net_err}\033[0m")
+    
+    # Critical Edge Case: If offline and no cache exists (e.g., first install),
+    # try loading the bundled fallback registry shipped with the module zip.
+    fallback_path = f"{ANCLI_DIR}/bin/registry.json"
+    if os.path.exists(fallback_path):
+        print(f"\033[93m[!] Using bundled fallback registry (offline first boot)\033[0m")
+        with open(fallback_path, "r") as f:
+            return json.load(f)
+
+    print(f"\033[91m[X] Failed to fetch registry, no cache, and no fallback found: {last_net_err}\033[0m")
     sys.exit(1)
 
 def load_installed():
@@ -121,10 +130,15 @@ def _write_wrapper_to_paths(executable, wrapper):
     # 2. Instant access (KSU / APatch)
     for instant_bin in [KSU_BIN, AP_BIN]:
         if os.path.isdir(instant_bin):
-            inst_path = f"{instant_bin}/{executable}"
-            with open(inst_path, "w") as f:
-                f.write(wrapper)
-            os.chmod(inst_path, 0o755)
+            try:
+                inst_path = f"{instant_bin}/{executable}"
+                with open(inst_path, "w") as f:
+                    f.write(wrapper)
+                os.chmod(inst_path, 0o755)
+            except Exception as e:
+                # Log warning but do not crash the installer
+                print(f"\033[93m[!] Warning: Could not write instant wrapper to {instant_bin}: {e}\033[0m")
+                print(f"    (The tool will still work after next reboot)\033[0m")
 
 def remove_wrapper(executable):
     paths = [
