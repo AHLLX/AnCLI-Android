@@ -92,7 +92,12 @@ export ANCLI_MIRROR="archive.ubuntu.com"
 
 ## Uninstallation
 
-Remove the AnCLI module from your root manager app. The internal uninstaller automatically cleans up all binaries, rootfs directories, and environment wrappers.
+- **Soft Uninstall (Default)**: Removing the module in KernelSU/Magisk/APatch manager keeps your containers, Python packages, and API configs safely preserved.
+- **Full Purge**: To completely erase all containers and data during manager uninstallation, create a flag file before tapping uninstall:
+  ```bash
+  touch /data/local/tmp/ancli_force_purge
+  ```
+  Or run `uninstall.sh` interactively in a root terminal and choose the **Full Purge** option.
 
 ## Technical Details
 

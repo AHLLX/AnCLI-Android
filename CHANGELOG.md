@@ -1,3 +1,18 @@
+## AnCLI v1.0.1 — Data Preservation & Uninstall Protection
+
+### What's New
+
+**Container & Python Packages Preservation during Uninstall**
+- **Dynamic TTY Detection**: Added automatic interactive terminal detection to `uninstall.sh`.
+- **Non-Interactive Mode Protection (Magisk/KSU tap)**: When uninstalling the module from KernelSU/Magisk/APatch managers, the script now **safely preserves** the Ubuntu container, precompiled binaries, downloaded Python packages (like `gitpython`), and configurations (`installed.json`) by default.
+- **Interactive Mode Flexibility**: When run manually in terminal, the uninstaller presents a menu option, giving the user a choice between a soft uninstall (keeping container data) or a full database & filesystem purge.
+- **Forced Purge override**: Users can force a complete silent purge in manager uninstall by creating a file flag at `/data/local/tmp/ancli_force_purge`.
+
+**Dynamic Host CWD Propagation**
+- Expose current working directory ($PWD) directly to PRoot wrappers, solving startup hangs in Node.js-based AI agents like **mimo** when run from container's chroot system root directory.
+
+---
+
 ## AnCLI v1.0.0 — Unified CLI Environment Manager for Android (Initial Release)
 
 ### What's New

@@ -40,6 +40,9 @@ When modifying the script execution logic or registry installer commands, you MU
    - Android's root and shell users create files with conflicting ownerships. When generating wrapper scripts, you MUST check if the file already exists and explicitly delete it using `os.remove` before recreating, otherwise the operation will fail with `[Errno 13] Permission denied`.
 4. **Command Whitelist Validation**:
    - Any execution inside the container must be explicitly whitelisted in `ALLOWED_CMD_PREFIXES` in `ancli-core.py`. Add `bash ` and `sh ` if running local shell script installers.
+5. **Do NOT force delete container data during Manager uninstall (CRITICAL)**:
+   - Magisk/KSU Manager uninstallations trigger `uninstall.sh` in non-interactive background. 
+   - You MUST detect TTY redirection and preserve the `/data/local/tmp/ancli/rootfs` and `installed.json` by default (only wipe `bin/` scripts), unless explicitly forced by `/data/local/tmp/ancli_force_purge`. This ensures Python dependencies (like `gitpython`) and API keys are not lost during module upgrades.
 
 ## 5. Physical Layout Mapping
 When debugging paths or writing cleanup logic, refer to this exact physical mapping (Host Android perspective):
