@@ -101,14 +101,13 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
                 key, _, val = item.partition('=')
                 if key.replace('_', '').isalnum():
                     exports += f'export {key}={shlex.quote(val)}\n'
-                    env_args += f'{key}={shlex.quote(val)} '
     # Inject user-supplied env vars (e.g., API keys)
     if env_dict:
         for k, v in env_dict.items():
-            exports += f'export {k}={shlex.quote(v)}\n'
-            env_args += f'{k}={shlex.quote(v)} '
+            exports += f"export {k}='{v}'\n"
 
     # Injected env vars and dynamic WiFi system proxy auto-inheritance logic on Android Host
+# Injected env vars and dynamic WiFi system proxy auto-inheritance logic on Android Host
     wrapper = f"""#!/system/bin/sh
 # Dynamic Android Host WiFi system proxy detection & inheritance
 PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)
@@ -121,9 +120,9 @@ if [ -n "$PROXY_INFO" ]; then
     fi
 fi
 
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+{exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
 export HOME=/root
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root {env_args} {executable} "$@"
+exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
