@@ -1,6 +1,6 @@
 # AnCLI Technical Architecture & Deep Dive
 
-This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI (Android CLI) v1.0.0**.
+This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI v1.0.0**.
 
 ---
 

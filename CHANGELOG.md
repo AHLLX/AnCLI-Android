@@ -13,7 +13,7 @@
 
 ---
 
-## AnCLI v1.0.0 — Unified CLI Environment Manager for Android (Initial Release)
+## AnCLI v1.0.0 — Unified CLI Environment Manager (Initial Release)
 
 ### What's New
 

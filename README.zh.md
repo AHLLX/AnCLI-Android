@@ -1,6 +1,6 @@
-# AnCLI (Android CLI)
+# AnCLI
 
-AnCLI 是一个为已获取 Root 权限的 Android 设备打造的统一命令行工具环境管理器与安装器。它通过 PRoot 在隔离的 Ubuntu glibc 容器内，运行包括 Python、Go 和基于 Node.js 的各类终端 Agent 在内的全部 Linux 命令行工具。
+AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Systemless）的命令行环境管理器与插件式安装器。它基于轻量容器化技术，让用户能够在安卓端原生且无缝地运行各种标准的 GNU/Linux glibc 命令行工具（如 Python AI 编程助手、Go 二进制体、基于 Node.js 的终端智能体及各种主流开发套件）。
 
 ## 功能特性
 

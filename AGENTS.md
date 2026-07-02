@@ -1,9 +1,9 @@
 # AI Agent Guidelines (AGENTS.md)
 
-Welcome, fellow AI Assistant. If you are reading this, you have been tasked with modifying or maintaining the **AnCLI (Android CLI)** project. This document contains critical context, constraints, and architectural details to help you immediately understand the codebase and avoid common Android-specific pitfalls.
+Welcome, fellow AI Assistant. If you are reading this, you have been tasked with modifying or maintaining the **AnCLI** project. This document contains critical context, constraints, and architectural details to help you immediately understand the codebase and avoid common Android-specific pitfalls.
 
 ## 1. Project Context & Purpose
-AnCLI is a unified environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
+AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
 ## 2. Core Architecture

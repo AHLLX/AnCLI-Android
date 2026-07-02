@@ -1,6 +1,6 @@
-# AnCLI (Android CLI)
+# AnCLI
 
-AnCLI is a unified package manager and environment manager for rooted Android devices. It runs Linux command-line tools (including Python, Go, and Node.js-based terminal agents) inside a containerized Ubuntu glibc environment via PRoot.
+AnCLI is a unified, systemless environment manager and plugin-based installer for rooted Android devices. It enables seamless execution of standard GNU/Linux glibc command-line tools (such as Python AI pair programmers, Go binaries, and Node.js terminal agents) directly inside a lightweight containerized Ubuntu sandbox.
 
 ## Features
 
