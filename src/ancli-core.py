@@ -156,6 +156,9 @@ fi
 export HOME=/root
 # Force Go runtime to use its own DNS resolver, bypassing Android dnsproxyd hijacking.
 export GODEBUG=netdns=go
+# Disable io_uring for Node.js/Bun to prevent PTY hangs and input blocking in PRoot
+export UV_USE_IO_URING=0
+export BUN_FEATURE_FLAG_IO_URING=0
 
 # Auto-bind potential Clash/Tun virtual IPs to local loopback to satisfy Go socket bind traversal.
 for i in $(seq 10 25); do
