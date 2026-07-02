@@ -4,7 +4,7 @@ AnCLI is a unified package manager and environment manager for rooted Android de
 
 ## Features
 
-- **No Node.js or NPM Needed**: Node.js-based tools (like Claude Code and OpenCode) are installed as standalone, precompiled Linux-arm64 binaries. No npm or complex JS compilation required.
+- **No Node.js or NPM Required**: Node.js-based tools (like Claude Code and OpenCode) are installed as standalone, precompiled Linux-arm64 binaries. No npm or complex JS compilation required.
 - **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Wrappers are mounted to `/system/bin` on boot, with instant-access wrappers injected into dynamic root paths (reboot-free).
 - **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
@@ -28,7 +28,7 @@ AnCLI is a unified package manager and environment manager for rooted Android de
 ### Method A: Flashing via Root Manager (Recommended)
 
 1. Download `ancli-module.zip` from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
-2. Open your **Magisk/KernelSU/APatch Manager** app.
+2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
 
@@ -56,6 +56,7 @@ ancli uninstall <app_id>       # Uninstall an application
 ancli update <app_id>          # Update an installed application
 ancli config <app_id>          # Reconfigure environment variables
 ancli list                     # List installed applications
+ancli repair                   # Detect and repair environment issues
 ancli --help                   # Show help message
 ancli --version                # Show version info
 ```

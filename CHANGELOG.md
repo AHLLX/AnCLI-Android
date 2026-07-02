@@ -1,3 +1,19 @@
+## AnCLI v1.2.2 — Standalone Binary & Advanced State Management
+
+### What's New
+
+**NPM-Free Runtime Architecture**
+- Node.js-based tools (Claude Code, OpenCode) and MiMo Code are now installed directly as precompiled native Linux-arm64 binaries from GitHub Releases, bypassing Node.js/npm and resolving all PRoot ptrace thread bugs on Android 15.
+- Removed all Termux-host runtime dependencies.
+
+**Package Manager Enhancements**
+- **Version Tracking**: Records installed package versions locally to compare against cloud updates.
+- **Key Persistence**: Safely stores API credentials in the local state database, allowing update and repair operations to auto-inject configuration keys without user re-entry.
+- **Integrity Validation**: The list command now audits container executable directories to detect missing or broken binaries.
+- **Environment Repair**: Added the `ancli repair` command to check and restore resolv.conf DNS, file permissions, and dynamic wrappers.
+
+---
+
 ## AnCLI v1.1.0 — Module-Based Architecture
 
 ### What's New
