@@ -1,13 +1,10 @@
 # AnCLI (Android CLI)
 
-AnCLI is a **dual-mode** environment manager for rooted Android devices. It manages CLI tools through two complementary execution backends:
-
-- **PRoot/Ubuntu mode** — Runs Python and Go tools inside an isolated Ubuntu glibc container via PRoot, completely independent of any third-party app.
-- **Termux Host mode** — Runs Node.js-based tools natively through the Termux runtime on the Android host, bypassing PRoot's `ptrace` thread-interception limitations that prevent `npm` from working inside a container on Android 15.
+AnCLI is a unified package manager and environment manager for rooted Android devices. It runs Linux command-line tools (including Python, Go, and Node.js-based terminal agents) inside a containerized Ubuntu glibc environment via PRoot.
 
 ## Features
 
-- **Dual-Mode Execution**: Automatically selects the correct backend per tool. Python/Go tools run inside the Ubuntu PRoot container; Node.js tools run via the Termux host runtime.
+- **No Node.js or NPM Needed**: Node.js-based tools (like Claude Code and OpenCode) are installed as standalone, precompiled Linux-arm64 binaries. No npm or complex JS compilation required.
 - **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Wrappers are mounted to `/system/bin` on boot, with instant-access wrappers injected into dynamic root paths (reboot-free).
 - **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
@@ -18,15 +15,13 @@ AnCLI is a **dual-mode** environment manager for rooted Android devices. It mana
 ## Supported Applications
 *(Fetched dynamically from the cloud registry)*
 
-| App | Runtime | Backend |
+| App | Runtime | Installation Method |
 | :--- | :--- | :--- |
-| **Aider** | Python | PRoot/Ubuntu |
-| **MiMo Code** | Python | PRoot/Ubuntu |
-| **Antigravity CLI (agy)** | Go (static) | PRoot/Ubuntu |
-| **Claude Code** | Node.js (Bun) | Termux Host |
-| **OpenCode** | Node.js | Termux Host |
-
-> **Note**: Node.js tools require [Termux](https://termux.dev) to be installed on your device. AnCLI will automatically detect Termux and guide setup if it is absent.
+| **Aider** | Python | pip package |
+| **MiMo Code** | Node.js/JS | Precompiled Release binary |
+| **Antigravity CLI (agy)** | Go (static) | Standalone release binary |
+| **Claude Code** | Node.js/JS | Precompiled Release binary (NPM-free) |
+| **OpenCode** | Node.js/JS | Precompiled Release binary (NPM-free) |
 
 ## Installation
 
@@ -97,4 +92,4 @@ Remove the AnCLI module from your root manager app. The internal uninstaller aut
 
 ## Technical Details
 
-For the dual-mode execution architecture, dual-injection wrapper mechanism, PRoot configuration, and registry schema, see the [Architecture Document](ARCHITECTURE.md). For technical boundaries and compatibility analysis, see the [Compatibility Dossier](COMPATIBILITY.md).
+For the execution architecture, dual-injection wrapper mechanism, PRoot configuration, and registry schema, see the [Architecture Document](ARCHITECTURE.md). For technical boundaries and compatibility analysis, see the [Compatibility Dossier](COMPATIBILITY.md).

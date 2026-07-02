@@ -1,149 +1,45 @@
-# AnCLI Compatibility & Issue Dossier (v1.2.0)
+# AnCLI Compatibility Dossier (v1.2.2)
 
-This document provides a detailed technical record of the execution backends, verification results, and architectural boundaries of **AnCLI** on Android 15.
-
----
-
-## 1. Environment & Architecture Overview
-
-* **Host OS**: Android 15 (Linux Kernel `6.6.77-android15-8-gca30f3b4bef6`)
-* **Environment**: Root shell (`su`) launched from Termux.
-* **Backend A (PRoot)**: Ubuntu Base 24.04 (`arm64`) run via PRoot — for Python and Go tools.
-* **Backend B (Termux Host)**: Termux native runtime — for Node.js tools.
-* **Integration System**: Magisk/KernelSU/APatch systemless module with dynamic wrapper generation.
-
-```mermaid
-graph TD
-    subgraph "Backend A: PRoot/Ubuntu"
-        W1[Host Wrapper: /data/adb/ksu/bin/aider] --> P[Alpine Static PRoot]
-        P --> R[Ubuntu 24.04 Rootfs]
-        R --> B1[Python/Go Binary]
-    end
-
-    subgraph "Backend B: Termux Host"
-        W2[Host Wrapper: /data/adb/ksu/bin/opencode] --> T[Termux nodejs]
-        T --> B2[npm Global Binary]
-    end
-
-    Shell[Host Android Shell] --> W1
-    Shell --> W2
-```
+This document records the architectural boundaries, compatibility tests, and validation results of **AnCLI** on Android 15.
 
 ---
 
-## 2. The Node.js / PRoot Incompatibility (Root Cause Analysis)
+## 1. Core Technical Limitations on Android 15
 
-### Why npm Cannot Work Inside PRoot on Android 15
+### 1.1 Why NPM / Node.js fails inside PRoot
 
-PRoot intercepts system calls from the **main thread** via `ptrace` and correctly translates guest paths (e.g., `/root` inside the container) to host paths. However, Node.js uses **libuv**, which spawns a worker thread pool for all asynchronous I/O operations.
+Node.js uses **libuv** for asynchronous filesystem operations, which runs a pool of worker threads. On Android 15 kernels, `ptrace` path interception (used by PRoot) does not correctly trace filesystem calls originating from new, non-main worker threads.
 
-**The bug**: Android 15's kernel does not correctly propagate `ptrace` attachment to new threads spawned by a tracee. Worker threads therefore have their system calls processed **without path translation**. A `mkdir('/root')` call from a worker thread resolves to `/root` on the **host** Android filesystem (which does not exist), not inside the container, returning `ENOENT`.
+As a result, a call like `mkdir('/root')` issued from a worker thread resolves to `/root` on the **host** filesystem instead of the PRoot guest filesystem, triggering `ENOENT` (no such file or directory) or `EACCES` (permission denied).
 
-**Experimental proof**:
-```javascript
-// Worker thread (async) — FAILS under PRoot on Android 15
-require('fs').writeFile('/tmp/test.txt', 'hello', (err) => { console.log(err); })
-// Returns: null (fake success), but no file is created.
+### 1.2 Why Termux Host execution fails
 
-// Main thread (sync) — works correctly
-require('fs').writeFileSync('/tmp/test-sync.txt', 'hello')
-// File is created successfully.
-```
+Attempting to run Node.js tools natively in Termux by invoking Termux-side binaries (like `/data/data/com.termux/files/usr/bin/node`) from the root shell wrapper fails due to **SELinux policies**.
 
-**`npm install` failure trace**:
-```
-npm verb cache could not create cache: Error: ENOENT: no such file or directory, mkdir '/root'
-npm verb logfile could not create logs-dir: Error: ENOENT: no such file or directory, mkdir '/root'
-npm verb stack Error: ENOENT: no such file or directory, mkdir '/usr'
-npm ERR! code ENOENT
-npm ERR! syscall mkdir
-npm ERR! path /usr
-```
-
-Even `UV_THREADPOOL_SIZE=1` does not fully resolve this because `npm` performs async operations during its own initialization phase, before the event loop starts. The thread pool size variable only controls the libuv worker pool, not all async paths.
-
-### Resolution: Termux Host Backend
-
-The only correct solution is to run `npm` entirely **outside PRoot**, where system calls are handled natively by the Android kernel. AnCLI v1.2.0 introduces the `termux_host` install mode, which:
-
-1. Detects Termux at `/data/data/com.termux/files/usr`.
-2. Runs `npm install -g` via Termux's native Node.js runtime.
-3. Generates a wrapper that directly executes the Termux-side binary — no PRoot involved.
-
-### Bun Runtime (Claude Code Standalone Binary)
-
-The official pre-compiled Bun standalone binary crashes instantly with a segfault. Bun uses WebKit's **JavaScriptCore (JSC)** engine, which relies on custom page mapping, memory alignment, and Pointer Tagging. PRoot's address-space virtualization violates JSC's memory alignment assumptions.
-
-```
-Bun v1.4.0 Linux arm64
-panic(main thread): Segmentation fault at address 0xBBADBEEF
-```
-
-**Resolution**: `claude-code` is installed via `npm install -g @anthropic-ai/claude-code` through the Termux Host backend. This installs the standard npm package (not the Bun standalone), which runs correctly under Termux's Node.js.
+Android enforces strict domain boundaries. Programs labeled with root context cannot execute binaries labeled with Termux's app domain (`app_data_file`) with the execution path crossing app boundary lines, throwing permission denials even when the runner is root.
 
 ---
 
-## 3. Verification Results
+## 2. The Solution: Precompiled Standalone Binaries
 
-### Backend A: PRoot/Ubuntu
+Instead of installing packages from `npm` registries inside the container, AnCLI downloads **precompiled Linux-arm64 native binaries** directly from GitHub Releases.
 
-| Tool | Tech Stack | Status | Notes |
+| Platform / Tool | Source | Output | Type |
 | :--- | :--- | :--- | :--- |
-| **aider** | Python | ✅ **Supported** | `pip install` on main thread. Fully functional. |
-| **mimo** | Python | ✅ **Supported** | `pip install` on main thread. Fully functional. |
-| **agy** | Go (static) | ✅ **Supported** | Statically linked. No glibc dependency issues. |
+| **Claude Code** | `anthropics/claude-code` | `claude-linux-arm64.tar.gz` | ELF binary |
+| **OpenCode** | `anomalyco/opencode` | `opencode-linux-arm64.tar.gz` | ELF binary |
+| **MiMo Code** | `XiaomiMiMo/MiMo-Code` | `mimocode-linux-arm64.tar.gz` | ELF binary |
 
-### Backend B: Termux Host
-
-| Tool | Tech Stack | Status | Notes |
-| :--- | :--- | :--- | :--- |
-| **claude-code** | Node.js (npm pkg) | ✅ **Supported** | Installed via Termux npm. Runs natively. |
-| **opencode** | Node.js | ✅ **Supported** | Installed via Termux npm. Runs natively. |
+These binaries are statically compiled or bundled with their own minimal Node.js/JS runtimes. Since they run inside the PRoot glibc sandbox and perform standard synchronous ELF execution rather than asynchronous npm building scripts, they run natively on Android 15.
 
 ---
 
-## 4. Wrapper Architecture Comparison
+## 3. Compatibility Matrix
 
-### PRoot Wrapper (Python/Go tools)
-```sh
-#!/system/bin/sh
-export ANTHROPIC_API_KEY='sk-...'
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME=/root
-exec /data/local/tmp/ancli/bin/proot \
-    -r /data/local/tmp/ancli/rootfs \
-    -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard \
-    -w /root /usr/bin/env aider "$@"
-```
-
-### Termux Host Wrapper (Node.js tools)
-```sh
-#!/system/bin/sh
-export OPENAI_API_KEY='sk-...'
-export PATH=/data/data/com.termux/files/usr/bin:/system/bin
-export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
-export TERMUX_PREFIX=/data/data/com.termux/files/usr
-exec /data/data/com.termux/files/usr/bin/opencode "$@"
-```
-
----
-
-## 5. Requirements & Prerequisites
-
-| Requirement | PRoot Tools | Termux Host Tools |
-| :--- | :--- | :--- |
-| **Root access** | Required | Required |
-| **AnCLI module** | Required | Required |
-| **Termux installed** | Not needed | **Required** |
-| **`pkg install nodejs`** | Not needed | **Required** |
-| **Network on first install** | Required (Ubuntu tarball) | Required (npm registry) |
-
----
-
-## 6. Summary & Recommendations
-
-1. **PRoot for Python/Go**: Keep using PRoot for tools like `aider`, `mimo`, and `agy`. The container is stable on Android 15.
-
-2. **Termux Host for Node.js**: All npm-based tools must use the `termux_host` install mode. This is the only reliable way to run Node.js tooling on Android 15 with root.
-
-3. **Adding New Tools to the Registry**: Set `"install_mode": "proot"` for Python/Go tools, and `"install_mode": "termux_host"` for npm-based tools. See the registry schema in [ARCHITECTURE.md](ARCHITECTURE.md).
+| Application | Stack | Status | Execution Backend | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **Aider** | Python | ✅ **Supported** | PRoot / Ubuntu Base | Runs via `pip` |
+| **MiMo Code** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
+| **Antigravity CLI (agy)** | Go | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
+| **Claude Code** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
+| **OpenCode** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
