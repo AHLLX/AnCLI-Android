@@ -154,7 +154,7 @@ export GODEBUG=netdns=go
 for i in \$(seq 10 25); do
     ip addr add 198.18.0.\$i/32 dev lo 2>/dev/null || true
 done
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b "$PWD" -b {ANCLI_DIR}/hosts:/etc/hosts -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
+exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b "$PWD" -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
