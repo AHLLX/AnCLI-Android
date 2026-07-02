@@ -122,7 +122,7 @@ fi
 
 {exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
 export HOME=/root
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b "$PWD" -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root {executable} "$@"
+exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b "$PWD" -b {ANCLI_DIR}/hosts:/etc/hosts -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
@@ -214,6 +214,16 @@ def repair_env(registry):
         print("\033[92m[OK] Container DNS configuration repaired (/etc/resolv.conf).\033[0m")
     except Exception as e:
         print(f"\033[91m[X] Failed to repair DNS: {e}\033[0m")
+
+    # 1.1 Fix/Create custom pure hosts file
+    hosts_path = f"{ANCLI_DIR}/hosts"
+    try:
+        with open(hosts_path, "w") as f:
+            f.write("127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n")
+        os.system(f"chmod 777 {hosts_path} 2>/dev/null")
+        print("\033[92m[OK] Pure custom hosts template created.\033[0m")
+    except Exception as e:
+        print(f"\033[91m[X] Failed to create hosts template: {e}\033[0m")
 
     # 2. Fix root hidden config permissions (shell ownership bypass)
     root_dir = f"{ROOTFS}/root"
