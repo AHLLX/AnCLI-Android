@@ -20,7 +20,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.7"
+VERSION = "1.2.8"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -183,11 +183,17 @@ def run_cmd(cmd, in_proot=False):
         return False
     
     if in_proot:
+        # Extract proxy variables from Python's process environment to forward inside PRoot
+        proxy_args = ""
+        for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+            if key in os.environ:
+                proxy_args += f" {key}={shlex.quote(os.environ[key])}"
+
         # Wrap command with pipefail to ensure piping errors (like missing curl) are caught correctly
         proot_cmd = (
             f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root "
             f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
-            f"HOME=/root bash -c {shlex.quote('set -o pipefail; ' + cmd)}"
+            f"HOME=/root{proxy_args} bash -c {shlex.quote('set -o pipefail; ' + cmd)}"
         )
         print(f"\033[96m> [PRoot] {cmd}\033[0m")
         result = subprocess.run(proot_cmd, shell=True)
