@@ -171,29 +171,23 @@ for _conf_dir in /root/.config /root/.gemini /root/.claude /root/.local; do
     fi
 done
 
-# Build proot bind list, skipping /sdcard if $PWD is already beneath it (avoids duplicate bind).
-_EXTRA_BIND=""
+# Determine working directory and launch proot accordingly.
+# Only treat $PWD as valid if it starts with '/' (Android absolute path).
+# Windows paths, empty values, or /root all fall back to container's /root.
 case "$PWD" in
-    /sdcard|/sdcard/*|/storage/emulated/0|/storage/emulated/0/*) ;;
-    *) _EXTRA_BIND="-b \\"$PWD\\" -w \\"$PWD\\"" ;;
+    /sdcard|/sdcard/*|/storage/emulated/0|/storage/emulated/0/*)
+        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
+        ;;
+    /root|/)
+        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w /root /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
+        ;;
+    /*)
+        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -b "$PWD" -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
+        ;;
+    *)
+        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w /root /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
+        ;;
 esac
-
-exec {ANCLI_DIR}/bin/proot \\
-    -r {ROOTFS} \\
-    -b /dev \\
-    -b /proc \\
-    -b /sys \\
-    -b {ANCLI_DIR} \\
-    -b /sdcard \\
-    -b {ANCLI_DIR}/hosts:/etc/hosts \\
-    -b /data/adb \\
-    -w /root \\
-    $_EXTRA_BIND \\
-    /usr/bin/env \\
-    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin \\
-    HOME=/root \\
-    GODEBUG=netdns=go \\
-    {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
