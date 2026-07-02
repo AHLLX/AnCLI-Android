@@ -10,7 +10,6 @@ ROOTFS="${ANCLI_DIR}/rootfs"
 BIN_DIR="${ANCLI_DIR}/bin"
 UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 
-PROOT_URL="https://github.com/proot-me/proot/releases/download/v5.3.0/proot-v5.3.0-aarch64-static"
 UBUNTU_PATH="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
 ui_print "============================================"
@@ -22,33 +21,11 @@ ui_print ""
 ui_print ">> Preparing directories..."
 mkdir -p "$ROOTFS" "$BIN_DIR"
 
-# 2. Download PRoot
-if [ ! -x "$BIN_DIR/proot" ]; then
-    ui_print ">> Downloading PRoot v5.3.0..."
-    success=0
-    # Try direct GitHub download, then various mirror proxies
-    for source in \
-        "$PROOT_URL" \
-        "https://gh-proxy.com/${PROOT_URL}" \
-        "https://ghfast.top/${PROOT_URL}" \
-        "https://gh.moeyy.cn/${PROOT_URL}"; do
-        
-        ui_print ">> Trying source: $source"
-        if curl -f -L --connect-timeout 20 --max-time 120 --progress-bar \
-            -o "$BIN_DIR/proot" "$source" 2>/dev/null && [ -s "$BIN_DIR/proot" ]; then
-            success=1
-            break
-        fi
-    done
-    
-    if [ "$success" -ne 1 ]; then
-        abort "Failed to download PRoot from all available sources"
-    fi
-    chmod 755 "$BIN_DIR/proot"
-    ui_print ">> PRoot downloaded successfully."
-else
-    ui_print ">> PRoot already present, skipping."
-fi
+# 2. Deploy PRoot from module package
+ui_print ">> Deploying PRoot..."
+cp "$MODPATH/bin/proot" "$BIN_DIR/proot"
+chmod 755 "$BIN_DIR/proot"
+ui_print ">> PRoot deployed successfully."
 
 # 3. Download & Extract Ubuntu Base
 if [ ! -f "$ROOTFS/bin/bash" ]; then
@@ -125,6 +102,21 @@ SETUP
 else
     ui_print ">> Dependencies already installed, skipping APT."
 fi
+
+# 4b. Ensure /usr/local directory structure exists for npm global installs
+#     Ubuntu Base 24.04 does not create /usr/local by default when nodejs/npm
+#     are installed via apt. npm -g requires /usr/local/lib/node_modules to exist.
+ui_print ">> Ensuring npm global install paths..."
+mkdir -p "$ROOTFS/usr/local/bin" \
+         "$ROOTFS/usr/local/sbin" \
+         "$ROOTFS/usr/local/lib/node_modules" \
+         "$ROOTFS/usr/local/share" \
+         "$ROOTFS/root/.npm/_logs"
+chmod 755 "$ROOTFS/usr/local/bin" \
+          "$ROOTFS/usr/local/sbin" \
+          "$ROOTFS/usr/local/lib" \
+          "$ROOTFS/usr/local/lib/node_modules"
+ui_print ">> npm paths ready."
 
 # 5. Deploy AnCLI Core from module package
 ui_print ">> Deploying AnCLI Core..."

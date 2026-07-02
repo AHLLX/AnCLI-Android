@@ -1,23 +1,32 @@
 # AnCLI (Android CLI)
 
-AnCLI is a unified environment manager and installer designed to run standard Linux command-line (CLI) tools on rooted Android devices. By bootstrapping a minimal Ubuntu Base rootfs via PRoot, it bypasses Android's Bionic C library limitations, allowing you to run Node.js, Python, and Go-based CLI utilities natively and systemlessly.
+AnCLI is a **dual-mode** environment manager for rooted Android devices. It manages CLI tools through two complementary execution backends:
+
+- **PRoot/Ubuntu mode** — Runs Python and Go tools inside an isolated Ubuntu glibc container via PRoot, completely independent of any third-party app.
+- **Termux Host mode** — Runs Node.js-based tools natively through the Termux runtime on the Android host, bypassing PRoot's `ptrace` thread-interception limitations that prevent `npm` from working inside a container on Android 15.
 
 ## Features
 
-- **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Commands are automatically mounted to `/system/bin` on boot, with instant-access symlinks injected into dynamic root paths (reboot-free after app installation).
+- **Dual-Mode Execution**: Automatically selects the correct backend per tool. Python/Go tools run inside the Ubuntu PRoot container; Node.js tools run via the Termux host runtime.
+- **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Wrappers are mounted to `/system/bin` on boot, with instant-access wrappers injected into dynamic root paths (reboot-free).
 - **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
-- **Boot Service**: Built-in service automatically restores DNS configurations and file permissions on every boot.
-- **Dynamic Configuration Injection**: Prompts for required environment variables (e.g., API keys, custom endpoints) during installation and bakes them securely into execution wrappers.
+- **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
+- **Dynamic Configuration Injection**: Prompts for environment variables (e.g., API keys, custom endpoints) during installation and bakes them securely into execution wrappers.
 - **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
-- **Security Hardened**: Implements command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
+- **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 
 ## Supported Applications
 *(Fetched dynamically from the cloud registry)*
-- **Aider** (AI pair programming terminal agent)
-- **Claude Code** (Anthropic's official terminal agent)
-- **OpenCode** (Open-source terminal-based coding agent)
-- **MiMo Code** (Terminal agent tailored for Android/Proot)
-- **Antigravity CLI (agy)** (Google's terminal agent)
+
+| App | Runtime | Backend |
+| :--- | :--- | :--- |
+| **Aider** | Python | PRoot/Ubuntu |
+| **MiMo Code** | Python | PRoot/Ubuntu |
+| **Antigravity CLI (agy)** | Go (static) | PRoot/Ubuntu |
+| **Claude Code** | Node.js (Bun) | Termux Host |
+| **OpenCode** | Node.js | Termux Host |
+
+> **Note**: Node.js tools require [Termux](https://termux.dev) to be installed on your device. AnCLI will automatically detect Termux and guide setup if it is absent.
 
 ## Installation
 
@@ -25,8 +34,8 @@ AnCLI is a unified environment manager and installer designed to run standard Li
 
 1. Download `ancli-module.zip` from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your **Magisk/KernelSU/APatch Manager** app.
-3. Navigate to **Modules** -> **Install from storage** and select the ZIP file.
-4. After the bootstrap installation finishes, open any root terminal and run `ancli`.
+3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
+4. After bootstrap finishes, open any root terminal and run `ancli`.
 
 ### Method B: CLI Bootstrap
 
@@ -41,7 +50,6 @@ This script detects your active root manager, downloads the module ZIP, and guid
 ## Usage
 
 ### Interactive Menu
-Run the package manager interface:
 ```bash
 ancli
 ```
@@ -58,7 +66,7 @@ ancli --version                # Show version info
 ```
 
 ### Running Installed Tools
-Once a tool is installed, run it directly from any shell without prefixing `ancli`:
+Once a tool is installed, run it directly from any shell:
 ```bash
 aider
 claude
@@ -69,15 +77,15 @@ opencode
 
 | Component | Path | Description |
 | :--- | :--- | :--- |
-| **Ubuntu Rootfs** | `/data/local/tmp/ancli/rootfs/` | Guest container directory tree |
-| **AnCLI Core** | `/data/local/tmp/ancli/bin/ancli-core.py` | Python manager executable |
-| **State Database** | `/data/local/tmp/ancli/installed.json` | Installed application metadata |
-| **Module Directory** | `/data/adb/modules/ancli/` | Magisk/KSU systemless module files |
-| **Dynamic Bin Paths** | `/data/adb/ksu/bin/` or `/data/adb/ap/bin/` | Wrappers for reboot-free access |
+| **Ubuntu Rootfs** | `/data/local/tmp/ancli/rootfs/` | PRoot guest container |
+| **AnCLI Core** | `/data/local/tmp/ancli/bin/ancli-core.py` | Python package manager |
+| **State Database** | `/data/local/tmp/ancli/installed.json` | Installed app metadata |
+| **Module Directory** | `/data/adb/modules/ancli/` | Systemless module files |
+| **Dynamic Bin Paths** | `/data/adb/ksu/bin/` or `/data/adb/ap/bin/` | Reboot-free wrapper paths |
 
 ## Custom Mirror
 
-To use a specific Ubuntu archive mirror during rootfs bootstrap, export the `ANCLI_MIRROR` variable before installation:
+To use a specific Ubuntu archive mirror during rootfs bootstrap:
 
 ```bash
 export ANCLI_MIRROR="archive.ubuntu.com"
@@ -85,8 +93,8 @@ export ANCLI_MIRROR="archive.ubuntu.com"
 
 ## Uninstallation
 
-Remove the AnCLI module from your Magisk/KernelSU/APatch Manager app. The internal uninstaller will automatically clean up all associated binaries, rootfs directories, and environment wrappers.
+Remove the AnCLI module from your root manager app. The internal uninstaller automatically cleans up all binaries, rootfs directories, and environment wrappers.
 
 ## Technical Details
 
-For information on the dual-injection wrapper mechanism, PRoot configuration, and registry schema, see the [Architecture Document](ARCHITECTURE.md).
+For the dual-mode execution architecture, dual-injection wrapper mechanism, PRoot configuration, and registry schema, see the [Architecture Document](ARCHITECTURE.md). For technical boundaries and compatibility analysis, see the [Compatibility Dossier](COMPATIBILITY.md).

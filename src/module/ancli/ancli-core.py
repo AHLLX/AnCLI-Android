@@ -16,7 +16,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN = "/data/adb/ap/bin"
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = f"{ANCLI_DIR}/registry.json"
