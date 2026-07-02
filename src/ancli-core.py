@@ -22,7 +22,7 @@ TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 VERSION = "1.2.2"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
-LOCAL_REGISTRY = "/tmp/ancli-registry.json"   # inside proot rootfs, always writable
+LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 
 # Allowed command prefixes for security validation
