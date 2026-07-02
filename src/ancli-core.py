@@ -20,7 +20,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.6"
+VERSION = "1.2.7"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -106,9 +106,19 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
         for k, v in env_dict.items():
             exports += f'export {k}={shlex.quote(v)}\n'
 
-    # Injected env vars
+    # Injected env vars and dynamic WiFi system proxy auto-inheritance logic on Android Host
     wrapper = (
         f"#!/system/bin/sh\n"
+        f"# Dynamic Android Host WiFi system proxy detection & inheritance\n"
+        f"PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)\n"
+        f"if [ -n \"$PROXY_INFO\" ]; then\n"
+        f"    PROXY_HOST=$(echo \"$PROXY_INFO\" | sed -n 's/.*HttpProxy:[[:space:]]*\\[\\([^\\]*\\)\\].*/\\1/p')\n"
+        f"    PROXY_PORT=$(echo \"$PROXY_INFO\" | sed -ne 's/.*HttpProxy:[[:space:]]*\\[[^\\]*\\][[:space:]]*\\([0-9]*\\).*/\\1/p')\n"
+        f"    if [ -n \"$PROXY_HOST\" ] && [ -n \"$PROXY_PORT\" ]; then\n"
+        f"        export http_proxy=\"http://$PROXY_HOST:$PROXY_PORT\"\n"
+        f"        export https_proxy=\"http://$PROXY_HOST:$PROXY_PORT\"\n"
+        f"    fi\n"
+        f"fi\n\n"
         f"{exports}"
         f"export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin\n"
         f"export HOME=/root\n"
@@ -168,39 +178,16 @@ def validate_cmd(cmd):
         return False
     return True
 
-def detect_android_proxy():
-    """Detect Android host WiFi system proxy from connectivity service."""
-    try:
-        # Run dumpsys connectivity on host to extract HttpProxy
-        res = subprocess.run("dumpsys connectivity", shell=True, capture_output=True, text=True)
-        if res.returncode == 0:
-            # Match pattern: HttpProxy: [host] port
-            match = re.search(r'HttpProxy:\s+\[([^\]]+)\]\s+(\d+)', res.stdout)
-            if match:
-                host, port = match.group(1), match.group(2)
-                proxy_url = f"http://{host}:{port}"
-                return proxy_url
-    except Exception:
-        pass
-    return None
-
 def run_cmd(cmd, in_proot=False):
     if not validate_cmd(cmd):
         return False
     
     if in_proot:
-        # Auto-detect and inherit Android host WiFi proxy settings inside the container
-        proxy_prefix = ""
-        proxy_url = detect_android_proxy()
-        if proxy_url:
-            print(f"\033[92m[i] Auto-detected Android WiFi proxy: {proxy_url} (inherited inside PRoot)\033[0m")
-            proxy_prefix = f"export http_proxy={shlex.quote(proxy_url)}; export https_proxy={shlex.quote(proxy_url)}; "
-
         # Wrap command with pipefail to ensure piping errors (like missing curl) are caught correctly
         proot_cmd = (
             f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root "
             f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
-            f"HOME=/root bash -c {shlex.quote('set -o pipefail; ' + proxy_prefix + cmd)}"
+            f"HOME=/root bash -c {shlex.quote('set -o pipefail; ' + cmd)}"
         )
         print(f"\033[96m> [PRoot] {cmd}\033[0m")
         result = subprocess.run(proot_cmd, shell=True)
