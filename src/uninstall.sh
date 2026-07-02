@@ -16,21 +16,48 @@ echo "=================================================="
 echo "          AnCLI Uninstaller"
 echo "=================================================="
 
-printf "${Y}[!]${NC} This will PERMANENTLY delete AnCLI and ALL installed tools.\n"
-printf "    Continue? [y/N] "
-read -r confirm
-case "$confirm" in
-    [yY]) ;;
-    *) echo "Aborted."; exit 0 ;;
-esac
+# Determine if running in interactive terminal (TTY)
+INTERACTIVE=0
+if [ -t 0 ] && [ -t 1 ]; then
+    INTERACTIVE=1
+fi
+
+KEEP_DATA=1  # Default to keep container data during manager upgrades / non-interactive uninstall
+
+if [ "$INTERACTIVE" -eq 1 ]; then
+    printf "${Y}[?]${NC} Choose uninstallation mode:\n"
+    printf "    [1] Keep my containers and configurations (Recommended for upgrading/reinstalling Magisk modules)\n"
+    printf "    [2] Full Purge (Permanently delete all wrappers, configurations, and the Ubuntu container)\n"
+    printf "    Choice [1/2]: "
+    read -r choice
+    case "$choice" in
+        2) KEEP_DATA=0 ;;
+        *) KEEP_DATA=1 ;;
+    esac
+else
+    # Non-interactive mode (e.g. running from Magisk/KSU Manager uninstall tap)
+    # Check if user explicitly created a file to force delete everything, otherwise keep data safe
+    if [ -f "/data/local/tmp/ancli_force_purge" ]; then
+        KEEP_DATA=0
+    else
+        KEEP_DATA=1
+    fi
+fi
 echo ""
 
 info "Stopping any running Proot instances..."
 killall proot 2>/dev/null || true
 
-info "Removing Rootfs and Core files (This may take a while)..."
-rm -rf "$ANCLI_DIR"
-ok "Deleted $ANCLI_DIR"
+if [ "$KEEP_DATA" -eq 1 ]; then
+    info "Preserving container rootfs and configs..."
+    # Only clean up the executables bin and dynamic wrappers, keeping rootfs and installed.json database
+    rm -rf "$ANCLI_DIR/bin"
+    ok "Cleaned core scripts in $ANCLI_DIR/bin, kept rootfs & configs."
+else
+    info "Removing Rootfs and Core files (This may take a while)..."
+    rm -rf "$ANCLI_DIR"
+    ok "Deleted $ANCLI_DIR"
+fi
 
 info "Removing Systemless Module..."
 rm -rf "$MOD_DIR"
@@ -38,7 +65,6 @@ ok "Deleted $MOD_DIR"
 
 info "Removing dynamic KSU/AP wrappers..."
 if [ -d "$KSU_BIN" ]; then
-    # Remove any scripts pointing to ancli dir
     grep -rl "$ANCLI_DIR" "$KSU_BIN" 2>/dev/null | xargs rm -f 2>/dev/null || true
     ok "Cleaned KSU bin wrappers"
 fi
@@ -48,5 +74,9 @@ if [ -d "$AP_BIN" ]; then
     ok "Cleaned Apatch bin wrappers"
 fi
 
-ok "AnCLI has been completely uninstalled from your device."
+if [ "$KEEP_DATA" -eq 1 ]; then
+    ok "AnCLI has been uninstalled. Your containers, Python packages, and API configs are SAFELY preserved."
+else
+    ok "AnCLI has been completely purged from your device."
+fi
 echo "Please reboot your phone if you wish to clear the Magisk/KSU module mount immediately."

@@ -9,8 +9,20 @@ ANCLI_DIR="/data/local/tmp/ancli"
 # Kill running proot instances
 killall proot 2>/dev/null || true
 
-# Clean up rootfs and core files
-rm -rf "$ANCLI_DIR"
+# Determine if we should preserve the container and config files
+# Default to KEEP (KEEP_DATA=1) unless the user explicitly requested a force purge
+KEEP_DATA=1
+if [ -f "/data/local/tmp/ancli_force_purge" ]; then
+    KEEP_DATA=0
+fi
+
+if [ "$KEEP_DATA" -eq 1 ]; then
+    # Only clean up the dynamic host-side executable components, keeping rootfs and installed.json database intact
+    rm -rf "$ANCLI_DIR/bin"
+else
+    # Fully delete everything
+    rm -rf "$ANCLI_DIR"
+fi
 
 # Clean KSU/AP dynamic wrappers that reference ancli
 for BIN_DIR in /data/adb/ksu/bin /data/adb/ap/bin; do
