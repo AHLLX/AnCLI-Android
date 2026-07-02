@@ -1,5 +1,13 @@
-## AnCLI v1.1.0 — Global Instant Access & UX Polish
+## AnCLI v1.1.1 — Storage Bind Fix
 
+### Bug Fixes
+**MiMo/Aider `chdir` Failure on Internal Storage**
+- **Root Cause**: When executing from `/storage/emulated/0/...` (which `/sdcard` symlinks to), `proot` failed to locate the directory inside the Ubuntu rootfs because only `/sdcard` was explicitly bound.
+- **Fix**: The PRoot wrapper generator now explicitly binds `-b /storage` alongside `-b /sdcard`, ensuring all nested and symlinked storage paths resolve correctly within the guest container without triggering `proot warning: can't chdir`.
+
+---
+
+## AnCLI v1.1.0 — Global Instant Access & UX Polish
 ### What's New
 **True "No Reboot" Global Execution for KernelSU**
 - **Root Cause**: KernelSU's SELinux policy enforces a strict prohibition on creating new files within `/data/adb/ksu/bin` after boot, which previously blocked `ancli install` from establishing instant-access wrappers.
