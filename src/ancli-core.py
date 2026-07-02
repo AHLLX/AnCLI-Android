@@ -6,6 +6,7 @@ import shlex
 import time
 import subprocess
 import urllib.request
+import re
 
 # Paths inside the PRoot environment
 ANCLI_DIR = "/data/local/tmp/ancli"
@@ -19,7 +20,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.5"
+VERSION = "1.2.6"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -167,16 +168,39 @@ def validate_cmd(cmd):
         return False
     return True
 
+def detect_android_proxy():
+    """Detect Android host WiFi system proxy from connectivity service."""
+    try:
+        # Run dumpsys connectivity on host to extract HttpProxy
+        res = subprocess.run("dumpsys connectivity", shell=True, capture_output=True, text=True)
+        if res.returncode == 0:
+            # Match pattern: HttpProxy: [host] port
+            match = re.search(r'HttpProxy:\s+\[([^\]]+)\]\s+(\d+)', res.stdout)
+            if match:
+                host, port = match.group(1), match.group(2)
+                proxy_url = f"http://{host}:{port}"
+                return proxy_url
+    except Exception:
+        pass
+    return None
+
 def run_cmd(cmd, in_proot=False):
     if not validate_cmd(cmd):
         return False
     
     if in_proot:
+        # Auto-detect and inherit Android host WiFi proxy settings inside the container
+        proxy_prefix = ""
+        proxy_url = detect_android_proxy()
+        if proxy_url:
+            print(f"\033[92m[i] Auto-detected Android WiFi proxy: {proxy_url} (inherited inside PRoot)\033[0m")
+            proxy_prefix = f"export http_proxy={shlex.quote(proxy_url)}; export https_proxy={shlex.quote(proxy_url)}; "
+
         # Wrap command with pipefail to ensure piping errors (like missing curl) are caught correctly
         proot_cmd = (
             f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root "
             f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
-            f"HOME=/root bash -c {shlex.quote('set -o pipefail; ' + cmd)}"
+            f"HOME=/root bash -c {shlex.quote('set -o pipefail; ' + proxy_prefix + cmd)}"
         )
         print(f"\033[96m> [PRoot] {cmd}\033[0m")
         result = subprocess.run(proot_cmd, shell=True)
