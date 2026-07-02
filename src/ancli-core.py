@@ -15,14 +15,14 @@ MOD_DIR = "/data/adb/modules/ancli"
 
 # Optional dynamic bin paths (KSU/Apatch)
 KSU_BIN = "/data/adb/ksu/bin"
-AP_BIN = "/data/adb/ap/bin"
+AP_BIN  = "/data/adb/ap/bin"
 
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
-REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
+REGISTRY_URL   = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 
@@ -58,7 +58,7 @@ def fetch_registry():
         print(f"\033[93m[!] Using local cache (network unavailable: {last_net_err})\033[0m")
         with open(LOCAL_REGISTRY, "r") as f:
             return json.load(f)
-    
+
     # Critical Edge Case: If offline and no cache exists (e.g., first install),
     # try loading the bundled fallback registry shipped with the module zip.
     fallback_path = f"{ANCLI_DIR}/bin/registry.json"
@@ -92,7 +92,7 @@ def save_installed(installed):
                 pass
         with open(tmp_file, "w") as f:
             json.dump(installed, f, indent=2)
-        
+
         # Replace atomically
         if os.path.exists(INSTALLED_FILE):
             try:
@@ -100,10 +100,12 @@ def save_installed(installed):
             except Exception:
                 pass
         os.rename(tmp_file, INSTALLED_FILE)
-        # Ensure correct permission and ownership
+        # Ensure correct permission and ownership.
+        # Use Android shell UID/GID (2000:2000) numerically for reliability
+        # since 'shell' username may not exist inside the proot container's /etc/passwd.
         try:
-            os.system(f"chown shell:shell {INSTALLED_FILE} 2>/dev/null")
-            os.system(f"chmod 777 {INSTALLED_FILE} 2>/dev/null")
+            os.system(f"chown 2000:2000 {INSTALLED_FILE} 2>/dev/null")
+            os.chmod(INSTALLED_FILE, 0o666)
         except Exception:
             pass
     except Exception as e:
@@ -133,10 +135,13 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
         for k, v in env_dict.items():
             exports += f"export {k}='{v}'\n"
 
-    # Injected env vars and dynamic WiFi system proxy auto-inheritance logic on Android Host
-# Injected env vars and dynamic WiFi system proxy auto-inheritance logic on Android Host
+    # Build proot bind arguments.
+    # Avoid duplicate bind if $PWD happens to be /sdcard or its submount.
+    # We use a shell variable to deduplicate at runtime.
     wrapper = f"""#!/system/bin/sh
-# Dynamic Android Host WiFi system proxy detection & inheritance
+# AnCLI wrapper for: {executable}
+
+# --- Android WiFi proxy detection & inheritance ---
 PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)
 if [ -n "$PROXY_INFO" ]; then
     PROXY_HOST=$(echo "$PROXY_INFO" | sed -n 's/.*HttpProxy:[[:space:]]*\\[\\([^ ]*\\)\\].*/\\1/p')
@@ -149,19 +154,66 @@ fi
 
 {exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
 export HOME=/root
+# Force Go runtime to use its own DNS resolver, bypassing Android dnsproxyd hijacking.
 export GODEBUG=netdns=go
-# Auto-bind potential Clash/Tun virtual IPs to local loopback device to satisfy Go language socket bind traversal
-for i in \$(seq 10 25); do
-    ip addr add 198.18.0.\$i/32 dev lo 2>/dev/null || true
+
+# Auto-bind potential Clash/Tun virtual IPs to local loopback to satisfy Go socket bind traversal.
+for i in $(seq 10 25); do
+    ip addr add 198.18.0.$i/32 dev lo 2>/dev/null || true
 done
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b "$PWD" -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
+
+# Fix ownership of agy/gemini/claude auth credential directories on every launch.
+# This prevents root-locked files from blocking subsequent shell-user runs.
+for _conf_dir in /root/.config /root/.gemini /root/.claude /root/.local; do
+    if [ -d "{ROOTFS}$_conf_dir" ]; then
+        chown -R 2000:2000 "{ROOTFS}$_conf_dir" 2>/dev/null || true
+        chmod -R 755 "{ROOTFS}$_conf_dir" 2>/dev/null || true
+    fi
+done
+
+# Build proot bind list, skipping /sdcard if $PWD is already beneath it (avoids duplicate bind).
+_EXTRA_BIND=""
+case "$PWD" in
+    /sdcard|/sdcard/*|/storage/emulated/0|/storage/emulated/0/*) ;;
+    *) _EXTRA_BIND="-b \\"$PWD\\" -w \\"$PWD\\"" ;;
+esac
+
+exec {ANCLI_DIR}/bin/proot \\
+    -r {ROOTFS} \\
+    -b /dev \\
+    -b /proc \\
+    -b /sys \\
+    -b {ANCLI_DIR} \\
+    -b /sdcard \\
+    -b {ANCLI_DIR}/hosts:/etc/hosts \\
+    -b /data/adb \\
+    -w /root \\
+    $_EXTRA_BIND \\
+    /usr/bin/env \\
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin \\
+    HOME=/root \\
+    GODEBUG=netdns=go \\
+    {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
 def _write_wrapper_to_paths(executable, wrapper):
     """Write a wrapper script to the systemless module path and all instant-access paths."""
-    # 1. Systemless module (post-reboot)
-    sys_bin = f"{MOD_DIR}/system/bin"
+    # Also write to ANCLI_DIR/bin for direct 'sh /data/local/tmp/ancli/bin/<cmd>' invocation
+    # (bypasses noexec restrictions on /data/local/tmp without requiring a reboot).
+    ancli_bin_path = f"{ANCLI_DIR}/bin/{executable}"
+    try:
+        if os.path.exists(ancli_bin_path):
+            os.remove(ancli_bin_path)
+        with open(ancli_bin_path, "w") as f:
+            f.write(wrapper)
+        os.chmod(ancli_bin_path, 0o755)
+        print(f"\033[92m[OK] Written: {ancli_bin_path}\033[0m")
+    except Exception as e:
+        print(f"\033[93m[!] Warning: Could not write to {ancli_bin_path}: {e}\033[0m")
+
+    # 1. Systemless module path (takes effect after reboot via Magisk/KSU overlay)
+    sys_bin  = f"{MOD_DIR}/system/bin"
     sys_path = f"{sys_bin}/{executable}"
     try:
         os.makedirs(sys_bin, exist_ok=True)
@@ -173,7 +225,7 @@ def _write_wrapper_to_paths(executable, wrapper):
     except Exception as e:
         print(f"\033[93m[!] Warning: Could not write systemless wrapper to {sys_path}: {e}\033[0m")
 
-    # 2. Instant access (KSU / APatch)
+    # 2. Instant-access paths (KSU / APatch), take effect immediately without reboot
     for instant_bin in [KSU_BIN, AP_BIN]:
         if os.path.isdir(instant_bin):
             try:
@@ -190,13 +242,17 @@ def _write_wrapper_to_paths(executable, wrapper):
 
 def remove_wrapper(executable):
     paths = [
+        f"{ANCLI_DIR}/bin/{executable}",
         f"{MOD_DIR}/system/bin/{executable}",
         f"{KSU_BIN}/{executable}",
         f"{AP_BIN}/{executable}",
     ]
     for p in paths:
         if os.path.exists(p):
-            os.remove(p)
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 
 # ---------------------------------------------------------------------------
 # Security
@@ -231,10 +287,29 @@ def run_cmd(cmd):
 # Install / Uninstall / Update / Config / Repair
 # ---------------------------------------------------------------------------
 
+def _fix_config_permissions():
+    """Fix ownership of auth config directories so both root and shell users can access them."""
+    root_dir = f"{ROOTFS}/root"
+    if not os.path.isdir(root_dir):
+        return
+    # chmod the root home dir itself so shell user can enter it
+    os.system(f"chmod 755 {root_dir} 2>/dev/null")
+    for conf_dir in [".config", ".claude", ".gemini", ".local"]:
+        full_path = f"{root_dir}/{conf_dir}"
+        if os.path.exists(full_path):
+            # Use numeric UID 2000 (Android shell) for reliability
+            os.system(f"chown -R 2000:2000 {full_path} 2>/dev/null")
+            os.system(f"chmod -R 755 {full_path} 2>/dev/null")
+
 def repair_env(registry):
     """Diagnose and fix container environment, resolv.conf, permissions, and wrappers."""
     print("\033[96m[*] Starting environment diagnostics and repair...\033[0m")
-    
+
+    # Guard: ROOTFS must be a real path before doing any recursive operations
+    if not ROOTFS or not os.path.isabs(ROOTFS) or len(ROOTFS) < 10:
+        print(f"\033[91m[X] Refusing to operate: ROOTFS path looks invalid: {ROOTFS}\033[0m")
+        return
+
     # 1. Fix resolv.conf DNS
     resolv_path = f"{ROOTFS}/etc/resolv.conf"
     try:
@@ -247,46 +322,37 @@ def repair_env(registry):
     except Exception as e:
         print(f"\033[91m[X] Failed to repair DNS: {e}\033[0m")
 
-    # 1.1 Fix/Create custom pure hosts file
+    # 1.1 Fix/Create custom pure hosts file (used as isolated /etc/hosts inside proot)
     hosts_path = f"{ANCLI_DIR}/hosts"
     try:
         with open(hosts_path, "w") as f:
             f.write("127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n")
-        os.system(f"chmod 777 {hosts_path} 2>/dev/null")
+        os.chmod(hosts_path, 0o644)
         print("\033[92m[OK] Pure custom hosts template created.\033[0m")
     except Exception as e:
         print(f"\033[91m[X] Failed to create hosts template: {e}\033[0m")
 
-    # 2. Fix root hidden config permissions (shell ownership bypass)
-    root_dir = f"{ROOTFS}/root"
-    try:
-        # Force host-side ownership and permissions for config folders to prevent permission issues
-        os.system(f"chmod 777 {root_dir}")
-        for conf_dir in [".config", ".claude", ".gemini"]:
-            full_path = f"{root_dir}/{conf_dir}"
-            if os.path.exists(full_path):
-                os.system(f"chown -R shell:shell {full_path} 2>/dev/null")
-                os.system(f"chmod -R 777 {full_path} 2>/dev/null")
-        print("\033[92m[OK] Guest config folder permissions and ownership restored.\033[0m")
-    except Exception as e:
-        pass
+    # 2. Fix auth config directory permissions (key fix for agy re-launch failures)
+    print("\033[96m[*] Repairing auth credential directory permissions...\033[0m")
+    _fix_config_permissions()
+    print("\033[92m[OK] Auth config folder permissions and ownership restored.\033[0m")
 
-    # 3. Repair executable permissions
+    # 3. Repair proot and ancli-core.py executable permissions
     try:
         proot_path = f"{ANCLI_DIR}/bin/proot"
         if os.path.exists(proot_path):
             os.chmod(proot_path, 0o755)
-        # Fix binary installation folders permissions to prevent write blocks
+        # Fix binary installation folders — use 755 not 777 for security
         for bin_dir in ["/usr/local/bin", "/usr/bin", "/bin"]:
             full_bin = f"{ROOTFS}{bin_dir}"
-            if os.path.exists(full_bin):
-                os.system(f"chown -R shell:shell {full_bin} 2>/dev/null")
-                os.system(f"chmod -R 777 {full_bin} 2>/dev/null")
+            if os.path.isdir(full_bin):
+                # chown to root:root (0:0) inside container is correct for system bins
+                os.system(f"chmod -R 755 {full_bin} 2>/dev/null")
         print("\033[92m[OK] Key binary executable permissions restored (0755).\033[0m")
     except Exception as e:
         print(f"\033[91m[X] Failed to restore binary permissions: {e}\033[0m")
 
-    # 3. Repair missing application wrappers
+    # 4. Repair missing application wrappers
     installed = load_installed()
     if installed:
         print(f"\033[96m[*] Verifying wrappers for installed apps: {', '.join(installed.keys())}...\033[0m")
@@ -298,24 +364,25 @@ def repair_env(registry):
 
         for app_id, info in installed.items():
             exec_name = info.get('executable', app_id)
-            # Check if wrapper is missing in KSU, AP, or module path
-            wrapper_paths = [
+            # Check each candidate path — only consider it "missing" if the
+            # parent directory actually exists (same logic as _write_wrapper_to_paths)
+            candidate_paths = [
+                f"{ANCLI_DIR}/bin/{exec_name}",
                 f"{MOD_DIR}/system/bin/{exec_name}",
                 f"{KSU_BIN}/{exec_name}",
-                f"{AP_BIN}/{exec_name}"
+                f"{AP_BIN}/{exec_name}",
             ]
             needs_recreate = False
-            for wp in wrapper_paths:
-                # If path parent exists, the file itself should exist
-                if os.path.isdir(os.path.dirname(wp)) and not os.path.exists(wp):
+            for wp in candidate_paths:
+                parent = os.path.dirname(wp)
+                if os.path.isdir(parent) and not os.path.exists(wp):
                     needs_recreate = True
                     break
-            
+
             if needs_recreate:
                 print(f"  \033[93m[!] Wrapper for '{app_id}' missing, regenerating...\033[0m")
                 app_reg = registry['apps'].get(app_id) if registry else None
                 runtime_env = app_reg.get('runtime_env', []) if app_reg else []
-                # Use stored environment config if available
                 stored_env = info.get('env', {})
                 generate_proot_wrapper(exec_name, stored_env if stored_env else None, runtime_env)
         print("\033[92m[OK] Wrapper integrity check complete.\033[0m")
@@ -324,46 +391,35 @@ def repair_env(registry):
 
     print("\033[92m[OK] Repair complete! If problems persist, try: ancli config <app_id>\033[0m")
 
+def _install_proot_common(app_id, app, registry_version="unknown"):
+    """Shared post-install bookkeeping: write wrapper and save state."""
+    runtime_env = app.get('runtime_env', [])
+    generate_proot_wrapper(app['executable'], {}, runtime_env)
+    installed = load_installed()
+    installed[app_id] = {
+        "name": app['name'],
+        "executable": app['executable'],
+        "install_mode": "proot",
+        "installed_version": registry_version,
+        "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "env": {},
+    }
+    save_installed(installed)
+    # Fix permissions immediately so the tool is usable without a reboot
+    _fix_config_permissions()
+    print(f"\033[92m[OK] Successfully installed {app['name']}! Type '{app['executable']}' to run.\033[0m")
+    print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
+
 def install_app(app_id, registry):
     if app_id not in registry['apps']:
         print(f"\033[91m[X] App {app_id} not found in registry.\033[0m")
         return
     app = registry['apps'][app_id]
-    install_mode = app.get('install_mode', 'proot')
+    reg_ver = app.get('version', registry.get('version', 'unknown'))
 
     print(f"\033[92m[*] Installing {app['name']}...\033[0m")
     print(f"\033[96m[i] Backend: proot\033[0m")
-    # Fetch registry version if available (registry may have version info, e.g. registry['version'] or we assume unknown)
-    # The registry version is often stored at registry['version'] but let's check registry['apps'][app_id].get('version')
-    reg_ver = app.get('version', registry.get('version', 'unknown'))
     _install_proot(app_id, app, reg_ver)
-
-def _install_termux(app_id, app):
-    """Install a Node.js tool via the Termux host runtime."""
-    termux_bin, npm_path = check_termux()
-    if not termux_bin:
-        print(f"\033[91m[X] Termux not found at {TERMUX_PREFIX}\033[0m")
-        print(f"\033[93m[!] Node.js tools require Termux. Please:\033[0m")
-        print(f"\033[93m    1. Install Termux from https://termux.dev\033[0m")
-        print(f"\033[93m    2. Open Termux and run: pkg install nodejs\033[0m")
-        print(f"\033[93m    3. Then re-run: ancli install {app_id}\033[0m")
-        return
-
-    if run_termux_cmd(app['install_cmd']):
-        generate_termux_wrapper(app['executable'], {})
-        installed = load_installed()
-        installed[app_id] = {
-            "name": app['name'],
-            "executable": app['executable'],
-            "install_mode": "termux_host",
-            "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "env_keys": [],
-        }
-        save_installed(installed)
-        print(f"\033[92m[OK] Successfully installed {app['name']}! Type '{app['executable']}' to run.\033[0m")
-        print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
-    else:
-        print(f"\033[91m[X] Installation failed.\033[0m")
 
 def _install_proot(app_id, app, registry_version="unknown"):
     """Install a tool inside the Ubuntu PRoot container."""
@@ -371,69 +427,48 @@ def _install_proot(app_id, app, registry_version="unknown"):
     # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands
     if not shutil.which("curl"):
         print("\033[96m[i] Container is missing 'curl'. Auto-installing dependencies via apt...\033[0m")
-        # Run silent apt-get update & install
         apt_cmd = "apt-get update -qy && apt-get install -qy curl ca-certificates"
         if not run_cmd(apt_cmd):
             print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
         else:
             print("\033[92m[OK] 'curl' and certificates installed successfully.\033[0m")
 
-    # Specific override for agy to bypass ADB shell piping / escaping bugs
+    # --- agy: bypass ADB shell piping/escaping by downloading via Python urllib ---
+    # The registry install_cmd for agy uses `curl | bash` which fails under adb due to
+    # shell escaping. We download the script natively and execute it as a local file.
     if app_id == "agy":
         try:
-            print("\033[96m[*] Downloading Antigravity installer via Python to bypass escaping...\033[0m")
+            print("\033[96m[*] Downloading Antigravity installer via Python to bypass pipe escaping...\033[0m")
             installer_url = "https://antigravity.google/cli/install.sh"
-            
-            # Setup urllib with proxy if available in process environment
-            proxy_url = os.environ.get('http_proxy') or os.environ.get('https_proxy') or os.environ.get('HTTP_PROXY') or os.environ.get('HTTPS_PROXY')
+
+            # Propagate proxy if set in process environment
+            proxy_url = (os.environ.get('http_proxy') or os.environ.get('https_proxy')
+                         or os.environ.get('HTTP_PROXY') or os.environ.get('HTTPS_PROXY'))
             if proxy_url:
                 handler = urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url})
-                opener = urllib.request.build_opener(handler)
+                opener  = urllib.request.build_opener(handler)
                 urllib.request.install_opener(opener)
-                
+
             req = urllib.request.Request(installer_url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=30) as response:
                 content = response.read()
                 os.makedirs("/tmp", exist_ok=True)
-                with open("/tmp/install.sh", "wb") as f:
+                with open("/tmp/install_agy.sh", "wb") as f:
                     f.write(content)
-            
-            # Execute the script locally
-            install_cmd = "bash /tmp/install.sh --dir /usr/local/bin"
-            if run_cmd(install_cmd):
-                generate_proot_wrapper(app['executable'], {}, app.get('runtime_env', []))
-                installed = load_installed()
-                installed[app_id] = {
-                    "name": app['name'],
-                    "executable": app['executable'],
-                    "install_mode": "proot",
-                    "installed_version": registry_version,
-                    "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "env": {},
-                }
-                save_installed(installed)
-                print(f"\033[92m[OK] Successfully installed {app['name']}! Type '{app['executable']}' to run.\033[0m")
-                print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
+
+            if run_cmd("bash /tmp/install_agy.sh --dir /usr/local/bin"):
+                _install_proot_common(app_id, app, registry_version)
+                return
+            else:
+                print("\033[91m[X] agy installer script failed.\033[0m")
                 return
         except Exception as e:
             print(f"\033[91m[X] Python downloader failed: {e}\033[0m")
             print("\033[93m[!] Falling back to standard shell installer...\033[0m")
 
-    runtime_env = app.get('runtime_env', [])
+    # --- Generic proot install path ---
     if run_cmd(app['install_cmd']):
-        generate_proot_wrapper(app['executable'], {}, runtime_env)
-        installed = load_installed()
-        installed[app_id] = {
-            "name": app['name'],
-            "executable": app['executable'],
-            "install_mode": "proot",
-            "installed_version": registry_version,
-            "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "env": {},  # Stores persisted user API keys / configs
-        }
-        save_installed(installed)
-        print(f"\033[92m[OK] Successfully installed {app['name']}! Type '{app['executable']}' to run.\033[0m")
-        print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
+        _install_proot_common(app_id, app, registry_version)
     else:
         print(f"\033[91m[X] Installation failed.\033[0m")
 
@@ -465,20 +500,18 @@ def update_app(app_id, registry):
     print(f"\033[93m[*] Updating {app.get('name', app_id)}...\033[0m")
 
     if run_cmd(cmd):
-        # Extract persisted env keys
         cached_env = installed[app_id].get('env', {})
         if cached_env:
             print(f"\033[92m[i] Re-injecting stored configuration keys: {', '.join(cached_env.keys())}\033[0m")
-        
+
         runtime_env = app.get('runtime_env', [])
-        # Regenerate wrapper, baking in the cached user keys
         generate_proot_wrapper(app.get('executable', app_id), cached_env if cached_env else None, runtime_env)
-        
-        # Update metadata
+
         reg_ver = app.get('version', registry.get('version', 'unknown'))
         installed[app_id]['installed_version'] = reg_ver
         installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
         save_installed(installed)
+        _fix_config_permissions()
         print(f"\033[92m[OK] Successfully updated {app.get('name', app_id)} to v{reg_ver}.\033[0m")
 
 def reconfigure_app(app_id, registry):
@@ -495,11 +528,10 @@ def reconfigure_app(app_id, registry):
         return
     print(f"\033[96m[*] Reconfiguring {app.get('name', app_id)}...\033[0m")
     for var in all_vars:
-        # Prompt, showing previous value as hint
         prev_val = installed[app_id].get('env', {}).get(var, '')
         hint = f" [{prev_val}]" if prev_val else ""
         val = input(f"\033[96mEnter {var}{hint} (leave blank to keep/skip): \033[0m").strip()
-        
+
         if val:
             env_dict[var] = val
         elif prev_val:
@@ -554,7 +586,7 @@ def show_menu():
             print("\033[91mInvalid choice.\033[0m")
 
 def print_help():
-    print("""\033[1;36mAnCLI (Android CLI) - Dual-Mode Environment Manager\033[0m
+    print("""\033[1;36mAnCLI (Android CLI) - Unified Systemless CLI Environment Manager\033[0m
 
 \033[1mUsage:\033[0m
   ancli                          Open interactive App Store menu
@@ -567,14 +599,19 @@ def print_help():
   ancli --version                Show version
   ancli --help                   Show this help message
 
-\033[1mExecution Backends:\033[0m
-  proot       Python/Go tools run inside Ubuntu PRoot container
-  termux_host Node.js tools run natively via Termux (requires Termux + nodejs)
+\033[1mExecution Backend:\033[0m
+  All tools run inside the Ubuntu PRoot container at:
+    /data/local/tmp/ancli/rootfs
+
+\033[1mDirect Invocation (bypasses noexec):\033[0m
+  sh /data/local/tmp/ancli/bin/agy
+  sh /data/local/tmp/ancli/bin/claude
+  sh /data/local/tmp/ancli/bin/mimo
 
 \033[1mExamples:\033[0m
   ancli install aider
-  ancli install opencode
-  ancli config claude-code
+  ancli install agy
+  ancli config aider
   ancli list
 """)
 
@@ -613,17 +650,19 @@ if __name__ == "__main__":
                 else:
                     print("\033[1;36m=== Installed Apps ===\033[0m")
                     for aid, info in installed.items():
-                        date = info.get('installed_at', 'unknown')
+                        date      = info.get('installed_at', 'unknown')
                         local_ver = info.get('installed_version', 'unknown')
-                        
-                        # 1. Integrity Check: verify if executable exists inside PRoot's /usr/local/bin
+
+                        # Integrity check: verify binary exists inside PRoot
                         exec_name = info.get('executable', aid)
-                        bin_path = f"{ROOTFS}/usr/local/bin/{exec_name}"
-                        # For aider/mimo it might be in standard path /usr/bin or /usr/local/bin, let's check both
-                        bin_exists = os.path.exists(bin_path) or os.path.exists(f"{ROOTFS}/usr/bin/{exec_name}")
+                        bin_exists = (
+                            os.path.exists(f"{ROOTFS}/usr/local/bin/{exec_name}") or
+                            os.path.exists(f"{ROOTFS}/usr/bin/{exec_name}") or
+                            os.path.exists(f"{ROOTFS}/root/.local/bin/{exec_name}")
+                        )
                         status_tag = "\033[92m[Active]\033[0m" if bin_exists else "\033[91m[Broken: Missing Binary]\033[0m"
-                        
-                        # 2. Check for update available online
+
+                        # Check for update available
                         update_tag = ""
                         if registry and aid in registry['apps']:
                             cloud_ver = registry['apps'][aid].get('version', registry.get('version', 'unknown'))
