@@ -233,10 +233,15 @@ def _write_wrapper_to_paths(executable, wrapper):
                 inst_path = f"{instant_bin}/{executable}"
                 ret = os.system(f"cp -f {tmp_wrapper} {inst_path} 2>/dev/null && chmod 755 {inst_path} 2>/dev/null")
                 if ret == 0:
-                    print(f"\033[92m[OK] Instant wrapper written: {inst_path}\033[0m")
+                    print(f"\033[92m[OK] Instant wrapper updated: {inst_path}\033[0m")
                 else:
-                    print(f"\033[93m[!] Warning: Could not write instant wrapper to {inst_path}\033[0m")
-                    print(f"    (The tool will still work after next reboot)\033[0m")
+                    # If cp fails (SELinux restricts new file creation), the pre-seeded
+                    # placeholder from customize.sh will route the command anyway.
+                    if os.path.exists(inst_path):
+                        print(f"\033[92m[OK] Instant wrapper ready (via placeholder): {inst_path}\033[0m")
+                    else:
+                        print(f"\033[93m[!] Warning: Could not write instant wrapper to {inst_path}\033[0m")
+                        print(f"    (The tool will be globally available after next reboot)\033[0m")
     except Exception as e:
         print(f"\033[93m[!] Warning: Could not prepare instant wrapper for {executable}: {e}\033[0m")
     finally:
