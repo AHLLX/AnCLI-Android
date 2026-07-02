@@ -19,7 +19,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -167,11 +167,22 @@ def validate_cmd(cmd):
         return False
     return True
 
-def run_cmd(cmd):
+def run_cmd(cmd, in_proot=False):
     if not validate_cmd(cmd):
         return False
-    print(f"\033[96m> {cmd}\033[0m")
-    result = subprocess.run(cmd, shell=True)
+    
+    if in_proot:
+        # Wrap command so it executes safely inside the Ubuntu container's bash environment
+        proot_cmd = (
+            f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root "
+            f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
+            f"HOME=/root bash -c {shlex.quote(cmd)}"
+        )
+        print(f"\033[96m> [PRoot] {cmd}\033[0m")
+        result = subprocess.run(proot_cmd, shell=True)
+    else:
+        print(f"\033[96m> {cmd}\033[0m")
+        result = subprocess.run(cmd, shell=True)
     return result.returncode == 0
 
 # ---------------------------------------------------------------------------
@@ -286,7 +297,7 @@ def _install_termux(app_id, app):
 def _install_proot(app_id, app, registry_version="unknown"):
     """Install a tool inside the Ubuntu PRoot container."""
     runtime_env = app.get('runtime_env', [])
-    if run_cmd(app['install_cmd']):
+    if run_cmd(app['install_cmd'], in_proot=True):
         generate_proot_wrapper(app['executable'], {}, runtime_env)
         installed = load_installed()
         installed[app_id] = {
@@ -313,7 +324,7 @@ def uninstall_app(app_id, registry):
     cmd = app.get('uninstall_cmd', f"echo 'No uninstall cmd for {app_id}'")
     print(f"\033[93m[*] Uninstalling {app.get('name', app_id)}...\033[0m")
 
-    run_cmd(cmd)
+    run_cmd(cmd, in_proot=True)
 
     remove_wrapper(app.get('executable', app_id))
     del installed[app_id]
@@ -330,7 +341,7 @@ def update_app(app_id, registry):
     cmd = app.get('update_cmd', f"echo 'No update cmd for {app_id}'")
     print(f"\033[93m[*] Updating {app.get('name', app_id)}...\033[0m")
 
-    if run_cmd(cmd):
+    if run_cmd(cmd, in_proot=True):
         # Extract persisted env keys
         cached_env = installed[app_id].get('env', {})
         if cached_env:
