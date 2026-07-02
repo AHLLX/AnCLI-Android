@@ -161,8 +161,71 @@ def run_cmd(cmd):
     return result.returncode == 0
 
 # ---------------------------------------------------------------------------
-# Install / Uninstall / Update / Config
+# Install / Uninstall / Update / Config / Repair
 # ---------------------------------------------------------------------------
+
+def repair_env(registry=None):
+    """Detect and repair environment issues (DNS, permissions, missing wrappers)."""
+    print("\033[96m[*] Starting environment diagnostics and repair...\033[0m")
+    
+    # 1. Repair DNS resolv.conf in rootfs
+    try:
+        resolv_dir = f"{ROOTFS}/etc"
+        os.makedirs(resolv_dir, exist_ok=True)
+        with open(f"{resolv_dir}/resolv.conf", "w") as f:
+            f.write("nameserver 8.8.8.8\nnameserver 114.114.114.114\n")
+        print("\033[92m[OK] Container DNS configuration repaired (/etc/resolv.conf).\033[0m")
+    except Exception as e:
+        print(f"\033[91m[X] Failed to repair DNS: {e}\033[0m")
+
+    # 2. Repair executable permissions
+    try:
+        proot_path = f"{ANCLI_DIR}/bin/proot"
+        if os.path.exists(proot_path):
+            os.chmod(proot_path, 0o755)
+        core_path = f"{ANCLI_DIR}/bin/ancli-core.py"
+        if os.path.exists(core_path):
+            os.chmod(core_path, 0o755)
+        print("\033[92m[OK] Key binary executable permissions restored (0755).\033[0m")
+    except Exception as e:
+        print(f"\033[91m[X] Failed to repair permissions: {e}\033[0m")
+
+    # 3. Repair missing application wrappers
+    installed = load_installed()
+    if installed:
+        print(f"\033[96m[*] Verifying wrappers for installed apps: {', '.join(installed.keys())}...\033[0m")
+        if not registry:
+            try:
+                registry = fetch_registry()
+            except Exception:
+                pass
+
+        for app_id, info in installed.items():
+            exec_name = info.get('executable', app_id)
+            # Check if wrapper is missing in KSU, AP, or module path
+            wrapper_paths = [
+                f"{MOD_DIR}/system/bin/{exec_name}",
+                f"{KSU_BIN}/{exec_name}",
+                f"{AP_BIN}/{exec_name}"
+            ]
+            needs_recreate = False
+            for wp in wrapper_paths:
+                # If path parent exists, the file itself should exist
+                if os.path.isdir(os.path.dirname(wp)) and not os.path.exists(wp):
+                    needs_recreate = True
+                    break
+            
+            if needs_recreate:
+                print(f"  \033[93m[!] Wrapper for '{app_id}' missing, regenerating...\033[0m")
+                app_reg = registry['apps'].get(app_id) if registry else None
+                runtime_env = app_reg.get('runtime_env', []) if app_reg else []
+                # Re-generate wrapper (user keys will need to be reconfigured via 'ancli config')
+                generate_proot_wrapper(exec_name, {}, runtime_env)
+        print("\033[92m[OK] Wrapper integrity check complete.\033[0m")
+    else:
+        print("\033[90m[i] No installed apps to repair.\033[0m")
+
+    print("\033[92m[OK] Repair complete! If problems persist, try: ancli config <app_id>\033[0m")
 
 def install_app(app_id, registry):
     if app_id not in registry['apps']:
@@ -323,11 +386,14 @@ def show_menu():
             status = "\033[92m[Installed]\033[0m" if app_id in installed else ""
             print(f"[{i}] {app['name']} {mode_tag} - {app['description']} {status}")
 
+        print("[r] Repair environment (Fix DNS, permissions, wrappers)")
         print("[0] Exit")
         choice = input("\033[93mChoose an option (number): \033[0m").strip()
 
         if choice == '0':
             break
+        elif choice.lower() == 'r':
+            repair_env(registry)
         elif choice.isdigit() and 1 <= int(choice) <= len(apps):
             app_id = apps[int(choice)-1]
             if app_id in installed:
@@ -354,6 +420,7 @@ def print_help():
   ancli update <app_id>          Update an installed app
   ancli config <app_id>          Reconfigure env vars for an app
   ancli list                     List all installed apps
+  ancli repair                   Detect and repair DNS, permissions, and wrappers
   ancli --version                Show version
   ancli --help                   Show this help message
 
@@ -394,6 +461,8 @@ if __name__ == "__main__":
                 update_app(app_id, registry)
             elif action == "config" and app_id:
                 reconfigure_app(app_id, registry)
+            elif action == "repair":
+                repair_env(registry)
             elif action == "list":
                 installed = load_installed()
                 if not installed:
