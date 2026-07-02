@@ -199,21 +199,37 @@ def run_cmd(cmd):
 # Install / Uninstall / Update / Config / Repair
 # ---------------------------------------------------------------------------
 
-def repair_env(registry=None):
-    """Detect and repair environment issues (DNS, permissions, missing wrappers)."""
+def repair_env(registry):
+    """Diagnose and fix container environment, resolv.conf, permissions, and wrappers."""
     print("\033[96m[*] Starting environment diagnostics and repair...\033[0m")
     
-    # 1. Repair DNS resolv.conf in rootfs
+    # 1. Fix resolv.conf DNS
+    resolv_path = f"{ROOTFS}/etc/resolv.conf"
     try:
-        resolv_dir = f"{ROOTFS}/etc"
-        os.makedirs(resolv_dir, exist_ok=True)
-        with open(f"{resolv_dir}/resolv.conf", "w") as f:
-            f.write("nameserver 8.8.8.8\nnameserver 114.114.114.114\n")
+        # Check if resolv.conf is a symlink, remove it if so to write actual file
+        if os.path.islink(resolv_path):
+            os.remove(resolv_path)
+        with open(resolv_path, "w") as f:
+            f.write("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
         print("\033[92m[OK] Container DNS configuration repaired (/etc/resolv.conf).\033[0m")
     except Exception as e:
         print(f"\033[91m[X] Failed to repair DNS: {e}\033[0m")
 
-    # 2. Repair executable permissions
+    # 2. Fix root hidden config permissions (shell ownership bypass)
+    root_dir = f"{ROOTFS}/root"
+    try:
+        # Force host-side ownership and permissions for config folders to prevent permission issues
+        os.system(f"chmod 777 {root_dir}")
+        for conf_dir in [".config", ".claude", ".gemini"]:
+            full_path = f"{root_dir}/{conf_dir}"
+            if os.path.exists(full_path):
+                os.system(f"chown -R shell:shell {full_path} 2>/dev/null")
+                os.system(f"chmod -R 777 {full_path} 2>/dev/null")
+        print("\033[92m[OK] Guest config folder permissions and ownership restored.\033[0m")
+    except Exception as e:
+        pass
+
+    # 3. Repair executable permissions
     try:
         proot_path = f"{ANCLI_DIR}/bin/proot"
         if os.path.exists(proot_path):
