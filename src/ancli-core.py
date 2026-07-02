@@ -22,16 +22,19 @@ TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 VERSION = "1.2.1"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
-LOCAL_REGISTRY = f"{ANCLI_DIR}/registry.json"
+LOCAL_REGISTRY = "/tmp/ancli-registry.json"   # inside proot rootfs, always writable
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 
 # Allowed command prefixes for security validation
 ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy ")
 
-# npm global install paths (inside PRoot, mapped via -b /data/local/tmp/ancli)
-NPM_GLOBAL = f"{ANCLI_DIR}/npm-global"
-NPM_CACHE  = f"{ANCLI_DIR}/npm-cache"
-NPM_HOME   = f"{ANCLI_DIR}/npm-home"
+# npm global install paths
+# NPM_GLOBAL: inside bind-mount so binaries survive proot sessions
+# NPM_CACHE:  inside proot rootfs (not bind-mounted) so proot can write freely
+# NPM_HOME:   inside proot rootfs for same reason
+NPM_GLOBAL = f"{ANCLI_DIR}/npm-global"           # host-visible: /data/local/tmp/ancli/npm-global
+NPM_CACHE  = "/var/cache/ancli-npm"              # proot-internal, writable by proot
+NPM_HOME   = "/var/lib/ancli-npm-home"           # proot-internal, writable by proot
 
 # ---------------------------------------------------------------------------
 # Registry & State

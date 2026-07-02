@@ -59,8 +59,8 @@
       "description": "Anthropic's official terminal coding agent",
       "author": "Anthropic",
       "install_mode": "proot",
-      "install_cmd": "npm install -g @anthropic-ai/claude-code --prefix /data/local/tmp/ancli/npm-global --cache /data/local/tmp/ancli/npm-cache --unsafe-perm",
-      "update_cmd": "npm update -g @anthropic-ai/claude-code --prefix /data/local/tmp/ancli/npm-global --cache /data/local/tmp/ancli/npm-cache --unsafe-perm",
+      "install_cmd": "npm install -g @anthropic-ai/claude-code --prefix /data/local/tmp/ancli/npm-global --cache /var/cache/ancli-npm --unsafe-perm",
+      "update_cmd": "npm update -g @anthropic-ai/claude-code --prefix /data/local/tmp/ancli/npm-global --cache /var/cache/ancli-npm --unsafe-perm",
       "uninstall_cmd": "npm uninstall -g @anthropic-ai/claude-code --prefix /data/local/tmp/ancli/npm-global",
       "runtime_env": [
         "HOME=/data/local/tmp/ancli/npm-home"
@@ -78,8 +78,8 @@
       "description": "Open-source terminal-based AI coding agent",
       "author": "Sst Labs",
       "install_mode": "proot",
-      "install_cmd": "npm install -g opencode-ai --prefix /data/local/tmp/ancli/npm-global --cache /data/local/tmp/ancli/npm-cache --unsafe-perm",
-      "update_cmd": "npm update -g opencode-ai --prefix /data/local/tmp/ancli/npm-global --cache /data/local/tmp/ancli/npm-cache --unsafe-perm",
+      "install_cmd": "npm install -g opencode-ai --prefix /data/local/tmp/ancli/npm-global --cache /var/cache/ancli-npm --unsafe-perm",
+      "update_cmd": "npm update -g opencode-ai --prefix /data/local/tmp/ancli/npm-global --cache /var/cache/ancli-npm --unsafe-perm",
       "uninstall_cmd": "npm uninstall -g opencode-ai --prefix /data/local/tmp/ancli/npm-global",
       "runtime_env": [
         "HOME=/data/local/tmp/ancli/npm-home"
