@@ -20,7 +20,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.9"
+VERSION = "1.3.0"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -311,6 +311,47 @@ def _install_proot(app_id, app, registry_version="unknown"):
             print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
         else:
             print("\033[92m[OK] 'curl' and certificates installed successfully.\033[0m")
+
+    # Specific override for agy to bypass ADB shell piping / escaping bugs
+    if app_id == "agy":
+        try:
+            print("\033[96m[*] Downloading Antigravity installer via Python to bypass escaping...\033[0m")
+            installer_url = "https://antigravity.google/cli/install.sh"
+            
+            # Setup urllib with proxy if available in process environment
+            proxy_url = os.environ.get('http_proxy') or os.environ.get('https_proxy') or os.environ.get('HTTP_PROXY') or os.environ.get('HTTPS_PROXY')
+            if proxy_url:
+                handler = urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url})
+                opener = urllib.request.build_opener(handler)
+                urllib.request.install_opener(opener)
+                
+            req = urllib.request.Request(installer_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                content = response.read()
+                os.makedirs("/tmp", exist_ok=True)
+                with open("/tmp/install.sh", "wb") as f:
+                    f.write(content)
+            
+            # Execute the script locally
+            install_cmd = "bash /tmp/install.sh --dir /usr/local/bin"
+            if run_cmd(install_cmd):
+                generate_proot_wrapper(app['executable'], {}, app.get('runtime_env', []))
+                installed = load_installed()
+                installed[app_id] = {
+                    "name": app['name'],
+                    "executable": app['executable'],
+                    "install_mode": "proot",
+                    "installed_version": registry_version,
+                    "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "env": {},
+                }
+                save_installed(installed)
+                print(f"\033[92m[OK] Successfully installed {app['name']}! Type '{app['executable']}' to run.\033[0m")
+                print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
+                return
+        except Exception as e:
+            print(f"\033[91m[X] Python downloader failed: {e}\033[0m")
+            print("\033[93m[!] Falling back to standard shell installer...\033[0m")
 
     runtime_env = app.get('runtime_env', [])
     if run_cmd(app['install_cmd']):
