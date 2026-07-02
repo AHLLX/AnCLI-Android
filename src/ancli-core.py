@@ -81,11 +81,38 @@ def load_installed():
     return {}
 
 def save_installed(installed):
-    # Atomic write: write to temp file first, then rename
-    tmp_file = INSTALLED_FILE + ".tmp"
-    with open(tmp_file, "w") as f:
-        json.dump(installed, f, indent=2)
-    os.replace(tmp_file, INSTALLED_FILE)
+    """Save installed apps metadata to local state JSON file."""
+    tmp_file = f"{INSTALLED_FILE}.tmp"
+    try:
+        # Check if old tmp exists and delete it to prevent permission error
+        if os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
+        with open(tmp_file, "w") as f:
+            json.dump(installed, f, indent=2)
+        
+        # Replace atomically
+        if os.path.exists(INSTALLED_FILE):
+            try:
+                os.remove(INSTALLED_FILE)
+            except Exception:
+                pass
+        os.rename(tmp_file, INSTALLED_FILE)
+        # Ensure correct permission and ownership
+        try:
+            os.system(f"chown shell:shell {INSTALLED_FILE} 2>/dev/null")
+            os.system(f"chmod 777 {INSTALLED_FILE} 2>/dev/null")
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"\033[91m[X] Failed to save installation database: {e}\033[0m")
+        if os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
 
 def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
     """Generate a wrapper that routes execution into the Ubuntu PRoot container."""
@@ -122,7 +149,8 @@ fi
 
 {exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
 export HOME=/root
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b "$PWD" -b {ANCLI_DIR}/hosts:/etc/hosts -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root {executable} "$@"
+export GODEBUG=netdns=go
+exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b "$PWD" -b {ANCLI_DIR}/hosts:/etc/hosts -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
@@ -244,12 +272,15 @@ def repair_env(registry):
         proot_path = f"{ANCLI_DIR}/bin/proot"
         if os.path.exists(proot_path):
             os.chmod(proot_path, 0o755)
-        core_path = f"{ANCLI_DIR}/bin/ancli-core.py"
-        if os.path.exists(core_path):
-            os.chmod(core_path, 0o755)
+        # Fix binary installation folders permissions to prevent write blocks
+        for bin_dir in ["/usr/local/bin", "/usr/bin", "/bin"]:
+            full_bin = f"{ROOTFS}{bin_dir}"
+            if os.path.exists(full_bin):
+                os.system(f"chown -R shell:shell {full_bin} 2>/dev/null")
+                os.system(f"chmod -R 777 {full_bin} 2>/dev/null")
         print("\033[92m[OK] Key binary executable permissions restored (0755).\033[0m")
     except Exception as e:
-        print(f"\033[91m[X] Failed to repair permissions: {e}\033[0m")
+        print(f"\033[91m[X] Failed to restore binary permissions: {e}\033[0m")
 
     # 3. Repair missing application wrappers
     installed = load_installed()
