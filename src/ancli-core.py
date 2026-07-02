@@ -20,7 +20,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.2.8"
+VERSION = "1.2.9"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -178,28 +178,16 @@ def validate_cmd(cmd):
         return False
     return True
 
-def run_cmd(cmd, in_proot=False):
+def run_cmd(cmd):
     if not validate_cmd(cmd):
         return False
-    
-    if in_proot:
-        # Extract proxy variables from Python's process environment to forward inside PRoot
-        proxy_args = ""
-        for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
-            if key in os.environ:
-                proxy_args += f" {key}={shlex.quote(os.environ[key])}"
-
-        # Wrap command with pipefail to ensure piping errors (like missing curl) are caught correctly
-        proot_cmd = (
-            f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -w /root "
-            f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
-            f"HOME=/root{proxy_args} bash -c {shlex.quote('set -o pipefail; ' + cmd)}"
-        )
-        print(f"\033[96m> [PRoot] {cmd}\033[0m")
-        result = subprocess.run(proot_cmd, shell=True)
-    else:
-        print(f"\033[96m> {cmd}\033[0m")
-        result = subprocess.run(cmd, shell=True)
+    print(f"\033[96m> {cmd}\033[0m")
+    # Execute directly in container's bash to support pipefail and bypass nested proot conflicts
+    result = subprocess.run(
+        f"set -o pipefail; {cmd}",
+        shell=True,
+        executable="/bin/bash"
+    )
     return result.returncode == 0
 
 # ---------------------------------------------------------------------------
@@ -313,24 +301,19 @@ def _install_termux(app_id, app):
 
 def _install_proot(app_id, app, registry_version="unknown"):
     """Install a tool inside the Ubuntu PRoot container."""
+    import shutil
     # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands
-    # We check physical file paths directly (avoid depending on 'which' command)
-    check_curl_cmd = (
-        f"{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -w /root "
-        f"/usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
-        f"test -x /usr/bin/curl -o -x /usr/local/bin/curl"
-    )
-    if subprocess.run(check_curl_cmd, shell=True).returncode != 0:
+    if not shutil.which("curl"):
         print("\033[96m[i] Container is missing 'curl'. Auto-installing dependencies via apt...\033[0m")
         # Run silent apt-get update & install
         apt_cmd = "apt-get update -qy && apt-get install -qy curl ca-certificates"
-        if not run_cmd(apt_cmd, in_proot=True):
+        if not run_cmd(apt_cmd):
             print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
         else:
             print("\033[92m[OK] 'curl' and certificates installed successfully.\033[0m")
 
     runtime_env = app.get('runtime_env', [])
-    if run_cmd(app['install_cmd'], in_proot=True):
+    if run_cmd(app['install_cmd']):
         generate_proot_wrapper(app['executable'], {}, runtime_env)
         installed = load_installed()
         installed[app_id] = {
@@ -357,7 +340,7 @@ def uninstall_app(app_id, registry):
     cmd = app.get('uninstall_cmd', f"echo 'No uninstall cmd for {app_id}'")
     print(f"\033[93m[*] Uninstalling {app.get('name', app_id)}...\033[0m")
 
-    run_cmd(cmd, in_proot=True)
+    run_cmd(cmd)
 
     remove_wrapper(app.get('executable', app_id))
     del installed[app_id]
@@ -374,7 +357,7 @@ def update_app(app_id, registry):
     cmd = app.get('update_cmd', f"echo 'No update cmd for {app_id}'")
     print(f"\033[93m[*] Updating {app.get('name', app_id)}...\033[0m")
 
-    if run_cmd(cmd, in_proot=True):
+    if run_cmd(cmd):
         # Extract persisted env keys
         cached_env = installed[app_id].get('env', {})
         if cached_env:
