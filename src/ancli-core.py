@@ -20,7 +20,7 @@ AP_BIN = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 REGISTRY_URL = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -134,15 +134,22 @@ def _write_wrapper_to_paths(executable, wrapper):
     sys_bin = f"{MOD_DIR}/system/bin"
     os.makedirs(sys_bin, exist_ok=True)
     sys_path = f"{sys_bin}/{executable}"
-    with open(sys_path, "w") as f:
-        f.write(wrapper)
-    os.chmod(sys_path, 0o755)
+    try:
+        if os.path.exists(sys_path):
+            os.remove(sys_path)
+        with open(sys_path, "w") as f:
+            f.write(wrapper)
+        os.chmod(sys_path, 0o755)
+    except Exception as e:
+        print(f"\033[93m[!] Warning: Could not write systemless wrapper to {sys_path}: {e}\033[0m")
 
     # 2. Instant access (KSU / APatch)
     for instant_bin in [KSU_BIN, AP_BIN]:
         if os.path.isdir(instant_bin):
             try:
                 inst_path = f"{instant_bin}/{executable}"
+                if os.path.exists(inst_path):
+                    os.remove(inst_path)
                 with open(inst_path, "w") as f:
                     f.write(wrapper)
                 os.chmod(inst_path, 0o755)
