@@ -9,16 +9,20 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
 
-1. **`src/install.sh` (The Bootstrap Installer)**: 
-   - A shell script executed as root (`su`).
-   - Downloads a minimal `ubuntu-base` tarball and extracts it to `/data/local/tmp/ancli/rootfs`.
-   - Uses `proot` to run `apt-get` and install `python3`, `nodejs`, `npm`, and `git`.
+1. **`src/module/customize.sh` (The Magisk Module Installer)**: 
+   - Replaces the old `install.sh`. This script is executed by the Android Root Manager (Magisk/KernelSU) when the module ZIP is flashed.
+   - Downloads PRoot and a minimal `ubuntu-base` tarball, extracting it to `/data/local/tmp/ancli/rootfs`.
+   - Bootstraps APT dependencies (`python3`, `nodejs`, `npm`) during the flash process.
 2. **`src/ancli-core.py` (The Package Manager Brain)**: 
    - Runs *inside* the Proot Ubuntu container.
    - Fetches `registry.json` from the cloud.
    - Generates Bash wrappers and injects them into the Android host.
-   - **CONSTRAINT**: Must rely strictly on the Python Standard Library (e.g., use `urllib.request`, NOT `requests`). It cannot assume pip packages are pre-installed.
-3. **`src/registry.json` (The Plugin Schema)**:
+   - **CONSTRAINT**: Must rely strictly on the Python Standard Library (e.g., use `urllib.request`, NOT `requests`).
+3. **`src/module/ancli_env.sh` (The Environment Bridger)**:
+   - Sourced dynamically by the wrapper script before PRoot execution.
+   - Detects Android system proxies (via `dumpsys`) and exports them.
+   - Fixes permission locks and mounts `TMPDIR=/tmp`.
+4. **`src/registry.json` (The Plugin Schema)**:
    - Contains the installation logic (`pip`, `npm`, `apt`) for third-party CLIs.
 
 ## 3. The "Dual-Injection" Systemless Hack (CRITICAL)
@@ -72,3 +76,14 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 
 ## 7. Testing Constraints
 - The user **does not** currently have a local Android emulator attached. Do not attempt to use `adb shell` or run `install.sh` to verify your code. Rely on static analysis, linting, and your fundamental understanding of shell/Python scripts.
+
+## 8. Network Proxy & VPN Constraints (CRITICAL)
+- **VPN Bypass**: Android VPNs in TUN mode (e.g. Clash, v2rayNG) bypass Root (UID 0) traffic by default. If a Python or curl script runs as root and the proxy is not explicitly set, it will ignore the VPN and fail to connect to domains like `github.com`.
+- **Proxy Override**: Always parse the Android system proxy via `dumpsys connectivity`. Extract the `HttpProxy` IP and port. 
+- **DO NOT hardcode 127.0.0.1**: Android users often run proxy software on other devices (e.g. PC at `192.168.1.x`) and set the Android proxy to that IP. Always use the IP dynamically returned by `dumpsys`.
+- **Go Socket Binds**: Go binaries (like `agy`) crash when binding to `198.18.0.x` virtual IPs created by Clash TUN. Ensure `ancli_env.sh` pre-binds these to the loopback interface (`ip addr add 198.18.0.x/32 dev lo`).
+
+## 9. PRoot Path Resolution & TUI Crashes
+- **The `/sdcard` Trap**: Android's `/sdcard` is a complex chain of symlinks pointing to `/mnt/user/0/...` or `/storage/emulated/0`. 
+- **Node.js/Bun TUI Panics**: If you run Node.js-based tools (like `mimo`) inside PRoot while inside `/sdcard`, the tool will attempt to resolve its absolute physical path. If PRoot is missing `-b /mnt` or `-b /data` binds, the physical path resolution will fail, causing the Event Loop or TUI library to silently crash (you won't even see an error, the TUI simply won't launch).
+- **The Solution**: NEVER use dynamic path binding heuristics (e.g. `case "$PWD"`). Instead, ALWAYS bind the entire physical tree unconditionally when generating wrappers: `-b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig`. This ensures all underlying symlink targets exist within the container.
