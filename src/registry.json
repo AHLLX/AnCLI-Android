@@ -50,7 +50,10 @@
       "env_vars": [],
       "optional_env_vars": [
         "GEMINI_API_KEY",
-        "ANTIGRAVITY_API_KEY"
+        "ANTIGRAVITY_API_KEY",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY"
       ],
       "executable": "agy"
     },

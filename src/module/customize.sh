@@ -85,6 +85,7 @@ if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export TMPDIR=/tmp
 
 # Run update and install with GPG verification disabled to bypass PRoot syscall compatibility issues
 apt-get update -y -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true
@@ -121,7 +122,8 @@ ui_print ">> npm paths ready."
 # 5. Deploy AnCLI Core from module package
 ui_print ">> Deploying AnCLI Core..."
 cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
-chmod 755 "$BIN_DIR/ancli-core.py"
+cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
+chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
 # Deploy bundled fallback registry
 cp "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true

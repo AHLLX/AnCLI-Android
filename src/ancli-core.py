@@ -7,6 +7,10 @@ import time
 import subprocess
 import urllib.request
 import re
+import ssl
+
+# Bypass SSL verify for broken container CAs
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # Paths inside the PRoot environment
 ANCLI_DIR = "/data/local/tmp/ancli"
@@ -20,7 +24,7 @@ AP_BIN  = "/data/adb/ap/bin"
 # Termux Host backend paths
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 
-VERSION = "1.0.2"
+VERSION = "1.2.0"
 
 REGISTRY_URL   = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -141,56 +145,19 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
     wrapper = f"""#!/system/bin/sh
 # AnCLI wrapper for: {executable}
 
-# --- Android WiFi proxy detection & inheritance ---
-PROXY_INFO=$(dumpsys connectivity 2>/dev/null | grep -i 'HttpProxy:' | head -n 1)
-if [ -n "$PROXY_INFO" ]; then
-    PROXY_HOST=$(echo "$PROXY_INFO" | sed -n 's/.*HttpProxy:[[:space:]]*\\[\\([^ ]*\\)\\].*/\\1/p')
-    PROXY_PORT=$(echo "$PROXY_INFO" | sed -ne 's/.*HttpProxy:[[:space:]]*\\[[^ ]*\\][[:space:]]*\\([0-9]*\\).*/\\1/p')
-    if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
-        export http_proxy="http://$PROXY_HOST:$PROXY_PORT"
-        export https_proxy="http://$PROXY_HOST:$PROXY_PORT"
-    fi
-fi
+# 1. Load centralized proxy & environment variables
+. {ANCLI_DIR}/bin/ancli_env.sh 2>/dev/null || true
 
-{exports}export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
-export HOME=/root
-# Force Go runtime to use its own DNS resolver, bypassing Android dnsproxyd hijacking.
-export GODEBUG=netdns=go
-# Disable io_uring for Node.js/Bun to prevent PTY hangs and input blocking in PRoot
-export UV_USE_IO_URING=0
-export BUN_FEATURE_FLAG_IO_URING=0
+# 2. Inject tool-specific configs
+{exports}
 
-# Auto-bind potential Clash/Tun virtual IPs to local loopback to satisfy Go socket bind traversal.
-for i in $(seq 10 25); do
-    ip addr add 198.18.0.$i/32 dev lo 2>/dev/null || true
-done
-
-# Fix ownership of agy/gemini/claude auth credential directories on every launch.
-# This prevents root-locked files from blocking subsequent shell-user runs.
-for _conf_dir in /root/.config /root/.gemini /root/.claude /root/.local; do
-    if [ -d "{ROOTFS}$_conf_dir" ]; then
-        chown -R 2000:2000 "{ROOTFS}$_conf_dir" 2>/dev/null || true
-        chmod -R 755 "{ROOTFS}$_conf_dir" 2>/dev/null || true
-    fi
-done
-
-# Determine working directory and launch proot accordingly.
-# Only treat $PWD as valid if it starts with '/' (Android absolute path).
-# Windows paths, empty values, or /root all fall back to container's /root.
-case "$PWD" in
-    /sdcard|/sdcard/*|/storage/*)
-        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b /storage -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
-        ;;
-    /root|/)
-        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b /storage -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w /root /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
-        ;;
-    /*)
-        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b /storage -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -b "$PWD" -w "$PWD" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
-        ;;
-    *)
-        exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} -b /sdcard -b /storage -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb -w /root /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin HOME=/root GODEBUG=netdns=go {executable} "$@"
-        ;;
-esac
+# 3. Launch PRoot with unified global binds
+# By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex),
+# we prevent Node.js fs.realpath and other symlink-following logic from breaking.
+exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
+    -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig \\
+    -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb \\
+    -w "$PWD" /usr/bin/env {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
