@@ -1,7 +1,7 @@
 id=ancli
 name=AnCLI Core
-version=v1.2.0
-versionCode=6
+version=v1.2.1
+versionCode=7
 author=AHLLX
 description=Unified CLI environment manager. [Safe Uninstall] Manager removal keeps your data safe. Use 'ancli' menu for full purge.
 updateJson=https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json

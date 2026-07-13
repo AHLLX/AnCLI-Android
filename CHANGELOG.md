@@ -1,3 +1,17 @@
+## AnCLI v1.2.1 — Physical Keyboard Input Method & Host Environment Sandboxing
+
+### What's New
+**Fcitx5 Input Method Support for Physical Keyboards**
+- **Bootstrap Package Addition**: Added `fcitx5` and `fcitx5-chinese-addons` to the default bootstrapping package list in `customize.sh` during module installation.
+- **Environment Integration**: Configured standard input method variables (`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`) inside `ancli_env.sh` to solve the issue where users using external physical keyboards (Bluetooth/USB) on Android tablets/phones cannot input Chinese or non-English characters directly in terminal-based TUI tools (like Aider, MiMo).
+
+### Bug Fixes
+**Host Environment Variable Isolation for Container Binaries**
+- **Root Cause**: Containerized binaries (like Go-based `agy`) inherit Termux environment variables (like `PREFIX` and `TERMUX_VERSION`) from the host shell. Go's runtime or execution hooks detect these and incorrectly attempt to run host-side Termux paths (like `/data/data/com.termux/files/usr/bin/bash`), which do not exist inside the isolated container.
+- **Fix**: Added explicit `unset` commands in `ancli_env.sh` to scrub all Termux-specific variables before entering the container, ensuring containerized binaries run in a clean, standard Linux environment and look up the container's own standard `/bin/bash` in `$PATH`.
+
+---
+
 ## AnCLI v1.1.1 — Storage Bind Fix
 
 ### Bug Fixes

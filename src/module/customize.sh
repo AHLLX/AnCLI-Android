@@ -93,7 +93,7 @@ apt-get install -y --no-install-recommends \
     -o Acquire::AllowInsecureRepositories=true \
     -o Acquire::AllowUnauthenticated=true \
     --allow-unauthenticated \
-    ca-certificates curl python3 python3-pip git nodejs npm
+    ca-certificates curl python3 python3-pip git nodejs npm fcitx5 fcitx5-chinese-addons
 apt-get clean
 SETUP
     chmod 755 "$ROOTFS/root/setup.sh"
