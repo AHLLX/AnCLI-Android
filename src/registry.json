@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.2.2",
   "apps": {
     "aider": {
       "name": "Aider",
@@ -40,10 +40,14 @@
       "executable": "mimo"
     },
     "agy": {
-      "name": "Antigravity CLI (agy)",
-      "description": "Google's powerful terminal agent (Native Go Binary)",
+      "name": "Antigravity CLI",
+      "description": "Google's powerful terminal agent",
       "author": "Google",
       "install_mode": "proot",
+      "install_method": "pipe_script",
+      "installer_url": "https://antigravity.google/cli/install.sh",
+      "installer_args": "--dir /usr/local/bin",
+      "installer_script_env": {},
       "install_cmd": "curl -sL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin",
       "update_cmd": "agy update",
       "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
@@ -88,6 +92,26 @@
         "OPENAI_API_BASE"
       ],
       "executable": "opencode"
+    },
+    "grok": {
+      "name": "Grok CLI",
+      "description": "xAI's official terminal coding agent",
+      "author": "xAI",
+      "install_mode": "proot",
+      "install_method": "pipe_script",
+      "installer_url": "https://x.ai/cli/install.sh",
+      "installer_args": "",
+      "installer_script_env": {"GROK_BIN_DIR": "/usr/local/bin"},
+      "install_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
+      "update_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
+      "uninstall_cmd": "rm -f /usr/local/bin/grok /usr/local/bin/agent && rm -rf /root/.grok",
+      "env_vars": [],
+      "optional_env_vars": [
+        "GROK_DEPLOYMENT_KEY",
+        "GROK_CHANNEL",
+        "GROK_PROXY_URL"
+      ],
+      "executable": "grok"
     }
   }
 }

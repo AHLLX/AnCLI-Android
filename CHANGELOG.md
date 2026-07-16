@@ -1,3 +1,33 @@
+## AnCLI v1.2.2 — Security Hardening & Architecture Refactor
+
+### Security Fixes
+**API Key Secure Storage (High)**
+- **Root Cause**: API keys (e.g. `ANTHROPIC_API_KEY`) were embedded as plaintext `export` lines inside world-readable (chmod 755) wrapper scripts at `/data/local/tmp/ancli/bin/` and `/data/adb/ksu/bin/`, exposing credentials to any process with filesystem read access.
+- **Fix**: Introduced a dedicated `secrets/` directory (`chmod 700`) with per-tool secrets files (`chmod 600`). Wrapper scripts now `source` the secrets file at runtime instead of embedding keys inline. Existing users' keys are automatically migrated on the next `ancli repair` or `ancli config` run.
+
+**Shell Injection Defense for env var Values (Medium)**
+- **Root Cause**: User-supplied env var values (API keys) were interpolated into wrapper scripts with single-quote wrapping (`export KEY='value'`). A value containing a single quote would break the shell syntax and could be exploited for injection.
+- **Fix**: Replaced manual quoting with Python's `shlex.quote()` for all env var values in both wrapper scripts and secrets files.
+
+**SSL Verification Scoped to Per-Request Context (Medium-High)**
+- **Root Cause**: `ssl._create_default_https_context = ssl._create_unverified_context` globally disabled certificate verification for all network calls in the process, removing all MITM protection.
+- **Fix**: Removed the global monkey-patch. Registry fetches and installer downloads now create a local `ssl._create_unverified_context()` context passed only to their specific `urlopen()` calls, preserving security for all other SSL operations.
+
+### Architecture Improvements
+**Registry-Driven Installer Dispatch**
+- Replaced the hardcoded `if app_id == "agy"` / `if app_id == "grok"` branches in `_install_proot()` with a generic `_install_pipe_script()` function driven by three new registry fields: `install_method`, `installer_url`, and `installer_script_env`. New apps requiring script-based installation no longer need Python code changes — only a registry entry update.
+
+**`ancli list` Decoupled from Network**
+- `ancli list` previously triggered a full registry fetch from GitHub on every invocation. It now reads only from local disk cache (`_load_local_registry_cache()`), making it instantaneous and offline-safe. Write operations (install/update/config/repair) still fetch the latest cloud registry.
+
+### Other Fixes
+- **Fcitx5 Conditional Install**: `customize.sh` now checks the Android system locale (`getprop persist.sys.locale`) and only installs Fcitx5 + Chinese addons (~50 MB) on CJK-locale devices (zh/ja/ko). Non-CJK devices skip these packages entirely.
+- **Scoped proot Kill on Uninstall**: `uninstall.sh` now uses `pkill -f "proot.*ancli/rootfs"` instead of `killall proot`, avoiding accidental termination of unrelated proot sessions (e.g. Termux-proot).
+- **Version Sync**: `ancli-core.py` `VERSION`, `customize.sh` banner, and `registry.json` version all unified to `v1.2.2`.
+- **Secrets Cleanup on Uninstall**: `remove_wrapper()` now also deletes the associated `secrets/{executable}.env` file to prevent stale credential files on disk.
+
+---
+
 ## AnCLI v1.2.1 — Physical Keyboard Input Method & Host Environment Sandboxing
 
 ### What's New

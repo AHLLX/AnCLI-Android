@@ -6,8 +6,10 @@
 
 ANCLI_DIR="/data/local/tmp/ancli"
 
-# Kill running proot instances
-killall proot 2>/dev/null || true
+# Kill proot instances that use the AnCLI rootfs.
+# Using pkill -f avoids killing unrelated proot processes (e.g. Termux-proot).
+pkill -f "proot.*${ANCLI_DIR}/rootfs" 2>/dev/null || \
+    pkill -f "proot.*ancli" 2>/dev/null || true
 
 # Determine if we should preserve the container and config files
 # Default to KEEP (KEEP_DATA=1) unless the user explicitly requested a force purge

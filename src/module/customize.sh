@@ -13,7 +13,7 @@ UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 UBUNTU_PATH="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
 ui_print "============================================"
-ui_print "  AnCLI Bootstrap Installer v1.1.0"
+ui_print "  AnCLI Bootstrap Installer v1.2.2"
 ui_print "============================================"
 ui_print ""
 
@@ -80,7 +80,22 @@ if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
         ui_print ">> APT mirror: ${UBUNTU_MIRROR}"
     fi
 
-    cat > "$ROOTFS/root/setup.sh" << 'SETUP'
+    # Detect system locale to determine whether CJK input support (Fcitx5) is needed.
+    # Fcitx5 + fcitx5-chinese-addons add ~50 MB to the bootstrap image and are only
+    # useful for CJK-locale (Chinese / Japanese / Korean) devices.
+    SYS_LANG=$(getprop persist.sys.locale 2>/dev/null || getprop ro.product.locale 2>/dev/null || echo "en-US")
+    case "$SYS_LANG" in
+        zh*|ja*|ko*)
+            FCITX_PKGS="fcitx5 fcitx5-chinese-addons"
+            ui_print ">> CJK locale detected ($SYS_LANG) — will install Fcitx5 input method."
+            ;;
+        *)
+            FCITX_PKGS=""
+            ui_print ">> Non-CJK locale ($SYS_LANG) — skipping Fcitx5."
+            ;;
+    esac
+
+    cat > "$ROOTFS/root/setup.sh" << SETUP
 #!/bin/bash
 set -eu
 export DEBIAN_FRONTEND=noninteractive
@@ -89,11 +104,11 @@ export TMPDIR=/tmp
 
 # Run update and install with GPG verification disabled to bypass PRoot syscall compatibility issues
 apt-get update -y -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true
-apt-get install -y --no-install-recommends \
-    -o Acquire::AllowInsecureRepositories=true \
-    -o Acquire::AllowUnauthenticated=true \
-    --allow-unauthenticated \
-    ca-certificates curl python3 python3-pip git nodejs npm fcitx5 fcitx5-chinese-addons
+apt-get install -y --no-install-recommends \\
+    -o Acquire::AllowInsecureRepositories=true \\
+    -o Acquire::AllowUnauthenticated=true \\
+    --allow-unauthenticated \\
+    ca-certificates curl python3 python3-pip git nodejs npm $FCITX_PKGS
 apt-get clean
 SETUP
     chmod 755 "$ROOTFS/root/setup.sh"
