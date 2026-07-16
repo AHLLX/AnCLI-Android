@@ -10,9 +10,11 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
 - **Dynamic Configuration Injection**: Prompts for environment variables (e.g., API keys, custom endpoints) during installation and bakes them securely into execution wrappers.
 - **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
-- **Escaping & Proxy 直通**: Bypasses ADB character escaping bugs via Python urllib direct downloads, and dynamically forwards host proxy settings into the guest container.
+- **Escaping & Proxy Passthrough**: Bypasses ADB character escaping bugs via Python urllib direct downloads, and dynamically forwards host proxy settings into the guest container.
 - **PRoot Syscall Stabilization**: Automatically mitigates Android kernel `io_uring` and `epoll` translation bugs, ensuring modern Node.js and Bun interactive TUIs (like MiMo and Claude Code) can process raw keyboard input flawlessly without event loop blocking.
 - **Physical Keyboard Input Method Support**: Pre-installs `fcitx5` and `fcitx5-chinese-addons` during the container bootstrap phase, and automatically exports standard input variables (`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`) to solve the issue where users using external physical keyboards (Bluetooth/USB) on Android tablets/phones cannot input Chinese or non-English characters directly in terminal-based TUI tools (like Aider, MiMo).
+- **Cross-Sandbox Browser Redirect (OAuth login)**: Solves the headless virtualization restriction where terminal agents (like `grok login`, `agy auth login`) fail to open a browser for device flow authentication. We map host-side wrappers and translate Golang's `statx` pathing system calls, automatically launching your host Android's default web browser when tools try to open URLs inside the guest container.
+- **Multi-language Support (zh/en)**: Features an interactive language hot-toggle directly in the `ancli` menu, saving your locale preferences persistently.
 - **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 
 ## Supported Applications
@@ -25,6 +27,7 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 | **Antigravity CLI (agy)** | Go (static) | Standalone release binary |
 | **Claude Code** | Node.js/JS | Precompiled Release binary (NPM-free) |
 | **OpenCode** | Node.js/JS | Precompiled Release binary (NPM-free) |
+| **Grok** | Rust (static) | Standalone release binary |
 
 ## Installation
 

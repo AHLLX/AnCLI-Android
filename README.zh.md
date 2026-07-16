@@ -13,6 +13,8 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - **命令行转义与代理直通**：通过 Python 内置网络库直连，绕过 ADB 命令行转义字符（如 `|`, `--`）被剥离的 bug；同时支持将宿主机的 HTTP 代理环境变量直接下发，一键连通下载通道。
 - **PRoot 系统调用稳定性修补**：自动规避 Android 内核对 `io_uring` 和 `epoll` 翻译残缺导致的 Event Loop 阻塞死锁问题，确保基于 Node.js / Bun 的现代终端应用（如 MiMo 和 Claude Code）能够完美接收键盘的 Raw TTY 交互事件，不卡顿、不乱码。
 - **物理键盘输入法支持**：初始化自动安装 `fcitx5` 及 `fcitx5-chinese-addons`（中文拼音/五笔等），并在环境配置中自动向容器导出输入法环境变量（`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`），以解决部分用户在安卓设备上外接物理键盘（蓝牙/有线键盘）时，在终端 TUI 应用（如 Aider, MiMo 等）中无法直接输入中文或其他非英文字符的问题。
+- **跨沙箱浏览器自动跳转（网页授权登录）**：彻底解决 PRoot 容器沙箱内没有图形界面导致开发套件（如 `grok login`, `agy auth login` 等）无法拉起浏览器进行 OAuth 设备授权认证的问题。通过宿主端中转配合劫持翻译 Go 语言的 `statx` 物理路径系统调用，自动将容器内打开网页的请求传递给宿主机安卓端，直接拉起手机默认浏览器完成登录。
+- **多语言商店偏好 (zh/en)**：支持直接在 `ancli` 应用商店主菜单进行中英文一键切换，并持久保存您的语言偏好配置。
 - **多重安全加固**：实现命令白名单校验、Shell 链式操作符过滤、环境变量转义和路径遍历防护。
 
 ## 支持的工具生态
@@ -25,6 +27,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 | **Antigravity CLI (agy)** | Go (静态链接) | 独立发布二进制文件（PRoot 容器） |
 | **Claude Code** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
 | **OpenCode** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
+| **Grok** | Rust (静态链接) | 独立发布二进制文件（PRoot 容器） |
 
 ## 安装方法
 
