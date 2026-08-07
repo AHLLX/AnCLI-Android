@@ -295,6 +295,27 @@ class TestWrapperGeneration:
         # systemless + KSU/AP dual injection paths were attempted
         assert (tmp_path / "mod" / "system" / "bin" / "mimo").exists()
 
+    def test_native_wrapper_runs_without_proot(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+
+        core.generate_proot_wrapper("agy", {"GEMINI_API_KEY": "sk-x"}, [], native=True)
+
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+        assert "(native" in wrapper
+        assert "ancli_env.sh host" in wrapper          # host-mode env bootstrap
+        assert "/bin/proot" not in wrapper             # no proot invocation at all
+        assert "proot -r" not in wrapper
+        assert "BROWSER=" in wrapper                   # OAuth browser redirect
+        assert "xdg-open" in wrapper
+        assert f"{core.ROOTFS}/usr/local/bin/agy" in wrapper  # direct exec of static bin
+        # secrets still sourced
+        assert "secrets/agy.env" in wrapper
+
     def test_wrapper_rejects_path_traversal_executable(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
         core.generate_proot_wrapper("../evil", {})

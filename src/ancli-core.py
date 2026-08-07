@@ -383,7 +383,7 @@ def _write_secrets_file(executable, env_dict):
     except Exception as e:
         print(f"\033[93m[!] Warning: Could not write secrets file: {e}\033[0m")
 
-def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
+def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None, native=False):
     """Generate a wrapper that routes execution into the Ubuntu PRoot container."""
     if '/' in executable or '\\' in executable or '..' in executable:
         print(f"\033[91m[X] Invalid executable name: {executable}\033[0m")
@@ -410,7 +410,32 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
     # Build proot bind arguments.
     # We bind all common Android root directories unconditionally so that
     # Node.js fs.realpath and other symlink-following logic never breaks.
-    wrapper = f"""#!/system/bin/sh
+    if native:
+        # Native mode: the tool is a statically-linked binary (Go/Rust) that
+        # runs directly on Android without proot/glibc. The binary lives in the
+        # container filesystem but is executed by the host kernel directly.
+        wrapper = f"""#!/system/bin/sh
+# AnCLI wrapper for: {executable} (native — runs directly on Android, no proot)
+
+# 1. Load host-mode environment (Android PATH, proxy, locale, TZ, ...)
+. {ANCLI_DIR}/bin/ancli_env.sh host 2>/dev/null || true
+
+# 2. Load tool-specific secrets (mode 0600, not embedded in this script)
+{secrets_line}
+
+# 3. Inject static runtime env vars (from registry)
+{static_exports}
+# 4. Browser redirect for OAuth logins (deployed by 'ancli repair')
+if [ -x {KSU_BIN}/xdg-open ]; then
+    export BROWSER={KSU_BIN}/xdg-open
+fi
+
+# 5. Run the static binary straight from the container filesystem.
+#    The binary is statically linked, so it needs no glibc or proot.
+exec {ROOTFS}/usr/local/bin/{executable} "$@"
+"""
+    else:
+        wrapper = f"""#!/system/bin/sh
 # AnCLI wrapper for: {executable}
 
 # 1. Load centralized proxy & environment variables
@@ -735,7 +760,8 @@ def repair_env(registry):
             app_reg = registry['apps'].get(app_id) if registry and 'apps' in registry else None
             runtime_env = app_reg.get('runtime_env', []) if app_reg else []
             stored_env = info.get('env', {})
-            generate_proot_wrapper(exec_name, stored_env if stored_env else None, runtime_env)
+            generate_proot_wrapper(exec_name, stored_env if stored_env else None, runtime_env,
+                                   app_reg.get('native', False) if app_reg else False)
         print("\033[92m[OK] Wrappers updated to latest engine.\033[0m")
     else:
         print("\033[90m[i] No installed apps to repair.\033[0m")
@@ -791,7 +817,7 @@ PATH="/system/bin:$PATH" /system/bin/am start -a android.intent.action.VIEW -d "
 def _install_proot_common(app_id, app, registry_version="unknown"):
     """Shared post-install bookkeeping: write wrapper and save state."""
     runtime_env = app.get('runtime_env', [])
-    generate_proot_wrapper(app['executable'], {}, runtime_env)
+    generate_proot_wrapper(app['executable'], {}, runtime_env, app.get('native', False))
     _deploy_xdg_open()
     installed = load_installed()
     installed[app_id] = {
@@ -938,7 +964,8 @@ def update_app(app_id, registry):
             print(f"\033[92m[i] Re-injecting stored configuration keys: {', '.join(cached_env.keys())}\033[0m")
 
         runtime_env = app.get('runtime_env', [])
-        generate_proot_wrapper(app.get('executable', app_id), cached_env if cached_env else None, runtime_env)
+        generate_proot_wrapper(app.get('executable', app_id), cached_env if cached_env else None, runtime_env,
+                               app.get('native', False))
 
         reg_ver = app.get('version', registry.get('version', 'unknown'))
         installed[app_id]['installed_version'] = reg_ver
@@ -971,7 +998,8 @@ def reconfigure_app(app_id, registry):
             env_dict[var] = prev_val  # Keep existing value if skipped
 
     runtime_env = app.get('runtime_env', [])
-    generate_proot_wrapper(app.get('executable', app_id), env_dict if env_dict else None, runtime_env)
+    generate_proot_wrapper(app.get('executable', app_id), env_dict if env_dict else None, runtime_env,
+                           app.get('native', False))
 
     installed[app_id]['env'] = env_dict
     save_installed(installed)

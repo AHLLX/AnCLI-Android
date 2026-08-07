@@ -41,7 +41,7 @@
     },
     "agy": {
       "name": "Antigravity CLI",
-      "description": "Google's powerful terminal agent",
+      "description": "Google's powerful terminal agent (native: runs without proot)",
       "author": "Google",
       "install_mode": "proot",
       "install_method": "pipe_script",
@@ -59,7 +59,8 @@
         "HTTPS_PROXY",
         "ALL_PROXY"
       ],
-      "executable": "agy"
+      "executable": "agy",
+      "native": true
     },
     "claude-code": {
       "name": "Claude Code",
@@ -95,13 +96,15 @@
     },
     "grok": {
       "name": "Grok CLI",
-      "description": "xAI's official terminal coding agent",
+      "description": "xAI's official terminal coding agent (native: runs without proot)",
       "author": "xAI",
       "install_mode": "proot",
       "install_method": "pipe_script",
       "installer_url": "https://x.ai/cli/install.sh",
       "installer_args": "",
-      "installer_script_env": {"GROK_BIN_DIR": "/usr/local/bin"},
+      "installer_script_env": {
+        "GROK_BIN_DIR": "/usr/local/bin"
+      },
       "install_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "update_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "uninstall_cmd": "rm -f /usr/local/bin/grok /usr/local/bin/agent && rm -rf /root/.grok",
@@ -111,7 +114,8 @@
         "GROK_CHANNEL",
         "GROK_PROXY_URL"
       ],
-      "executable": "grok"
+      "executable": "grok",
+      "native": true
     }
   }
 }

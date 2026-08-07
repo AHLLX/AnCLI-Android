@@ -24,10 +24,10 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 | :--- | :--- | :--- |
 | **Aider** | Python | pip package |
 | **MiMo Code** | Node.js/JS | Precompiled Release binary |
-| **Antigravity CLI (agy)** | Go (static) | Standalone release binary |
+| **Antigravity CLI (agy)** | Go (static) | Standalone release binary — **native mode: runs without proot** |
 | **Claude Code** | Node.js/JS | Precompiled Release binary (NPM-free) |
 | **OpenCode** | Node.js/JS | Precompiled Release binary (NPM-free) |
-| **Grok** | Rust (static) | Standalone release binary |
+| **Grok** | Rust (static) | Standalone release binary — **native mode: runs without proot** |
 
 ## Installation
 
@@ -111,6 +111,14 @@ export ANCLI_MIRROR="archive.ubuntu.com"
   rm -rf /data/local/tmp/ancli
   ```
   After wiping the directory, uninstall the module from your manager.
+
+## Native (No-PROOT) Mode
+
+Statically-linked binaries (**agy** — Go, **grok** — Rust) don't need the glibc container: their wrappers execute the binary **directly on Android**, bypassing proot entirely. This gives instant startup, no FUSE/proot translation overhead, and no `/sdcard` slowdown. The binary still lives in the container filesystem and shares its config (`/root/.config`, ...) with proot mode.
+
+- Detection is registry-driven (`"native": true`); wrappers are generated accordingly by `ancli install` / `ancli repair`.
+- Config keys, proxy detection, browser redirect (OAuth), and secrets work exactly as in proot mode.
+- **Known gap**: native mode runs on the Android host, so tools that shell out to `git` / `bash` need those present on the host (Android has `sh`/`curl` on recent versions but no `git`/`bash`). If you need git inside agy/grok, keep proot mode or use `ancli config`.
 
 ## Troubleshooting
 
