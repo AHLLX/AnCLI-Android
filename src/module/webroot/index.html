@@ -5,78 +5,148 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AnCLI WebUI</title>
 <style>
+/* ================= 奶咖色系 · 液态玻璃 · 圆润 ================= */
 :root {
-  --bg: #0f1115; --card: #171a21; --border: #262b36; --text: #d8dee9;
-  --muted: #7d8590; --accent: #3b82f6; --ok: #22c55e; --warn: #f59e0b;
-  --err: #ef4444; --native: #a855f7;
+  /* latte (light) */
+  --bg1: #f3ecdf; --bg2: #ead9c2;
+  --glass: rgba(255, 250, 240, 0.58);
+  --glass-strong: rgba(255, 250, 240, 0.82);
+  --stroke: rgba(255, 255, 255, 0.55);
+  --text: #4a3728; --muted: #8d7660; --accent: #c08552; --accent-soft: #e8cfae;
+  --ok: #7a9e6b; --warn: #d9a441; --err: #c96a5a; --native: #9a6fb0;
+  --shadow: 0 8px 32px rgba(122, 92, 60, 0.14);
 }
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background:var(--bg); color:var(--text); font:14px/1.6 system-ui,-apple-system,sans-serif; padding:16px; }
-h1 { font-size:18px; margin-bottom:4px; }
-.sub { color:var(--muted); font-size:12px; margin-bottom:16px; }
-.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:20px; }
-.card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; }
-.card .k { color:var(--muted); font-size:11px; }
-.card .v { font-size:16px; font-weight:600; margin-top:2px; }
-.card .v.ok { color:var(--ok); } .card .v.bad { color:var(--err); }
-.app { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:10px; }
-.app .head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.app .name { font-weight:600; font-size:15px; }
-.app .desc { color:var(--muted); font-size:12px; margin:4px 0 10px; }
-.badge { font-size:11px; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--muted); }
-.badge.native { border-color:var(--native); color:var(--native); }
-.badge.installed { border-color:var(--ok); color:var(--ok); }
-.badge.broken { border-color:var(--err); color:var(--err); }
-.badge.update { border-color:var(--warn); color:var(--warn); }
-.btns { display:flex; gap:8px; flex-wrap:wrap; }
-button { background:#232936; color:var(--text); border:1px solid var(--border); border-radius:8px;
-  padding:6px 14px; font-size:13px; cursor:pointer; transition:.15s; }
-button:hover { border-color:var(--accent); color:#fff; }
-button:disabled { opacity:.45; cursor:not-allowed; }
-button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-button.danger:hover { border-color:var(--err); color:var(--err); }
-button.small { padding:3px 10px; font-size:12px; }
-#log { background:#0a0c10; border:1px solid var(--border); border-radius:10px; padding:12px;
-  font:12px/1.5 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-all;
-  max-height:260px; overflow:auto; color:#9fb3c8; margin-top:20px; }
-#log .err { color:var(--err); } #log .ok { color:var(--ok); }
-.overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:10; }
-.overlay.show { display:flex; }
-.dialog { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; width:min(90vw,420px); }
-.dialog h3 { margin-bottom:12px; }
-.dialog label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
-.dialog input { width:100%; background:#0a0c10; border:1px solid var(--border); border-radius:8px;
-  color:var(--text); padding:8px 10px; font-size:13px; }
-.dialog input:focus { outline:none; border-color:var(--accent); }
-.dialog .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
-.hint { color:var(--muted); font-size:11px; margin-top:6px; }
+:root[data-theme="dark"] {
+  /* mocha (dark) */
+  --bg1: #2b2118; --bg2: #1d1610;
+  --glass: rgba(58, 46, 34, 0.55);
+  --glass-strong: rgba(58, 46, 34, 0.85);
+  --stroke: rgba(255, 240, 220, 0.14);
+  --text: #eeddc6; --muted: #a68f74; --accent: #d4a373; --accent-soft: #5a4632;
+  --ok: #8fae7e; --warn: #d9a441; --err: #d0816f; --native: #b78fd0;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  font: 14px/1.65 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+  background: linear-gradient(160deg, var(--bg1), var(--bg2));
+  background-attachment: fixed;
+  padding: 18px 16px 32px;
+}
+h1 { font-size: 19px; font-weight: 700; letter-spacing: .02em; }
+.sub { color: var(--muted); font-size: 12px; margin: 2px 0 14px; }
+
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  border: 1px solid var(--stroke);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+.header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 2px 0; }
+.theme-switch { display: inline-flex; gap: 4px; background: var(--glass); border: 1px solid var(--stroke);
+  border-radius: 999px; padding: 3px; backdrop-filter: blur(12px); }
+.theme-switch button { border: 0; background: transparent; color: var(--muted); border-radius: 999px;
+  padding: 4px 10px; font-size: 12px; cursor: pointer; transition: .18s; }
+.theme-switch button.active { background: var(--glass-strong); color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 12px; margin: 16px 0; }
+.card { padding: 14px 16px; border-radius: 20px; }
+.card .k { color: var(--muted); font-size: 11px; }
+.card .v { font-size: 17px; font-weight: 700; margin-top: 2px; }
+.card .v.ok { color: var(--ok); } .card .v.bad { color: var(--err); }
+
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+button { background: var(--glass); color: var(--text); border: 1px solid var(--stroke); border-radius: 14px;
+  padding: 8px 18px; font-size: 13px; font-weight: 500; cursor: pointer; transition: .18s;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+button:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+button:active { transform: translateY(0); }
+button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #fff; border: 0; }
+button.primary:hover { color: #fff; filter: brightness(1.06); }
+button.small { padding: 5px 12px; font-size: 12px; border-radius: 11px; }
+button.danger:hover { border-color: var(--err); color: var(--err); }
+
+.app { padding: 16px 18px; margin-bottom: 12px; border-radius: 22px; }
+.app .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.app .name { font-weight: 700; font-size: 15px; }
+.app .desc { color: var(--muted); font-size: 12px; margin: 5px 0 12px; }
+.badge { font-size: 11px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--stroke); color: var(--muted); background: var(--glass); }
+.badge.native { border-color: var(--native); color: var(--native); }
+.badge.installed { border-color: var(--ok); color: var(--ok); }
+.badge.broken { border-color: var(--err); color: var(--err); }
+.badge.update { border-color: var(--warn); color: var(--warn); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+#log { margin-top: 20px; padding: 14px 16px; border-radius: 20px; font: 12px/1.55 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow: auto; color: var(--text); opacity: .92; }
+#log .err { color: var(--err); } #log .ok { color: var(--ok); }
+
+.overlay { position: fixed; inset: 0; background: rgba(40, 28, 16, 0.45); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center; z-index: 10; }
+.overlay.show { display: flex; }
+.dialog { background: var(--glass-strong); backdrop-filter: blur(24px) saturate(1.3); -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  border: 1px solid var(--stroke); border-radius: 26px; padding: 22px; width: min(92vw, 460px);
+  box-shadow: 0 20px 60px rgba(60, 40, 20, 0.3); max-height: 86vh; overflow: auto; }
+.dialog h3 { margin-bottom: 4px; font-size: 16px; }
+.dialog .dsub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.dialog label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; font-weight: 600; }
+.dialog input { width: 100%; background: rgba(255,255,255,.25); border: 1px solid var(--stroke); border-radius: 12px;
+  color: var(--text); padding: 9px 12px; font-size: 13px; outline: none; transition: .15s; }
+.dialog input:focus { border-color: var(--accent); background: rgba(255,255,255,.4); }
+.dialog input::placeholder { color: var(--muted); opacity: .7; }
+.dialog .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.dialog .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.presets button { padding: 4px 11px; font-size: 12px; border-radius: 999px; }
+.presets button.sel { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.preset-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.preset-note a { color: var(--accent); text-decoration: none; }
 </style>
 </head>
 <body>
-<h1>AnCLI 管理</h1>
-<div class="sub">Unified Linux CLI environment manager · KernelSU WebUI</div>
 
-<div class="cards" id="statusCards">
-  <div class="card"><div class="k">AnCLI 版本</div><div class="v" id="stVer">…</div></div>
-  <div class="card"><div class="k">容器 Rootfs</div><div class="v" id="stRootfs">…</div></div>
-  <div class="card"><div class="k">PRoot</div><div class="v" id="stProot">…</div></div>
-  <div class="card"><div class="k">已安装工具</div><div class="v" id="stCount">…</div></div>
+<div class="header">
+  <div>
+    <h1>☕ AnCLI 管理</h1>
+    <div class="sub">Unified Linux CLI environment manager · KernelSU WebUI</div>
+  </div>
+  <div class="theme-switch" id="themeSwitch">
+    <button data-theme="auto" title="跟随系统">🖥 跟随</button>
+    <button data-theme="light" title="浅色（奶咖）">☀️ 浅色</button>
+    <button data-theme="dark" title="深色（摩卡）">🌙 深色</button>
+  </div>
 </div>
 
-<div style="display:flex; gap:8px; margin-bottom:14px;">
+<div class="cards" id="statusCards">
+  <div class="card glass"><div class="k">AnCLI 版本</div><div class="v" id="stVer">…</div></div>
+  <div class="card glass"><div class="k">容器 Rootfs</div><div class="v" id="stRootfs">…</div></div>
+  <div class="card glass"><div class="k">PRoot</div><div class="v" id="stProot">…</div></div>
+  <div class="card glass"><div class="k">已安装工具</div><div class="v" id="stCount">…</div></div>
+</div>
+
+<div class="toolbar">
   <button id="btnRepair" class="primary">修复环境 (repair)</button>
   <button id="btnRefresh">刷新</button>
 </div>
 
 <div id="apps"></div>
 
-<div id="log"></div>
+<div class="glass" id="log"></div>
 
 <div class="overlay" id="cfgOverlay">
   <div class="dialog">
     <h3 id="cfgTitle">配置</h3>
+    <div class="dsub">选择下方服务商可一键填充 API 地址与模型，再填入对应密钥即可</div>
+    <div class="presets" id="presetBar"></div>
+    <div class="preset-note" id="presetNote"></div>
     <div id="cfgFields"></div>
-    <div class="hint">留空表示跳过；已保存的密钥不会回显。</div>
+    <div class="hint">* 必填；留空表示跳过；已保存的密钥不会回显。</div>
     <div class="row">
       <button id="cfgCancel">取消</button>
       <button id="cfgSave" class="primary">保存</button>
@@ -90,11 +160,54 @@ let ANCLI = null;      // resolved ancli command path
 let currentApps = [];  // last list --json payload
 let cfgApp = null;     // app being configured
 
+// ---------- 服务商预置（官方文档核实，2026-08） ----------
+const PROVIDERS = [
+  { id: 'deepseek',    name: 'DeepSeek',       base: 'https://api.deepseek.com',                    keyUrl: 'https://platform.deepseek.com/api_keys',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat'], note: '国内直连 · 性价比高' },
+  { id: 'openai',      name: 'OpenAI',         base: 'https://api.openai.com/v1',                   keyUrl: 'https://platform.openai.com',
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] },
+  { id: 'gemini',      name: 'Google Gemini',  base: 'https://generativelanguage.googleapis.com/v1beta/openai/', keyUrl: 'https://aistudio.google.com/apikey',
+    models: ['gemini-3.6-flash', 'gemini-3.1-pro', 'gemini-2.5-flash', 'gemini-2.5-pro'] },
+  { id: 'groq',        name: 'Groq',           base: 'https://api.groq.com/openai/v1',              keyUrl: 'https://console.groq.com/keys',
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b'], note: '极速推理 · 有免费额度' },
+  { id: 'openrouter',  name: 'OpenRouter',     base: 'https://openrouter.ai/api/v1',                keyUrl: 'https://openrouter.ai/settings/keys',
+    models: ['~openai/gpt-latest', '~anthropic/claude-sonnet-latest'] },
+  { id: 'zhipu',       name: '智谱 GLM',        base: 'https://open.bigmodel.cn/api/paas/v4',        keyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
+    models: ['glm-5.2', 'glm-5v-turbo', 'glm-4-long'], note: '国内直连' },
+  { id: 'aliyun',      name: '阿里云百炼',      base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com',
+    models: ['qwen-plus', 'qwen-turbo', 'qwen-max'], note: '国内直连 · 通义千问' },
+  { id: 'kimi',        name: 'Kimi 月之暗面',   base: 'https://api.moonshot.cn/v1',                  keyUrl: 'https://platform.kimi.com/console/api-keys',
+    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'moonshot-v1'], note: '长上下文' },
+  { id: 'xai',         name: 'xAI Grok',       base: 'https://api.x.ai/v1',                         keyUrl: 'https://console.x.ai/team/default/api-keys',
+    models: ['grok-4.5', 'grok-4'] },
+  { id: 'siliconflow', name: '硅基流动',        base: 'https://api.siliconflow.cn/v1',               keyUrl: 'https://cloud.siliconflow.cn/account/ak',
+    models: ['Qwen/Qwen2.5-72B-Instruct', 'Pro/deepseek-ai/DeepSeek-R1'], note: '国内 · 含免费模型' },
+];
+
+// 字段用途提示
+const VAR_HINTS = {
+  OPENAI_API_KEY: 'OpenAI / 兼容平台 API 密钥（核心认证）',
+  ANTHROPIC_API_KEY: 'Anthropic Claude API 密钥',
+  GEMINI_API_KEY: 'Google Gemini API 密钥',
+  ANTIGRAVITY_API_KEY: 'Antigravity 平台密钥（留空可用 OAuth 登录）',
+  DEEPSEEK_API_KEY: 'DeepSeek API 密钥（在 platform.deepseek.com 申请）',
+  OPENAI_API_BASE: 'OpenAI 兼容 API 地址（选择服务商后自动填充）',
+  ANTHROPIC_BASE_URL: 'Claude 兼容 API 地址（选择服务商后自动填充）',
+  AIDER_MODEL: 'aider 默认模型名',
+  MIMO_MODEL: 'mimo 默认模型名',
+  ANTHROPIC_MODEL: 'claude 默认模型名',
+  HTTP_PROXY: 'HTTP 代理地址（如 http://192.168.1.5:7890）',
+  HTTPS_PROXY: 'HTTPS 代理地址',
+  ALL_PROXY: '全协议代理地址',
+  GROK_DEPLOYMENT_KEY: 'Grok 企业部署密钥（个人使用留空）',
+  GROK_CHANNEL: 'Grok 频道（stable / beta 等）',
+  GROK_PROXY_URL: 'Grok 自定义代理/中转地址',
+};
+// 会被服务商预置填充的字段
+const BASE_FIELDS = ['OPENAI_API_BASE', 'ANTHROPIC_BASE_URL', 'GROK_PROXY_URL'];
+const MODEL_FIELDS = ['AIDER_MODEL', 'MIMO_MODEL', 'ANTHROPIC_MODEL'];
+
 // ---------- KernelSU / KsuWebUI bridge ----------
-// KernelSU natively injects `window.ksu` (API: ksu.exec(cmd, optionsJson,
-// callbackName), callback registered on window). KsuWebUI framework and
-// APatch expose ksu_webui / ap_webui instead. The object may be injected
-// AFTER the page starts loading — poll until it appears.
 const BRIDGE_NAMES = ['ksu', 'ksu_webui', 'ap_webui', 'ksuwebui'];
 let bridge = null;
 let bridgeName = null;
@@ -122,10 +235,6 @@ function waitForBridge(timeoutMs) {
   });
 }
 
-// exec with support for:
-//  - native KernelSU `ksu`: exec(cmd, optionsJson, callbackName) with the
-//    callback registered as window[callbackName] = (errno, stdout, stderr)
-//  - KsuWebUI/APatch: exec(cmd, callback) or exec(cmd) -> Promise
 function execOnBridge(b, cmd, name) {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -139,7 +248,6 @@ function execOnBridge(b, cmd, name) {
     }, 180000);
     try {
       if (name === 'ksu') {
-        // Native KernelSU: callback-style via a global function name
         window.__ancliCbCounter = (window.__ancliCbCounter || 0) + 1;
         const cbName = 'ancli_cb_' + Date.now() + '_' + window.__ancliCbCounter;
         window[cbName] = (errno, stdout, stderr) => {
@@ -149,7 +257,6 @@ function execOnBridge(b, cmd, name) {
         };
         b.exec(cmd, '{}', cbName);
       } else {
-        // KsuWebUI / APatch style: callback or Promise
         const ret = b.exec(cmd, finish);
         if (ret && typeof ret.then === 'function') {
           ret.then(r => { clearTimeout(timeout); finish(r && (r.code !== undefined ? r.code : r.errno), r && r.stdout, r && r.stderr); },
@@ -158,7 +265,6 @@ function execOnBridge(b, cmd, name) {
           clearTimeout(timeout);
           finish(ret.code !== undefined ? ret.code : ret.errno, ret.stdout, ret.stderr);
         }
-        // callback style: finish() will fire later
       }
     } catch (e) {
       clearTimeout(timeout);
@@ -167,7 +273,6 @@ function execOnBridge(b, cmd, name) {
   });
 }
 
-// Unified executor: JS bridge first (polled), KKHTTP as fallback
 async function execCmd(cmd) {
   if (!bridge) {
     try {
@@ -176,7 +281,6 @@ async function execCmd(cmd) {
       bridgeName = found.name;
       log('桥接已连接: window.' + found.name);
     } catch (e) {
-      // No JS bridge — try KsuWebUI's KKHTTP endpoint before giving up
       try { return await shHttp(cmd); }
       catch (e2) { throw new Error('WebUI 桥接不可用（等待超时且 KKHTTP 失败）：需要 KernelSU 0.9.5+ 或 KsuWebUI 框架'); }
     }
@@ -184,9 +288,8 @@ async function execCmd(cmd) {
   return await execOnBridge(bridge, cmd, bridgeName);
 }
 
-const sh = execCmd; // alias kept for callers
+const sh = execCmd;
 
-// KsuWebUI (framework) HTTP fallback — tried only when no JS bridge exists
 async function shHttp(cmd) {
   const ports = [8443, 8080];
   let lastErr = null;
@@ -236,16 +339,11 @@ async function ancli(args) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Run a long command in the background (output redirected to a log file) and
-// poll the log. The KernelSU JS bridge blocks the WebView while a command
-// runs, so installs/updates would freeze the UI; backgrounding keeps the
-// page responsive and streams progress into the log area.
 async function runBackground(cmd) {
   const logFile = '/data/local/tmp/ancli/.webui_last.log';
   const exitFile = logFile + '.exit';
   log('$ ' + cmd + '  （后台执行）');
   try {
-    // Shell-quote guard: cmd contains no single quotes (paths/ids only).
     const r = await execCmd("sh -c '" + cmd + ' > ' + logFile + ' 2>&1; echo $? > ' + exitFile + "' &");
     if (r.code !== 0 && !r.stdout && !r.stderr) {
       log('后台任务启动失败（exit ' + r.code + '）', 'err');
@@ -255,7 +353,6 @@ async function runBackground(cmd) {
     log('后台任务启动失败: ' + e, 'err');
     return;
   }
-  // Poll: stream new log lines, then wait for the exit marker file.
   let last = 0;
   for (;;) {
     await sleep(1200);
@@ -334,7 +431,7 @@ function renderApps(apps) {
   if (!apps.length) { wrap.innerHTML = '<div class="sub">registry 中没有可用工具</div>'; return; }
   for (const a of apps) {
     const el = document.createElement('div');
-    el.className = 'app';
+    el.className = 'app glass';
     const badges = [];
     if (a.native) badges.push('<span class="badge native">native 直跑</span>');
     if (a.installed) {
@@ -387,25 +484,47 @@ async function doUpdate(id) {
   await loadApps();
 }
 
-// ---------- env var hints (shown in the config dialog) ----------
-const VAR_HINTS = {
-  OPENAI_API_KEY: 'OpenAI / 兼容平台 API 密钥（核心认证，必填）',
-  ANTHROPIC_API_KEY: 'Anthropic Claude API 密钥',
-  GEMINI_API_KEY: 'Google Gemini API 密钥',
-  ANTIGRAVITY_API_KEY: 'Antigravity 平台密钥（留空可用 OAuth 登录）',
-  DEEPSEEK_API_KEY: 'DeepSeek API 密钥（用 DeepSeek 模型时需要）',
-  OPENAI_API_BASE: 'OpenAI 兼容 API 地址（自定义中转，如 https://api.deepseek.com/v1）',
-  ANTHROPIC_BASE_URL: 'Claude 兼容 API 地址（自定义中转）',
-  AIDER_MODEL: 'aider 默认模型名（如 gpt-4o / deepseek-chat）',
-  MIMO_MODEL: 'mimo 默认模型名',
-  ANTHROPIC_MODEL: 'claude 默认模型名',
-  HTTP_PROXY: 'HTTP 代理地址（如 http://192.168.1.5:7890）',
-  HTTPS_PROXY: 'HTTPS 代理地址',
-  ALL_PROXY: '全协议代理地址',
-  GROK_DEPLOYMENT_KEY: 'Grok 企业部署密钥（个人使用留空）',
-  GROK_CHANNEL: 'Grok 频道（stable / beta 等）',
-  GROK_PROXY_URL: 'Grok 自定义代理/中转地址',
-};
+// ---------- 配置弹窗（含服务商一键预置） ----------
+let selectedProvider = null;
+
+function buildPresetBar(app) {
+  const bar = document.getElementById('presetBar');
+  const fields = (app.required_env_vars || []).concat(app.optional_env_vars || []);
+  const hasBase = fields.some(f => BASE_FIELDS.includes(f));
+  const hasModel = fields.some(f => MODEL_FIELDS.includes(f));
+  bar.innerHTML = '';
+  if (!hasBase && !hasModel) {
+    document.getElementById('presetNote').textContent = '';
+    return;
+  }
+  for (const p of PROVIDERS) {
+    const b = document.createElement('button');
+    b.textContent = p.name;
+    b.onclick = () => applyProvider(p);
+    if (selectedProvider && selectedProvider.id === p.id) b.classList.add('sel');
+    bar.appendChild(b);
+  }
+}
+
+function applyProvider(p) {
+  selectedProvider = p;
+  buildPresetBar(cfgApp);
+  const inputs = document.querySelectorAll('#cfgFields input');
+  const models = p.models || [];
+  for (const inp of inputs) {
+    const v = inp.dataset.var;
+    if (BASE_FIELDS.includes(v)) { inp.value = p.base; inp.dataset.models = models.join(','); }
+    else if (MODEL_FIELDS.includes(v)) { inp.value = models[0] || ''; inp.dataset.models = models.join(','); }
+    else if (v === 'OPENAI_API_KEY' || v === 'DEEPSEEK_API_KEY' || v === 'ANTHROPIC_API_KEY' || v === 'GEMINI_API_KEY') {
+      inp.placeholder = '申请密钥: ' + p.keyUrl;
+    }
+  }
+  const note = document.getElementById('presetNote');
+  note.innerHTML = '已选择 <b>' + esc(p.name) + '</b>：API 地址与默认模型已填充' +
+    (p.note ? ' · ' + esc(p.note) : '') +
+    ' · 密钥申请 <a href="' + esc(p.keyUrl) + '" target="_blank" rel="noopener">' + esc(p.keyUrl) + '</a>' +
+    '<br>模型可手动修改：' + esc((models || []).join(' / '));
+}
 
 function openConfig(id) {
   const app = currentApps.find(a => a.id === id);
@@ -413,6 +532,7 @@ function openConfig(id) {
   const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
   if (!vars.length) { alert('该工具没有可配置的环境变量'); return; }
   cfgApp = app;
+  selectedProvider = null;
   document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
   const wrap = document.getElementById('cfgFields');
   wrap.innerHTML = vars.map(v => {
@@ -423,6 +543,8 @@ function openConfig(id) {
            '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' + esc(hint) + '">' +
            '<div class="hint">' + esc(hint) + '</div>';
   }).join('');
+  document.getElementById('presetNote').textContent = '';
+  buildPresetBar(app);
   document.getElementById('cfgOverlay').classList.add('show');
 }
 
@@ -452,7 +574,35 @@ document.getElementById('btnRepair').onclick = async () => {
   await loadStatus(); await loadApps();
 };
 
+// ---------- 主题：跟随系统 / 手动指定 ----------
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === 'auto') {
+    root.removeAttribute('data-theme');
+    const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (dark) root.setAttribute('data-theme', 'dark');
+  } else {
+    root.setAttribute('data-theme', mode);
+  }
+  document.querySelectorAll('#themeSwitch button').forEach(b =>
+    b.classList.toggle('active', b.dataset.theme === mode));
+  try { localStorage.setItem('ancli_theme', mode); } catch (e) { /* ignore */ }
+}
+
+document.querySelectorAll('#themeSwitch button').forEach(b => {
+  b.onclick = () => applyTheme(b.dataset.theme);
+});
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+    const saved = localStorage.getItem('ancli_theme') || 'auto';
+    if (saved === 'auto') applyTheme('auto');
+  });
+}
+
 (async function init() {
+  let saved = 'auto';
+  try { saved = localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { /* ignore */ }
+  applyTheme(saved);
   log('AnCLI WebUI 初始化…');
   ANCLI = await findAncli();
   log('ancli 路径: ' + ANCLI);
