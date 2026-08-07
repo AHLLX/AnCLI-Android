@@ -316,6 +316,27 @@ class TestWrapperGeneration:
         # secrets still sourced
         assert "secrets/agy.env" in wrapper
 
+    def test_native_shims_bridge_to_container(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+        chmods = []
+        monkeypatch.setattr(core.os, "chmod",
+                            lambda p, m: chmods.append((os.path.normpath(str(p)), m)))
+
+        core._deploy_native_shims()
+
+        for tool in ("git", "bash", "curl"):
+            shim = tmp_path / "ancli" / "bin" / tool
+            assert shim.exists()
+            # 0755 exec bit (asserted via chmod calls; Windows ignores mode bits)
+            assert (os.path.normpath(str(shim)), 0o755) in chmods
+            content = shim.read_text()
+            assert 'TOOL=$(basename "$0")' in content
+            assert f"{core.ROOTFS}" in content          # container rootfs
+            assert "/usr/bin/env \"$TOOL\"" in content  # runs container tool
+            assert "proot" in content
+
     def test_wrapper_rejects_path_traversal_executable(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
         core.generate_proot_wrapper("../evil", {})

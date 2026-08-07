@@ -766,7 +766,39 @@ def repair_env(registry):
     else:
         print("\033[90m[i] No installed apps to repair.\033[0m")
 
+    # 5. Deploy native-mode toolchain shims (git/bash/curl bridge into the
+    #    container) so native tools can shell out to them on the host.
+    _deploy_native_shims()
+
     print("\033[92m[OK] Repair complete! If problems persist, try: ancli config <app_id>\033[0m")
+
+def _deploy_native_shims():
+    """Create proot shims (git/bash/curl) in ANCLI_DIR/bin so native-mode
+    tools (agy/grok, which run directly on Android) can reach the container
+    toolchain when the Android host lacks those commands.
+    Each shim re-enters the container via proot; the container PATH is set so
+    the tool's own subprocesses (ssh, pager, ...) resolve inside the rootfs."""
+    shim_template = f"""#!/system/bin/sh
+# AnCLI proot shim: runs the container's equivalent of this command.
+# Bridges native-mode tools to the container toolchain (git/bash/curl).
+TOOL=$(basename "$0")
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
+    -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
+    -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb \\
+    -w "$PWD" /usr/bin/env "$TOOL" "$@"
+"""
+    for tool in ["git", "bash", "curl"]:
+        shim_path = f"{ANCLI_DIR}/bin/{tool}"
+        try:
+            if os.path.exists(shim_path):
+                os.remove(shim_path)
+            with open(shim_path, "w") as f:
+                f.write(shim_template)
+            os.chmod(shim_path, 0o755)
+        except Exception:
+            pass
+    print(f"\033[92m[OK] Native toolchain shims deployed (git/bash/curl) in {ANCLI_DIR}/bin\033[0m")
 
 def _deploy_xdg_open():
     try:

@@ -118,7 +118,7 @@ Statically-linked binaries (**agy** — Go, **grok** — Rust) don't need the gl
 
 - Detection is registry-driven (`"native": true`); wrappers are generated accordingly by `ancli install` / `ancli repair`.
 - Config keys, proxy detection, browser redirect (OAuth), and secrets work exactly as in proot mode.
-- **Known gap**: native mode runs on the Android host, so tools that shell out to `git` / `bash` need those present on the host (Android has `sh`/`curl` on recent versions but no `git`/`bash`). If you need git inside agy/grok, keep proot mode or use `ancli config`.
+- **Toolchain bridging**: if a native tool shells out to `git` / `bash` / `curl`, the host usually lacks them — AnCLI deploys proot shims (`ancli repair`) that transparently run those commands inside the container, so git operations and scripts keep working.
 
 ## Troubleshooting
 
