@@ -63,9 +63,19 @@ class TestValidateCmd:
         'env FLAG="x > y" bash /tmp/install.sh',
         "bash /tmp/x.sh --dir '/a b'",
         "curl -sL 'https://x/a;b.sh' -o /tmp/x.sh && bash /tmp/x.sh",
+        # $() inside single quotes is literal -> allowed
+        "curl -sL 'https://x/$(id)' -o /tmp/x.sh",
     ])
     def test_allows_quoted_special_chars(self, cmd):
         assert core.validate_cmd(cmd) is True
+
+    @pytest.mark.parametrize("cmd", [
+        # $() / backticks execute even inside double quotes -> must be blocked
+        'env FLAG="$(rm -rf /)" bash /tmp/install.sh',
+        'env FLAG="`id`" bash /tmp/install.sh',
+    ])
+    def test_blocks_command_substitution_inside_double_quotes(self, cmd):
+        assert core.validate_cmd(cmd) is False
 
     def test_whitelist_prefix_requires_trailing_space(self):
         # "curl" alone (no space) must not match the "curl " prefix
@@ -170,10 +180,11 @@ class TestRegistryTLS:
 
 class TestPipeScriptCommand:
     def test_env_prefix_uses_env_not_nested_bash_c(self):
+        import shlex
         # Simulate the exact construction used in _install_pipe_script
         installer_env = {"GROK_BIN_DIR": "/usr/local/bin", "FLAG": "a b"}
         script_path = "/tmp/install_grok.sh"
-        installer_args = "--dir /usr/local/bin"
+        installer_args = '--dir "/a b"'
 
         cmd = f"bash {shlex_quote(script_path)}"
         if installer_env:
@@ -182,7 +193,8 @@ class TestPipeScriptCommand:
             )
             cmd = f"env {env_prefix} {cmd}"
         if installer_args:
-            cmd += " " + " ".join(shlex_quote(a) for a in installer_args.split())
+            # shlex.split honors quoting inside installer_args
+            cmd += " " + " ".join(shlex_quote(a) for a in shlex.split(installer_args))
 
         # No nested single quotes; every value individually quoted
         assert cmd.startswith("env ")
@@ -194,7 +206,8 @@ class TestPipeScriptCommand:
         assert "GROK_BIN_DIR=/usr/local/bin" in argv
         assert "FLAG=a b" in argv
         assert argv[argv.index("bash") + 1] == script_path
-        assert "--dir" in argv and "/usr/local/bin" in argv
+        # Quoted installer arg survives as a single token
+        assert "--dir" in argv and "/a b" in argv
 
 
 def shlex_quote(s):

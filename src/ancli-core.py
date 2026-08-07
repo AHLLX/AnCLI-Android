@@ -516,9 +516,17 @@ def remove_wrapper(executable):
 # ---------------------------------------------------------------------------
 
 def _strip_quoted_segments(cmd):
-    """Remove single- and double-quoted segments so operator checks only apply
-    to text the shell will actually interpret (quoted content is data, not syntax)."""
-    return re.sub(r"'[^']*'|\"[^\"]*\"", "", cmd)
+    """Neutralise quoted segments so operator checks apply only to text the
+    shell will interpret. Single-quoted spans are fully literal and dropped.
+    Inside double quotes `;` `<` `>` `&` are also literal, so they are blanked
+    out — but `$(` and backticks still execute there, so they remain visible
+    to the checks."""
+    cmd = re.sub(r"'[^']*'", "", cmd)
+    return re.sub(
+        r'"([^"]*)"',
+        lambda m: '"' + re.sub(r"[;<>]&?", "", m.group(1)) + '"',
+        cmd,
+    )
 
 
 def validate_cmd(cmd):
