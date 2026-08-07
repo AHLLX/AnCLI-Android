@@ -86,6 +86,19 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow: auto; color: var(--text); opacity: .92; }
 #log .err { color: var(--err); } #log .ok { color: var(--ok); }
 
+/* ===== 软键盘弹出降级 =====
+   backdrop-filter 在 WebView 视口 resize（键盘弹出）时会反复重采样背景，
+   导致卡顿 / 闪屏 / 局部黑屏。检测到键盘后关闭模糊、背景换纯色、面板
+   换高不透明度，消除重采样；键盘收起后自动恢复液态玻璃。 */
+body.ime-open { background: var(--bg1); background-attachment: scroll; }
+body.ime-open .glass,
+body.ime-open .dialog,
+body.ime-open .theme-switch,
+body.ime-open button { backdrop-filter: none; -webkit-backdrop-filter: none; }
+body.ime-open .glass { background: var(--glass-strong); }
+body.ime-open .dialog { background: var(--glass-strong); }
+body.ime-open #log { background: var(--glass-strong); }
+
 .overlay { position: fixed; inset: 0; background: rgba(40, 28, 16, 0.45); backdrop-filter: blur(4px);
   display: none; align-items: center; justify-content: center; z-index: 10; }
 .overlay.show { display: flex; }
@@ -160,28 +173,28 @@ let ANCLI = null;      // resolved ancli command path
 let currentApps = [];  // last list --json payload
 let cfgApp = null;     // app being configured
 
-// ---------- 服务商预置（官方文档核实，2026-08） ----------
+// ---------- 服务商预置（官方文档核实，2026-08 二次复核） ----------
 const PROVIDERS = [
   { id: 'deepseek',    name: 'DeepSeek',       base: 'https://api.deepseek.com',                    keyUrl: 'https://platform.deepseek.com/api_keys',
-    models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat'], note: '国内直连 · 性价比高' },
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'], note: '国内直连 · 性价比高' },
   { id: 'openai',      name: 'OpenAI',         base: 'https://api.openai.com/v1',                   keyUrl: 'https://platform.openai.com',
     models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] },
   { id: 'gemini',      name: 'Google Gemini',  base: 'https://generativelanguage.googleapis.com/v1beta/openai/', keyUrl: 'https://aistudio.google.com/apikey',
-    models: ['gemini-3.6-flash', 'gemini-3.1-pro', 'gemini-2.5-flash', 'gemini-2.5-pro'] },
+    models: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-2.5-flash'] },
   { id: 'groq',        name: 'Groq',           base: 'https://api.groq.com/openai/v1',              keyUrl: 'https://console.groq.com/keys',
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b'], note: '极速推理 · 有免费额度' },
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'], note: '极速推理 · 有免费额度' },
   { id: 'openrouter',  name: 'OpenRouter',     base: 'https://openrouter.ai/api/v1',                keyUrl: 'https://openrouter.ai/settings/keys',
     models: ['~openai/gpt-latest', '~anthropic/claude-sonnet-latest'] },
   { id: 'zhipu',       name: '智谱 GLM',        base: 'https://open.bigmodel.cn/api/paas/v4',        keyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
-    models: ['glm-5.2', 'glm-5v-turbo', 'glm-4-long'], note: '国内直连' },
+    models: ['glm-5.2', 'glm-5.1', 'glm-4.7-flash', 'glm-4-long'], note: '国内直连 · 含免费模型' },
   { id: 'aliyun',      name: '阿里云百炼',      base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com',
-    models: ['qwen-plus', 'qwen-turbo', 'qwen-max'], note: '国内直连 · 通义千问' },
+    models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'], note: '国内直连 · 通义千问' },
   { id: 'kimi',        name: 'Kimi 月之暗面',   base: 'https://api.moonshot.cn/v1',                  keyUrl: 'https://platform.kimi.com/console/api-keys',
-    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'moonshot-v1'], note: '长上下文' },
+    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'], note: '长上下文（1M）' },
   { id: 'xai',         name: 'xAI Grok',       base: 'https://api.x.ai/v1',                         keyUrl: 'https://console.x.ai/team/default/api-keys',
-    models: ['grok-4.5', 'grok-4'] },
+    models: ['grok-4.5', 'grok-4.3'] },
   { id: 'siliconflow', name: '硅基流动',        base: 'https://api.siliconflow.cn/v1',               keyUrl: 'https://cloud.siliconflow.cn/account/ak',
-    models: ['Qwen/Qwen2.5-72B-Instruct', 'Pro/deepseek-ai/DeepSeek-R1'], note: '国内 · 含免费模型' },
+    models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2.5-Coder-32B-Instruct'], note: '国内 · 含免费模型' },
 ];
 
 // 字段用途提示
@@ -574,6 +587,36 @@ document.getElementById('btnRepair').onclick = async () => {
   await loadStatus(); await loadApps();
 };
 
+// ---------- 软键盘检测（弹出时降级液态玻璃，避免卡顿/闪屏） ----------
+function setupImeGuard() {
+  const vv = window.visualViewport;
+  if (!vv) {
+    // Fallback: classic resize heuristic
+    let lastH = window.innerHeight;
+    window.addEventListener('resize', () => {
+      const h = window.innerHeight;
+      if (Math.abs(lastH - h) > 120) {
+        document.body.classList.toggle('ime-open', h < lastH);
+        lastH = h;
+      }
+    });
+    return;
+  }
+  let lastH = vv.height;
+  vv.addEventListener('resize', () => {
+    const h = vv.height;
+    // Keyboard visible when the visual viewport shrinks significantly
+    const open = h < window.innerHeight * 0.72;
+    document.body.classList.toggle('ime-open', open);
+    // Keep dialog input visible above the keyboard
+    const inp = document.activeElement;
+    if (open && inp && inp.tagName === 'INPUT') {
+      try { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { /* ignore */ }
+    }
+    lastH = h;
+  });
+}
+
 // ---------- 主题：跟随系统 / 手动指定 ----------
 function applyTheme(mode) {
   const root = document.documentElement;
@@ -600,6 +643,7 @@ if (window.matchMedia) {
 }
 
 (async function init() {
+  setupImeGuard();
   let saved = 'auto';
   try { saved = localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { /* ignore */ }
   applyTheme(saved);
