@@ -230,12 +230,14 @@ class TestWrapperGeneration:
         core.generate_proot_wrapper("mimo", {"OPENAI_API_KEY": "sk-x"}, ["HOME=/root"])
 
         wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text()
-        # cwd fallback for unbound host paths
+        # cwd fallback for unbound host paths -> container HOME
         assert "PROOT_CWD=\"$PWD\"" in wrapper
         assert "case \"$PROOT_CWD\"" in wrapper
         assert '-w "$PROOT_CWD"' in wrapper
-        # root-dir hint for TUI tools
-        assert 'if [ "$PWD" = "/" ]; then' in wrapper
+        assert "PROOT_CWD=/root" in wrapper
+        # root-dir redirect so TUI tools don't scan the whole container fs
+        assert 'if [ "$PROOT_CWD" = "/" ]; then' in wrapper
+        assert "Launched from /" in wrapper
         # full unconditional binds (AGENTS.md requirement)
         assert "-b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system" in wrapper
         # env bootstrap + per-tool secrets sourcing

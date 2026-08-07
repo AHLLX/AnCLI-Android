@@ -116,7 +116,15 @@ export ANCLI_MIRROR="archive.ubuntu.com"
 
 ### TUI tools (mimo / claude / opencode / agy) don't start from `/`
 
-Running a TUI tool while your shell is at the root directory (`/`) scans the **entire container filesystem** at startup (the rootfs plus the `/data`, `/sdcard`, `/proc` bindings — hundreds of thousands of files), which hangs or silently aborts the TUI. `cd` into a real project directory first, e.g.:
+All Node/Bun-based TUIs (mimo, opencode, claude) scan the current directory's file tree at startup. From `/` inside the container, that scan covers the entire rootfs plus the `/data` and `/sdcard` bindings — hundreds of thousands of files — which hangs or silently aborts the TUI. Python (aider) and Go/Rust tools are affected to a lesser degree.
+
+The wrappers handle this automatically: launching from `/` (or any path not visible inside the container, e.g. `/cache`) now redirects the working directory to the container HOME (`/root`), so the TUI starts fast. You will see a hint like:
+
+```
+[AnCLI] Launched from /; using /root (container HOME) as working directory.
+```
+
+If you want to work on a project instead, `cd` into it first:
 
 ```bash
 cd /sdcard/MyProject && mimo

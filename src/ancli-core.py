@@ -421,27 +421,30 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
 
 # 3. Inject static runtime env vars (from registry)
 {static_exports}
-# 4. Resolve PRoot working directory: fall back to / when PWD is not visible
-#    inside the rootfs (e.g. an unbound host path like /cache), which would
-#    otherwise make proot exit with 'unable to change the current working directory'.
+# 4. Resolve PRoot working directory: fall back to the container HOME when
+#    PWD is not visible inside the rootfs (e.g. an unbound host path like
+#    /cache), which would otherwise make proot exit with 'unable to change
+#    the current working directory'.
 PROOT_CWD="$PWD"
 case "$PROOT_CWD" in
     /|/dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*)
         ;;
     *)
         if [ ! -d "{ROOTFS}$PROOT_CWD" ]; then
-            PROOT_CWD=/
+            PROOT_CWD=/root
         fi
         ;;
 esac
-: "${{PROOT_CWD:=/}}"
-# Hint for root-directory launches: TUI tools (mimo/claude/...) scan the cwd
-# file tree at startup; inside the container / exposes the whole rootfs plus
-# the /data & /sdcard bindings, so startup hangs or never renders.
-if [ "$PWD" = "/" ]; then
-    echo "[AnCLI] Hint: running from / makes TUI tools scan the whole container filesystem." >&2
-    echo "        cd to a project dir (e.g. /sdcard/...) for a working TUI." >&2
+# Launching from / (or an unmapped path) means TUI tools (mimo/claude/opencode/...)
+# scan the whole container filesystem at startup — rootfs plus the /data and
+# /sdcard bindings (hundreds of thousands of files) — which hangs the TUI.
+# Redirect to the container HOME so startup stays fast.
+if [ "$PROOT_CWD" = "/" ]; then
+    PROOT_CWD=/root
+    echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
+    echo "        cd to a project dir (e.g. /sdcard/...) to work there." >&2
 fi
+: "${{PROOT_CWD:=/root}}"
 # 5. Launch PRoot with unified global binds
 # By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
 # we prevent Node.js fs.realpath and other symlink-following logic from breaking.
