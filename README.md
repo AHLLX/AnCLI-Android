@@ -112,6 +112,30 @@ export ANCLI_MIRROR="archive.ubuntu.com"
   ```
   After wiping the directory, uninstall the module from your manager.
 
+## Troubleshooting
+
+### TUI tools (mimo / claude / opencode / agy) don't start from `/`
+
+Running a TUI tool while your shell is at the root directory (`/`) scans the **entire container filesystem** at startup (the rootfs plus the `/data`, `/sdcard`, `/proc` bindings — hundreds of thousands of files), which hangs or silently aborts the TUI. `cd` into a real project directory first, e.g.:
+
+```bash
+cd /sdcard/MyProject && mimo
+```
+
+### Tools take ~10s to start from `/sdcard`
+
+`/sdcard` is Android's FUSE (emulated storage): every file operation costs 50–200 ms (proot translation + FUSE round trip). Startup scans that take 100 ms on a normal disk take ~10 s there. For fast startups, keep the project **inside the container rootfs** instead:
+
+```bash
+cd /root/projects && mimo   # instant startup, native ext4 speed
+```
+
+The wrapper also avoids repeating slow setup on every launch: the system proxy is detected via `dumpsys connectivity` and cached for 30 seconds (see `ancli_env.sh`), and Clash virtual-IP loopback binds are only re-applied when missing.
+
+### No update notification in KernelSU/Magisk manager
+
+The manager polls `update.json` (`updateJson` in `module.prop`). If `raw.githubusercontent.com` is unreachable on your network, no update will appear — use a proxy/VPN, or point `updateJson` at a jsDelivr mirror.
+
 ## Technical Details
 
 For the execution architecture, dual-injection wrapper mechanism, PRoot configuration, and registry schema, see the [Architecture Document](ARCHITECTURE.md). For technical boundaries and compatibility analysis, see the [Compatibility Dossier](COMPATIBILITY.md).

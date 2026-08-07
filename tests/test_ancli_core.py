@@ -214,6 +214,42 @@ class TestPipeScriptCommand:
         assert "--dir" in argv and "/a b" in argv
 
 
+# ---------------------------------------------------------------------------
+# wrapper generation
+# ---------------------------------------------------------------------------
+
+class TestWrapperGeneration:
+    def test_wrapper_template_has_cwd_fallback_and_binds(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+
+        core.generate_proot_wrapper("mimo", {"OPENAI_API_KEY": "sk-x"}, ["HOME=/root"])
+
+        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text()
+        # cwd fallback for unbound host paths
+        assert "PROOT_CWD=\"$PWD\"" in wrapper
+        assert "case \"$PROOT_CWD\"" in wrapper
+        assert '-w "$PROOT_CWD"' in wrapper
+        # root-dir hint for TUI tools
+        assert 'if [ "$PWD" = "/" ]; then' in wrapper
+        # full unconditional binds (AGENTS.md requirement)
+        assert "-b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system" in wrapper
+        # env bootstrap + per-tool secrets sourcing
+        assert "ancli_env.sh" in wrapper
+        assert "secrets/mimo.env" in wrapper
+        # systemless + KSU/AP dual injection paths were attempted
+        assert (tmp_path / "mod" / "system" / "bin" / "mimo").exists()
+
+    def test_wrapper_rejects_path_traversal_executable(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        core.generate_proot_wrapper("../evil", {})
+        assert not (tmp_path / "ancli" / "bin").exists()
+
+
 def shlex_quote(s):
     import shlex
     return shlex.quote(s)

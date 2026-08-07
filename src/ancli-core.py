@@ -421,13 +421,34 @@ def generate_proot_wrapper(executable, env_dict=None, runtime_env_list=None):
 
 # 3. Inject static runtime env vars (from registry)
 {static_exports}
-# 4. Launch PRoot with unified global binds
+# 4. Resolve PRoot working directory: fall back to / when PWD is not visible
+#    inside the rootfs (e.g. an unbound host path like /cache), which would
+#    otherwise make proot exit with 'unable to change the current working directory'.
+PROOT_CWD="$PWD"
+case "$PROOT_CWD" in
+    /|/dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*)
+        ;;
+    *)
+        if [ ! -d "{ROOTFS}$PROOT_CWD" ]; then
+            PROOT_CWD=/
+        fi
+        ;;
+esac
+: "${{PROOT_CWD:=/}}"
+# Hint for root-directory launches: TUI tools (mimo/claude/...) scan the cwd
+# file tree at startup; inside the container / exposes the whole rootfs plus
+# the /data & /sdcard bindings, so startup hangs or never renders.
+if [ "$PWD" = "/" ]; then
+    echo "[AnCLI] Hint: running from / makes TUI tools scan the whole container filesystem." >&2
+    echo "        cd to a project dir (e.g. /sdcard/...) for a working TUI." >&2
+fi
+# 5. Launch PRoot with unified global binds
 # By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
 # we prevent Node.js fs.realpath and other symlink-following logic from breaking.
 exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
     -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
     -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb \\
-    -w "$PWD" /usr/bin/env {executable} "$@"
+    -w "$PROOT_CWD" /usr/bin/env {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 

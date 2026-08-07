@@ -1,3 +1,17 @@
 #!/system/bin/sh
 . /data/local/tmp/ancli/bin/ancli_env.sh 2>/dev/null || true
-exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb -w "$PWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+# Resolve PRoot working directory: fall back to / when PWD is not visible
+# inside the rootfs (e.g. an unbound host path like /cache), which would
+# otherwise make proot exit with 'unable to change the current working directory'.
+PROOT_CWD="$PWD"
+case "$PROOT_CWD" in
+    /|/dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*)
+        ;;
+    *)
+        if [ ! -d "/data/local/tmp/ancli/rootfs$PROOT_CWD" ]; then
+            PROOT_CWD=/
+        fi
+        ;;
+esac
+: "${PROOT_CWD:=/}"
+exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
