@@ -78,6 +78,16 @@
       "uninstall_cmd": "rm -f /usr/local/bin/grok /usr/local/bin/agent && rm -rf /root/.grok",
       "executable": "grok",
       "native": true
+    },
+    "apk-basics": {
+      "name": "APK 分析基础环境",
+      "description": "Java 17 + pip(直接可用) + binutils + protoc + jadx（轻量，装完即用）",
+      "author": "AnCLI",
+      "install_mode": "proot",
+      "install_cmd": "bash /data/local/tmp/ancli/bin/apk-setup.sh",
+      "update_cmd": "bash /data/local/tmp/ancli/bin/apk-setup.sh",
+      "uninstall_cmd": "rm -f /usr/local/bin/apk-analyzer && rm -rf /opt/apk-tools",
+      "executable": "apk-analyzer"
     }
   }
 }

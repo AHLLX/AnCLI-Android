@@ -30,6 +30,12 @@ cp "$MODPATH/bin/proot" "$BIN_DIR/proot"
 chmod 755 "$BIN_DIR/proot"
 ui_print ">> PRoot deployed successfully."
 
+# 2.1 Deploy APK analysis toolchain installer (used by 'apk-analyzer' registry app)
+if [ -f "$MODPATH/apk-setup.sh" ]; then
+    cp "$MODPATH/apk-setup.sh" "$BIN_DIR/apk-setup.sh"
+    chmod 755 "$BIN_DIR/apk-setup.sh"
+fi
+
 # 3. Download & Extract Ubuntu Base
 if [ ! -f "$ROOTFS/bin/bash" ]; then
     ui_print ">> Downloading Ubuntu Base (arm64)..."
