@@ -65,6 +65,8 @@ class TestValidateCmd:
         "curl -sL 'https://x/a;b.sh' -o /tmp/x.sh && bash /tmp/x.sh",
         # $() inside single quotes is literal -> allowed
         "curl -sL 'https://x/$(id)' -o /tmp/x.sh",
+        # & inside double quotes is literal -> allowed
+        'env FLAG="a & b" bash /tmp/install.sh',
     ])
     def test_allows_quoted_special_chars(self, cmd):
         assert core.validate_cmd(cmd) is True
@@ -73,6 +75,8 @@ class TestValidateCmd:
         # $() / backticks execute even inside double quotes -> must be blocked
         'env FLAG="$(rm -rf /)" bash /tmp/install.sh',
         'env FLAG="`id`" bash /tmp/install.sh',
+        # ANSI-C $'...' quoting expands escapes at runtime -> not stripped
+        "curl $';rm -rf /' -o /tmp/x.sh",
     ])
     def test_blocks_command_substitution_inside_double_quotes(self, cmd):
         assert core.validate_cmd(cmd) is False

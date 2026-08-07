@@ -517,14 +517,15 @@ def remove_wrapper(executable):
 
 def _strip_quoted_segments(cmd):
     """Neutralise quoted segments so operator checks apply only to text the
-    shell will interpret. Single-quoted spans are fully literal and dropped.
-    Inside double quotes `;` `<` `>` `&` are also literal, so they are blanked
-    out — but `$(` and backticks still execute there, so they remain visible
-    to the checks."""
-    cmd = re.sub(r"'[^']*'", "", cmd)
+    shell will interpret. Single-quoted spans are fully literal and dropped
+    (except ANSI-C `$'...'` quoting, where escapes still expand, so its
+    content stays visible to the checks). Inside double quotes `;` `<` `>` `&`
+    are also literal, so they are blanked out — but `$(` and backticks still
+    execute there, so they remain visible to the checks."""
+    cmd = re.sub(r"(?<!\$)'[^']*'", "", cmd)
     return re.sub(
         r'"([^"]*)"',
-        lambda m: '"' + re.sub(r"[;<>]&?", "", m.group(1)) + '"',
+        lambda m: '"' + re.sub(r"[;&<>]", "", m.group(1)) + '"',
         cmd,
     )
 
