@@ -30,12 +30,6 @@ cp "$MODPATH/bin/proot" "$BIN_DIR/proot"
 chmod 755 "$BIN_DIR/proot"
 ui_print ">> PRoot deployed successfully."
 
-# 2.1 Deploy APK analysis toolchain installer (used by 'apk-analyzer' registry app)
-if [ -f "$MODPATH/apk-setup.sh" ]; then
-    cp "$MODPATH/apk-setup.sh" "$BIN_DIR/apk-setup.sh"
-    chmod 755 "$BIN_DIR/apk-setup.sh"
-fi
-
 # 3. Download & Extract Ubuntu Base
 if [ ! -f "$ROOTFS/bin/bash" ]; then
     ui_print ">> Downloading Ubuntu Base (arm64)..."
@@ -95,6 +89,36 @@ fi
 # 4. Install APT Dependencies via PRoot (with idempotency guard)
 PROOT_CMD="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -w /root"
 
+# APT 依赖脚本生成（幂等）：基础工具链 = python/git/node + Java 17 + binutils
+# Java 17 供 jadx 等反编译工具；binutils 提供 strings/readelf/objdump；
+# 并解锁 PEP 668（Ubuntu 24.04 默认拒绝 pip install）以允许直接 pip 装库。
+write_setup_script() {
+    cat > "$ROOTFS/root/setup.sh" << SETUP
+#!/bin/bash
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export TMPDIR=/tmp
+
+# Run update and install with GPG verification disabled to bypass PRoot syscall compatibility issues
+apt-get update -y -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true
+apt-get install -y --no-install-recommends \\
+    -o Acquire::AllowInsecureRepositories=true \\
+    -o Acquire::AllowUnauthenticated=true \\
+    --allow-unauthenticated \\
+    ca-certificates curl python3 python3-pip git nodejs npm \\
+    openjdk-17-jre-headless binutils $FCITX_PKGS
+apt-get clean
+
+# Unlock pip: Ubuntu 24.04 ships PEP 668 (externally-managed-environment),
+# which rejects 'pip install' on the system Python. This container is fully
+# user-managed, so remove the guard and default to the Tsinghua mirror.
+rm -f /usr/lib/python3.12/EXTERNALLY-MANAGED
+printf '[global]\nindex-url = https://pypi.tuna.tsinghua.edu.cn/simple\n' > /etc/pip.conf
+SETUP
+    chmod 755 "$ROOTFS/root/setup.sh"
+}
+
 if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
     ui_print ">> Bootstrapping APT dependencies (Python, Git, Node.js)..."
 
@@ -122,28 +146,26 @@ if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
             ;;
     esac
 
-    cat > "$ROOTFS/root/setup.sh" << SETUP
-#!/bin/bash
-set -eu
-export DEBIAN_FRONTEND=noninteractive
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export TMPDIR=/tmp
-
-# Run update and install with GPG verification disabled to bypass PRoot syscall compatibility issues
-apt-get update -y -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true
-apt-get install -y --no-install-recommends \\
-    -o Acquire::AllowInsecureRepositories=true \\
-    -o Acquire::AllowUnauthenticated=true \\
-    --allow-unauthenticated \\
-    ca-certificates curl python3 python3-pip git nodejs npm $FCITX_PKGS
-apt-get clean
-SETUP
-    chmod 755 "$ROOTFS/root/setup.sh"
+    write_setup_script
     $PROOT_CMD /root/setup.sh || abort "APT bootstrap failed"
     rm -f "$ROOTFS/root/setup.sh"
     ui_print ">> Dependencies installed successfully."
 else
     ui_print ">> Dependencies already installed, skipping APT."
+    # Module-upgrade path: backfill tools added after the initial bootstrap
+    # (Java 17, binutils/strings) and unlock pip (PEP 668). apt install is
+    # idempotent, so re-running setup.sh only installs what is missing.
+    if ! $PROOT_CMD /usr/bin/java -version >/dev/null 2>&1 || \
+       ! $PROOT_CMD /usr/bin/strings --version >/dev/null 2>&1; then
+        ui_print ">> Backfilling base toolchain (Java 17 / binutils / pip unlock)..."
+        write_setup_script
+        if $PROOT_CMD /root/setup.sh; then
+            ui_print ">> Base toolchain backfill complete."
+        else
+            ui_print ">> [WARN] Backfill failed — run 'ancli repair' or reinstall the module."
+        fi
+        rm -f "$ROOTFS/root/setup.sh"
+    fi
 fi
 
 # 4b. Ensure /usr/local directory structure exists for npm global installs
