@@ -112,6 +112,10 @@ body.ime-open #log { background: var(--glass-strong); }
   color: var(--text); padding: 9px 12px; font-size: 13px; outline: none; transition: .15s; }
 .dialog input:focus { border-color: var(--accent); background: rgba(255,255,255,.4); }
 .dialog input::placeholder { color: var(--muted); opacity: .7; }
+.dialog select { width: 100%; background: rgba(255,255,255,.25); border: 1px solid var(--stroke); border-radius: 12px;
+  color: var(--text); padding: 9px 12px; font-size: 13px; outline: none; appearance: auto; -webkit-appearance: auto; }
+.dialog select:focus { border-color: var(--accent); }
+.dialog select option { background: var(--bg1); color: var(--text); }
 .dialog .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
 .dialog .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
 
@@ -500,6 +504,11 @@ async function doUpdate(id) {
 // ---------- 配置弹窗（含服务商一键预置） ----------
 let selectedProvider = null;
 
+// 兼容通道密钥（配合 *_API_BASE 使用，label 跟随 provider）
+const COMPAT_KEYS = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY'];
+// 各服务商专属密钥（选了 provider 后提示"一般无需填写"）
+const EXTRA_KEYS = ['DEEPSEEK_API_KEY', 'GEMINI_API_KEY', 'ANTIGRAVITY_API_KEY', 'GROK_DEPLOYMENT_KEY'];
+
 function buildPresetBar(app) {
   const bar = document.getElementById('presetBar');
   const fields = (app.required_env_vars || []).concat(app.optional_env_vars || []);
@@ -522,21 +531,70 @@ function buildPresetBar(app) {
 function applyProvider(p) {
   selectedProvider = p;
   buildPresetBar(cfgApp);
-  const inputs = document.querySelectorAll('#cfgFields input');
-  const models = p.models || [];
-  for (const inp of inputs) {
-    const v = inp.dataset.var;
-    if (BASE_FIELDS.includes(v)) { inp.value = p.base; inp.dataset.models = models.join(','); }
-    else if (MODEL_FIELDS.includes(v)) { inp.value = models[0] || ''; inp.dataset.models = models.join(','); }
-    else if (v === 'OPENAI_API_KEY' || v === 'DEEPSEEK_API_KEY' || v === 'ANTHROPIC_API_KEY' || v === 'GEMINI_API_KEY') {
-      inp.placeholder = '申请密钥: ' + p.keyUrl;
-    }
-  }
+  renderCfgFields(cfgApp);
   const note = document.getElementById('presetNote');
   note.innerHTML = '已选择 <b>' + esc(p.name) + '</b>：API 地址与默认模型已填充' +
     (p.note ? ' · ' + esc(p.note) : '') +
     ' · 密钥申请 <a href="' + esc(p.keyUrl) + '" target="_blank" rel="noopener">' + esc(p.keyUrl) + '</a>' +
-    '<br>模型可手动修改：' + esc((models || []).join(' / '));
+    '<br>模型下拉可切换：' + esc((p.models || []).join(' / '));
+}
+
+// 渲染配置表单（保留已输入的值；模型字段在选中 provider 后变为下拉）
+function renderCfgFields(app) {
+  // 1) 收集当前值（input + select）
+  const vals = {};
+  document.querySelectorAll('#cfgFields input, #cfgFields select').forEach(el => {
+    vals[el.dataset.var] = el.value;
+  });
+  const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
+  const wrap = document.getElementById('cfgFields');
+  wrap.innerHTML = vars.map(v => {
+    const required = (app.required_env_vars || []).includes(v);
+    const isModel = MODEL_FIELDS.includes(v);
+    const isCompatKey = COMPAT_KEYS.includes(v);
+    const isExtraKey = EXTRA_KEYS.includes(v);
+
+    let label = v;
+    let placeholder = VAR_HINTS[v] || '可选的 API 密钥 / 地址 / 配置项';
+    let hint = VAR_HINTS[v] || '';
+    if (selectedProvider) {
+      if (isCompatKey) {
+        label = selectedProvider.name + ' API 密钥（' + v + '）';
+        placeholder = '申请密钥: ' + selectedProvider.keyUrl;
+        hint = '填入 ' + selectedProvider.name + ' 的 API 密钥';
+      } else if (isExtraKey) {
+        hint += (hint ? ' · ' : '') + '当前已选 ' + selectedProvider.name + '，一般无需填写';
+      }
+    }
+
+    let field;
+    if (isModel && selectedProvider) {
+      const models = selectedProvider.models || [];
+      const cur = vals[v] || models[0] || '';
+      field = '<select data-var="' + esc(v) + '">' +
+        models.map(m => '<option' + (m === cur ? ' selected' : '') + '>' + esc(m) + '</option>').join('') +
+        '<option value="__custom__"' + (models.indexOf(cur) < 0 ? ' selected' : '') + '>自定义…</option></select>';
+    } else if (selectedProvider && BASE_FIELDS.includes(v)) {
+      // 选中服务商后 API 地址由预置覆盖
+      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" value="' + esc(selectedProvider.base) + '">';
+    } else {
+      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' + esc(placeholder) + '" value="' + esc(vals[v] || '') + '">';
+    }
+
+    return '<label>' + esc(label) + (required ? ' <span style="color:var(--err)">*必填</span>' : ' <span style="color:var(--muted)">可选</span>') +
+           '</label>' + field +
+           (hint ? '<div class="hint">' + esc(hint) + '</div>' : '');
+  }).join('');
+
+  // select 选"自定义…"时切换回输入框
+  wrap.querySelectorAll('select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      if (sel.value === '__custom__') {
+        const v = sel.dataset.var;
+        sel.outerHTML = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="输入模型名，如 deepseek-v4-flash">';
+      }
+    });
+  });
 }
 
 function openConfig(id) {
@@ -547,17 +605,10 @@ function openConfig(id) {
   cfgApp = app;
   selectedProvider = null;
   document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
-  const wrap = document.getElementById('cfgFields');
-  wrap.innerHTML = vars.map(v => {
-    const required = (app.required_env_vars || []).includes(v);
-    const hint = VAR_HINTS[v] || '可选的 API 密钥 / 地址 / 配置项';
-    return '<label>' + esc(v) + (required ? ' <span style="color:var(--err)">*必填</span>' : ' <span style="color:var(--muted)">可选</span>') +
-           '</label>' +
-           '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' + esc(hint) + '">' +
-           '<div class="hint">' + esc(hint) + '</div>';
-  }).join('');
+  document.getElementById('cfgFields').innerHTML = '';
   document.getElementById('presetNote').textContent = '';
   buildPresetBar(app);
+  renderCfgFields(app);
   document.getElementById('cfgOverlay').classList.add('show');
 }
 
@@ -567,9 +618,9 @@ document.getElementById('cfgCancel').onclick = () =>
 document.getElementById('cfgSave').onclick = async () => {
   if (!cfgApp) return;
   const sets = [];
-  document.querySelectorAll('#cfgFields input').forEach(inp => {
-    const v = inp.value.trim();
-    if (v) sets.push('--set ' + encodeURIComponent(inp.dataset.var) + '=' + encodeURIComponent(v));
+  document.querySelectorAll('#cfgFields input, #cfgFields select').forEach(el => {
+    const v = el.value.trim();
+    if (v && v !== '__custom__') sets.push('--set ' + encodeURIComponent(el.dataset.var) + '=' + encodeURIComponent(v));
   });
   document.getElementById('cfgOverlay').classList.remove('show');
   if (!sets.length) { await loadApps(); return; }
