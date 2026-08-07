@@ -455,6 +455,23 @@ class TestOAuthImport:
         assert core.import_oauth("mimo", str(src)) is False
 
 
+# ---------------------------------------------------------------------------
+# Registry auth-config policy: only tools whose official docs confirm env-var
+# auth keep env_vars. (Claude Code: ANTHROPIC_API_KEY skips its login prompt.)
+# ---------------------------------------------------------------------------
+
+def test_registry_env_vars_only_claude_code():
+    with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json'), encoding='utf-8') as f:
+        reg = json.load(f)
+    assert 'claude-code' in reg['apps']
+    for aid, app in reg['apps'].items():
+        has = bool(app.get('env_vars') or app.get('optional_env_vars'))
+        if aid == 'claude-code':
+            assert has, 'claude-code must keep env vars (ANTHROPIC_API_KEY)'
+        else:
+            assert not has, f'{aid} must not expose env vars (login is tool-internal)'
+
+
 def shlex_quote(s):
     import shlex
     return shlex.quote(s)

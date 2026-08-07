@@ -1017,6 +1017,15 @@ def reconfigure_app(app_id, registry, set_env=None):
     app = registry['apps'].get(app_id, {})
     all_vars = app.get('env_vars', []) + app.get('optional_env_vars', [])
     if not all_vars and not set_env:
+        # No configurable vars: drop any stale secrets file from earlier
+        # versions (e.g. mimo's OPENAI_API_KEY, which the tool ignores).
+        secrets_path = f"{SECRETS_DIR}/{app_id}.env"
+        if os.path.exists(secrets_path):
+            try:
+                os.remove(secrets_path)
+                print(f"\033[93m[i] Removed stale secrets file for {app_id} (no env vars configured).\033[0m")
+            except Exception:
+                pass
         print(f"\033[93m[!] No configurable env vars for {app_id}.\033[0m")
         return
     print(f"\033[96m[*] Reconfiguring {app.get('name', app_id)}...\033[0m")

@@ -9,16 +9,6 @@
       "install_cmd": "pip install --break-system-packages aider-chat",
       "update_cmd": "pip install --upgrade --break-system-packages aider-chat",
       "uninstall_cmd": "pip uninstall -y aider-chat",
-      "env_vars": [
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY"
-      ],
-      "optional_env_vars": [
-        "OPENAI_API_BASE",
-        "ANTHROPIC_BASE_URL",
-        "DEEPSEEK_API_KEY",
-        "AIDER_MODEL"
-      ],
       "executable": "aider"
     },
     "mimo": {
@@ -29,14 +19,6 @@
       "install_cmd": "curl -L https://github.com/XiaomiMiMo/MiMo-Code/releases/latest/download/mimocode-linux-arm64.tar.gz -o /tmp/mimo.tar.gz && tar -xzf /tmp/mimo.tar.gz -C /usr/local/bin && rm /tmp/mimo.tar.gz",
       "update_cmd": "curl -L https://github.com/XiaomiMiMo/MiMo-Code/releases/latest/download/mimocode-linux-arm64.tar.gz -o /tmp/mimo.tar.gz && tar -xzf /tmp/mimo.tar.gz -C /usr/local/bin && rm /tmp/mimo.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/mimo",
-      "env_vars": [
-        "OPENAI_API_KEY"
-      ],
-      "optional_env_vars": [
-        "OPENAI_API_BASE",
-        "DEEPSEEK_API_KEY",
-        "MIMO_MODEL"
-      ],
       "executable": "mimo"
     },
     "agy": {
@@ -51,14 +33,6 @@
       "install_cmd": "curl -sL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin",
       "update_cmd": "agy update",
       "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
-      "env_vars": [],
-      "optional_env_vars": [
-        "GEMINI_API_KEY",
-        "ANTIGRAVITY_API_KEY",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY"
-      ],
       "executable": "agy",
       "native": true
     },
@@ -86,12 +60,6 @@
       "install_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
       "update_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/opencode",
-      "env_vars": [
-        "OPENAI_API_KEY"
-      ],
-      "optional_env_vars": [
-        "OPENAI_API_BASE"
-      ],
       "executable": "opencode"
     },
     "grok": {
@@ -108,12 +76,6 @@
       "install_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "update_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "uninstall_cmd": "rm -f /usr/local/bin/grok /usr/local/bin/agent && rm -rf /root/.grok",
-      "env_vars": [],
-      "optional_env_vars": [
-        "GROK_DEPLOYMENT_KEY",
-        "GROK_CHANNEL",
-        "GROK_PROXY_URL"
-      ],
       "executable": "grok",
       "native": true
     }

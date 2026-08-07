@@ -477,11 +477,14 @@ function renderApps(apps) {
       badges.push('<span class="badge">已配置: ' + a.configured_keys.join(', ') + '</span>');
 
     let btns = '';
+    const hasEnv = (a.required_env_vars && a.required_env_vars.length) ||
+                   (a.optional_env_vars && a.optional_env_vars.length);
     if (!a.installed) {
       btns += '<button class="small primary" onclick="doInstall(\'' + a.id + '\')">安装</button>';
     } else {
       btns += '<button class="small" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
-      btns += '<button class="small" onclick="openConfig(\'' + a.id + '\')">配置</button>';
+      if (hasEnv) btns += '<button class="small" onclick="openConfig(\'' + a.id + '\')">配置</button>';
+      if (a.id === 'agy') btns += '<button class="small" onclick="openOAuth()">OAuth 导入</button>';
       btns += '<button class="small danger" onclick="doUninstall(\'' + a.id + '\')">卸载</button>';
     }
     el.innerHTML =
@@ -612,6 +615,21 @@ function renderCfgFields(app) {
 }
 
 // OAuth 凭据导入（agy）：base64 传输避免 JSON 特殊字符被 shell 破坏
+function openOAuth() {
+  const app = currentApps.find(a => a.id === 'agy');
+  if (!app || !app.installed) { alert('请先安装 agy'); return; }
+  cfgApp = app;
+  selectedProvider = null;
+  document.getElementById('cfgTitle').textContent = 'agy · Google OAuth 凭据导入';
+  document.getElementById('cfgFields').innerHTML = '';
+  document.getElementById('presetBar').innerHTML = '';
+  document.getElementById('presetNote').textContent = '';
+  const oauthBox = document.getElementById('oauthBox');
+  oauthBox.style.display = 'block';
+  document.getElementById('oauthJson').value = '';
+  document.getElementById('cfgOverlay').classList.add('show');
+}
+
 async function importOAuth() {
   const content = document.getElementById('oauthJson').value;
   if (!content.trim()) { alert('请先粘贴电脑上的凭据文件内容'); return; }
