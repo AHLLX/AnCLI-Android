@@ -215,6 +215,52 @@ class TestPipeScriptCommand:
 
 
 # ---------------------------------------------------------------------------
+# DNS resolution
+# ---------------------------------------------------------------------------
+
+class TestDNS:
+    def test_get_android_dns_reads_real_servers(self, monkeypatch):
+        outputs = iter(["192.168.1.1", "0.0.0.0"])
+        monkeypatch.setattr(
+            core.subprocess, "check_output",
+            lambda cmd, shell=True: outputs.__next__().encode(),
+        )
+        assert core._get_android_dns() == ["192.168.1.1"]
+
+    def test_write_resolv_conf_prefers_android_dns(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path))
+        os.makedirs(tmp_path / "etc", exist_ok=True)
+        monkeypatch.setattr(
+            core.subprocess, "check_output",
+            lambda cmd, shell=True: b"192.168.1.1",
+        )
+        core._write_resolv_conf()
+        content = (tmp_path / "etc" / "resolv.conf").read_text()
+        lines = content.strip().splitlines()
+        assert lines[0] == "nameserver 192.168.1.1"  # real DNS first
+        assert lines[1] == "nameserver 8.8.8.8"      # then Google fallback
+        assert len(lines) == 3                        # glibc MAXNS
+        assert len(lines) == len(set(lines))          # no duplicates
+
+    def test_get_android_dns_rejects_garbage(self, monkeypatch):
+        # Only two getprop calls happen (net.dns1/net.dns2): a non-IP and an
+        # IPv6 must both be rejected; the IPv4 duplicate must be deduplicated.
+        outputs = iter(["10.0.0.2", "10.0.0.2"])
+        monkeypatch.setattr(
+            core.subprocess, "check_output",
+            lambda cmd, shell=True: outputs.__next__().encode(),
+        )
+        assert core._get_android_dns() == ["10.0.0.2"]
+
+        outputs = iter(["not-an-ip", "2001:db8::1"])
+        monkeypatch.setattr(
+            core.subprocess, "check_output",
+            lambda cmd, shell=True: outputs.__next__().encode(),
+        )
+        assert core._get_android_dns() == []
+
+
+# ---------------------------------------------------------------------------
 # wrapper generation
 # ---------------------------------------------------------------------------
 
@@ -238,6 +284,9 @@ class TestWrapperGeneration:
         # root-dir redirect so TUI tools don't scan the whole container fs
         assert 'if [ "$PROOT_CWD" = "/" ]; then' in wrapper
         assert "Launched from /" in wrapper
+        # /dev/shm conditional bind for Node/Bun workers
+        assert 'SHM_BIND="-b ' in wrapper
+        assert "shm:/dev/shm" in wrapper
         # full unconditional binds (AGENTS.md requirement)
         assert "-b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system" in wrapper
         # env bootstrap + per-tool secrets sourcing

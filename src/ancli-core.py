@@ -445,12 +445,20 @@ if [ "$PROOT_CWD" = "/" ]; then
     echo "        cd to a project dir (e.g. /sdcard/...) to work there." >&2
 fi
 : "${{PROOT_CWD:=/root}}"
-# 5. Launch PRoot with unified global binds
+# 5. Provide /dev/shm: Android's /dev has no shm, and Node/Bun workers plus
+#    some libraries require shared memory. Bound only when the dir is usable.
+SHM_BIND=""
+if mkdir -p {ANCLI_DIR}/shm 2>/dev/null; then
+    # 1777 (sticky, /tmp-style) so the shell user (uid 2000) can write inside
+    chmod 1777 {ANCLI_DIR}/shm 2>/dev/null || true
+    SHM_BIND="-b {ANCLI_DIR}/shm:/dev/shm"
+fi
+# 6. Launch PRoot with unified global binds
 # By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
 # we prevent Node.js fs.realpath and other symlink-following logic from breaking.
 exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
     -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
-    -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb \\
+    -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
     -w "$PROOT_CWD" /usr/bin/env {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
@@ -607,6 +615,48 @@ def _fix_config_permissions():
             os.system(f"chown -R 2000:2000 {full_path} 2>/dev/null")
             os.system(f"chmod -R 755 {full_path} 2>/dev/null")
 
+def _get_android_dns():
+    """Read the real Android DNS servers (net.dns1/net.dns2). Returns a list of
+    valid IPv4 addresses, or [] when unavailable (e.g. not on Wi-Fi)."""
+    import ipaddress
+    servers = []
+    for prop in ["net.dns1", "net.dns2"]:
+        try:
+            out = subprocess.check_output(f"getprop {prop}", shell=True).decode().strip()
+        except Exception:
+            continue
+        # Deduplicate: net.dns1 and net.dns2 are often identical (single-DNS
+        # DHCP leases), and a duplicate would waste a fallback slot.
+        # 0.0.0.0 is Android's "no DNS" placeholder — reject it too.
+        try:
+            ip = ipaddress.ip_address(out)
+        except ValueError:
+            continue
+        if ip.version == 4 and not ip.is_unspecified and str(ip) not in servers:
+            servers.append(str(ip))
+    return servers
+
+
+def _write_resolv_conf():
+    """Write a working /etc/resolv.conf into the container.
+    Order: real Android DNS first (matches the user's network, including VPN),
+    then Google DNS, then China-friendly fallbacks."""
+    resolv_path = f"{ROOTFS}/etc/resolv.conf"
+    # Check if resolv.conf is a symlink, remove it if so to write actual file
+    if os.path.islink(resolv_path):
+        os.remove(resolv_path)
+    nameservers = _get_android_dns()
+    for fallback in ["8.8.8.8", "1.1.1.1", "223.5.5.5", "119.29.29.29"]:
+        if len(nameservers) >= 3:  # glibc MAXNS: only the first 3 are read
+            break
+        if fallback not in nameservers:
+            nameservers.append(fallback)
+    with open(resolv_path, "w") as f:
+        for ns in nameservers[:3]:
+            f.write(f"nameserver {ns}\n")
+    print(f"\033[92m[OK] Container DNS configured: {', '.join(nameservers[:3])}\033[0m")
+
+
 def repair_env(registry):
     """Diagnose and fix container environment, resolv.conf, permissions, and wrappers."""
     print("\033[96m[*] Starting environment diagnostics and repair...\033[0m")
@@ -617,14 +667,8 @@ def repair_env(registry):
         return
 
     # 1. Fix resolv.conf DNS
-    resolv_path = f"{ROOTFS}/etc/resolv.conf"
     try:
-        # Check if resolv.conf is a symlink, remove it if so to write actual file
-        if os.path.islink(resolv_path):
-            os.remove(resolv_path)
-        with open(resolv_path, "w") as f:
-            f.write("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
-        print("\033[92m[OK] Container DNS configuration repaired (/etc/resolv.conf).\033[0m")
+        _write_resolv_conf()
     except Exception as e:
         print(f"\033[91m[X] Failed to repair DNS: {e}\033[0m")
 

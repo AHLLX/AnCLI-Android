@@ -19,7 +19,10 @@ ui_print ""
 
 # 1. Prepare directories
 ui_print ">> Preparing directories..."
-mkdir -p "$ROOTFS" "$BIN_DIR"
+mkdir -p "$ROOTFS" "$BIN_DIR" "$ANCLI_DIR/shm"
+# /dev/shm backing dir must be writable by the shell user (uid 2000) inside
+# the container — sticky 1777, /tmp-style.
+chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
 
 # 2. Deploy PRoot from module package
 ui_print ">> Deploying PRoot..."
@@ -57,9 +60,27 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     tar -xf "$TAR_PATH" -C "$ROOTFS" || abort "Failed to extract rootfs (corrupted download?)"
     rm -f "$TAR_PATH"
 
-    # Fix DNS inside rootfs
-    echo "nameserver 8.8.8.8" > "$ROOTFS/etc/resolv.conf"
-    echo "nameserver 1.1.1.1" >> "$ROOTFS/etc/resolv.conf"
+    # Fix DNS inside rootfs: use the real Android DNS servers first (matches
+    # the user's network, incl. VPN), then Google DNS, then China-friendly
+    # fallbacks. Duplicates are skipped; glibc only reads the first 3 entries.
+    # /etc/resolv.conf is a symlink in some ubuntu-base images — remove it
+    # first so the writes land in a real file.
+    rm -f "$ROOTFS/etc/resolv.conf"
+    : > "$ROOTFS/etc/resolv.conf"
+    _dns_seen=""
+    _dns_count=0
+    for _dns_val in "$(getprop net.dns1 2>/dev/null)" "$(getprop net.dns2 2>/dev/null)" 8.8.8.8 1.1.1.1 223.5.5.5; do
+        case "$_dns_val" in
+            ''|0.*|*[!0-9.]*) continue ;;
+        esac
+        case " $_dns_seen " in
+            *" $_dns_val "*) continue ;;
+        esac
+        echo "nameserver $_dns_val" >> "$ROOTFS/etc/resolv.conf"
+        _dns_seen="$_dns_seen $_dns_val"
+        _dns_count=$((_dns_count + 1))
+        [ "$_dns_count" -ge 3 ] && break
+    done
     ui_print ">> Rootfs extracted and configured."
 else
     ui_print ">> Rootfs already present, skipping download."

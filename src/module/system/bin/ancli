@@ -19,4 +19,12 @@ if [ "$PROOT_CWD" = "/" ]; then
     echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
 fi
 : "${PROOT_CWD:=/root}"
-exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+# Provide /dev/shm: Android's /dev has no shm, and Node/Bun workers plus some
+# libraries require shared memory. Bound only when the dir is usable.
+SHM_BIND=""
+if mkdir -p /data/local/tmp/ancli/shm 2>/dev/null; then
+    # 1777 (sticky, /tmp-style) so the shell user (uid 2000) can write inside
+    chmod 1777 /data/local/tmp/ancli/shm 2>/dev/null || true
+    SHM_BIND="-b /data/local/tmp/ancli/shm:/dev/shm"
+fi
+exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

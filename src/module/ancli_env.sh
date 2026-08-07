@@ -4,6 +4,12 @@
 # Sourced by wrappers to inject proxies and fix environment
 # ============================================================
 
+# LD_LIBRARY_PATH / LD_PRELOAD left over from Termux or other Android shells
+# would make ANY dynamically-linked binary (getprop, dumpsys, ip, proot,
+# container tools) load host libraries and crash — strip them FIRST, before
+# any other command in this script runs.
+unset LD_LIBRARY_PATH LD_PRELOAD
+
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
 export HOME=/root
 export TMPDIR=/tmp
@@ -11,8 +17,35 @@ export GODEBUG=netdns=go
 export UV_USE_IO_URING=0
 export BUN_FEATURE_FLAG_IO_URING=0
 
+# Locale: C.UTF-8 is always available in Ubuntu 24.04 and keeps Python/Node
+# output sane (no missing-locale warnings, UTF-8 file names).
+export LANG=C.UTF-8
+
+# TUI tools need a sane TERM; adb shell and some su wrappers leave it empty,
+# which makes Ink/React TUIs (mimo, opencode, claude) crash on startup.
+export TERM="${TERM:-xterm-256color}"
+
+# Follow the Android system timezone so git/logger timestamps are local time.
+TZ_SYS=$(getprop persist.sys.timezone 2>/dev/null)
+[ -n "$TZ_SYS" ] && export TZ="$TZ_SYS"
+
+# Raise the fd limit: Node/Bun TUIs spawn many workers/LSP servers and the
+# Android default (1024) is easily exhausted.
+ulimit -n 65535 2>/dev/null || ulimit -n 16384 2>/dev/null || true
+
 # Clean Termux environment variables to prevent containerized binaries from seeking host Termux paths
 unset TERMUX_VERSION PREFIX TERMUX_APP_PID TERMUX__PREFIX TERMUX__ROOTFS_DIR TERMUX_APK_RELEASE TERMUX_IS_DEBUGGABLE_BUILD TERMUX_MAIN_PACKAGE_FORMAT TERMUX__SE_PROCESS_CONTEXT TERMUX_APP__DATA_DIR TERMUX_APP__LEGACY_DATA_DIR TERMUX_APP__SE_INFO TERMUX_APP__SE_FILE_CONTEXT TERMUX__HOME
+
+# git "dubious ownership" fix: files under /sdcard are owned by Android uids
+# that don't exist inside the container, so git refuses to operate on them.
+# Whitelist every directory via env (git >= 2.35) so tools that shell out to
+# git (mimo, aider, opencode) work out of the box.
+# Trade-off: a malicious repo under /sdcard could run its hooks with the
+# container user's privileges — acceptable, since the container is a sandbox
+# with no extra Android privileges (no root on the host side).
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=safe.directory
+export GIT_CONFIG_VALUE_0='*'
 
 # --- Fcitx5 Input Method Integration ---
 export GTK_IM_MODULE=fcitx
@@ -79,6 +112,9 @@ fi
 # Fix ownership of agy/gemini/claude auth credential directories on every launch.
 # This prevents root-locked files from blocking subsequent shell-user runs.
 ROOTFS="/data/local/tmp/ancli/rootfs"
+# /root must be traversable by the shell user (uid 2000) when wrappers run
+# without su; ubuntu-base ships it as 0700 root.
+chmod 755 "$ROOTFS/root" 2>/dev/null || true
 for _conf_dir in /root/.config /root/.gemini /root/.claude /root/.local; do
     if [ -d "$ROOTFS$_conf_dir" ]; then
         chown -R 2000:2000 "$ROOTFS$_conf_dir" 2>/dev/null || true
