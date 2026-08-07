@@ -30,5 +30,8 @@ fi
 for BIN_DIR in /data/adb/ksu/bin /data/adb/ap/bin; do
     if [ -d "$BIN_DIR" ]; then
         grep -rl "$ANCLI_DIR" "$BIN_DIR" 2>/dev/null | xargs rm -f 2>/dev/null || true
+        # xdg-open host helper deployed by 'ancli repair' — its content does
+        # not reference ANCLI_DIR, so the grep above cannot catch it.
+        rm -f "$BIN_DIR/xdg-open" 2>/dev/null || true
     fi
 done
