@@ -91,18 +91,113 @@ let currentApps = [];  // last list --json payload
 let cfgApp = null;     // app being configured
 
 // ---------- KernelSU / KsuWebUI bridge ----------
-async function sh(cmd) {
-  const bridge = window.ksu_webui || window.ap_webui || window.ksuwebui;
-  if (bridge && typeof bridge.exec === 'function') {
-    return await bridge.exec(cmd);
+// KernelSU natively injects `window.ksu` (API: ksu.exec(cmd, optionsJson,
+// callbackName), callback registered on window). KsuWebUI framework and
+// APatch expose ksu_webui / ap_webui instead. The object may be injected
+// AFTER the page starts loading — poll until it appears.
+const BRIDGE_NAMES = ['ksu', 'ksu_webui', 'ap_webui', 'ksuwebui'];
+let bridge = null;
+let bridgeName = null;
+
+function findBridge() {
+  for (const n of BRIDGE_NAMES) {
+    if (window[n] && typeof window[n].exec === 'function') {
+      return { obj: window[n], name: n };
+    }
   }
-  // KsuWebUI KKHTTP fallback
-  try {
-    const r = await fetch('http://127.0.0.1:8443/exec?cmd=' + encodeURIComponent(cmd), {cache:'no-store'});
-    return await r.json();
-  } catch (e) {
-    throw new Error('WebUI 桥接不可用（需要 KernelSU 0.9.5+ 或 KsuWebUI）');
+  return null;
+}
+
+function waitForBridge(timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const timer = setInterval(() => {
+      const b = findBridge();
+      if (b) { clearInterval(timer); resolve(b); return; }
+      if (Date.now() - t0 > timeoutMs) {
+        clearInterval(timer);
+        reject(new Error('等待 WebUI 桥接超时（需要 KernelSU 0.9.5+ / APatch / KsuWebUI）'));
+      }
+    }, 100);
+  });
+}
+
+// exec with support for:
+//  - native KernelSU `ksu`: exec(cmd, optionsJson, callbackName) with the
+//    callback registered as window[callbackName] = (errno, stdout, stderr)
+//  - KsuWebUI/APatch: exec(cmd, callback) or exec(cmd) -> Promise
+function execOnBridge(b, cmd, name) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (errno, stdout, stderr) => {
+      if (done) return;
+      done = true;
+      resolve({ code: (errno === undefined ? 0 : errno), stdout: stdout || '', stderr: stderr || '' });
+    };
+    const timeout = setTimeout(() => {
+      if (!done) { done = true; reject(new Error('命令执行超时: ' + cmd.slice(0, 60))); }
+    }, 180000);
+    try {
+      if (name === 'ksu') {
+        // Native KernelSU: callback-style via a global function name
+        window.__ancliCbCounter = (window.__ancliCbCounter || 0) + 1;
+        const cbName = 'ancli_cb_' + Date.now() + '_' + window.__ancliCbCounter;
+        window[cbName] = (errno, stdout, stderr) => {
+          delete window[cbName];
+          clearTimeout(timeout);
+          finish(errno, stdout, stderr);
+        };
+        b.exec(cmd, '{}', cbName);
+      } else {
+        // KsuWebUI / APatch style: callback or Promise
+        const ret = b.exec(cmd, finish);
+        if (ret && typeof ret.then === 'function') {
+          ret.then(r => { clearTimeout(timeout); finish(r && (r.code !== undefined ? r.code : r.errno), r && r.stdout, r && r.stderr); },
+                   e => { clearTimeout(timeout); if (!done) { done = true; reject(e); } });
+        } else if (ret && typeof ret === 'object') {
+          clearTimeout(timeout);
+          finish(ret.code !== undefined ? ret.code : ret.errno, ret.stdout, ret.stderr);
+        }
+        // callback style: finish() will fire later
+      }
+    } catch (e) {
+      clearTimeout(timeout);
+      if (!done) { done = true; reject(e); }
+    }
+  });
+}
+
+// Unified executor: JS bridge first (polled), KKHTTP as fallback
+async function execCmd(cmd) {
+  if (!bridge) {
+    try {
+      const found = await waitForBridge(10000);
+      bridge = found.obj;
+      bridgeName = found.name;
+      log('桥接已连接: window.' + found.name);
+    } catch (e) {
+      // No JS bridge — try KsuWebUI's KKHTTP endpoint before giving up
+      try { return await shHttp(cmd); }
+      catch (e2) { throw new Error('WebUI 桥接不可用（等待超时且 KKHTTP 失败）：需要 KernelSU 0.9.5+ 或 KsuWebUI 框架'); }
+    }
   }
+  return await execOnBridge(bridge, cmd, bridgeName);
+}
+
+const sh = execCmd; // alias kept for callers
+
+// KsuWebUI (framework) HTTP fallback — tried only when no JS bridge exists
+async function shHttp(cmd) {
+  const ports = [8443, 8080];
+  let lastErr = null;
+  for (const port of ports) {
+    try {
+      const r = await fetch('http://127.0.0.1:' + port + '/exec?cmd=' + encodeURIComponent(cmd), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('KKHTTP 不可用');
 }
 
 const strip = s => (s || '').replace(/\x1b\[[0-9;]*m/g, '');
