@@ -8,7 +8,7 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 - **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Wrappers are mounted to `/system/bin` on boot, with instant-access wrappers injected into dynamic root paths (reboot-free).
 - **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
-- **Dynamic Configuration Injection**: Prompts for environment variables (e.g., API keys, custom endpoints) during installation and bakes them securely into execution wrappers.
+- **Dynamic Configuration Injection**: Configure API keys and custom endpoints anytime via `ancli config <app_id>`. Credentials are stored in per-tool secrets files (mode 0600) and sourced by the wrapper at runtime — never embedded in world-readable wrapper scripts.
 - **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
 - **Escaping & Proxy Passthrough**: Bypasses ADB character escaping bugs via Python urllib direct downloads, and dynamically forwards host proxy settings into the guest container.
 - **PRoot Syscall Stabilization**: Automatically mitigates Android kernel `io_uring` and `epoll` translation bugs, ensuring modern Node.js and Bun interactive TUIs (like MiMo and Claude Code) can process raw keyboard input flawlessly without event loop blocking.

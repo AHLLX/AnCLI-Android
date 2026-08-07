@@ -1,6 +1,6 @@
 # AnCLI Technical Architecture & Deep Dive
 
-This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI v1.0.0**.
+This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI v1.2.2**.
 
 ---
 
@@ -28,7 +28,7 @@ Android's Linux kernel is paired with the Bionic C library instead of the standa
 
 In older configurations, running Node.js (`npm`) inside PRoot on Android 15 failed due to a `libuv` thread-interception ptrace bug (asynchronous `mkdir` returned `ENOENT` during npm initialization).
 
-Instead of running npm or trying to bind to a Termux host Node.js runtime (which fails due to SELinux blocking `exec` calls across application domains), **AnCLI v1.0.0 installs Node.js/JS-based tools directly as precompiled native Linux-arm64 binaries**.
+Instead of running npm or trying to bind to a Termux host Node.js runtime (which fails due to SELinux blocking `exec` calls across application domains), **AnCLI installs Node.js/JS-based tools directly as precompiled native Linux binaries**.
 
 1. Tools like **Claude Code**, **OpenCode**, and **MiMo Code** publish native standalone executables to their GitHub Releases.
 2. AnCLI downloads these standalone `.tar.gz` packages directly inside the container using `curl` or native Python bypass downloads and extracts the executable to `/usr/local/bin`.
@@ -38,7 +38,7 @@ Instead of running npm or trying to bind to a Termux host Node.js runtime (which
 
 Older wrapper models executed sub-installers inside another nested `proot` context, which caused ptrace collisions on modern Linux kernels and led to shell execution freezes (e.g. `/system/bin/sh: bash: inaccessible or not found`).
 
-AnCLI v1.0.0 completely decouples inner script runners. All container commands are called directly inside the primary PRoot context using the guest container's `/bin/bash` with `set -o pipefail`.
+AnCLI completely decouples inner script runners. All container commands are called directly inside the primary PRoot context using the guest container's `/bin/bash` with `set -o pipefail`.
 
 ---
 
@@ -84,18 +84,30 @@ To expose a newly installed tool globally to the user's `$PATH` without modifyin
 
 ```sh
 #!/system/bin/sh
-export OPENAI_API_KEY='sk-...'
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
-export HOME=/root
-exec /data/local/tmp/ancli/bin/proot \
-    -r /data/local/tmp/ancli/rootfs \
-    -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard \
-    -w /root /usr/bin/env opencode "$@"
+# AnCLI wrapper for: <tool>
+
+# 1. Load centralized proxy & environment variables
+. /data/local/tmp/ancli/bin/ancli_env.sh 2>/dev/null || true
+
+# 2. Load tool-specific secrets (mode 0600, not embedded in this script)
+. /data/local/tmp/ancli/secrets/<tool>.env 2>/dev/null || true
+
+# 3. Inject static runtime env vars (from registry)
+# export SOME_VAR='value'
+
+# 4. Launch PRoot with unified global binds
+# All common Android root directories are bound unconditionally so that
+# Node.js fs.realpath and other symlink-following logic never breaks.
+exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs \
+    -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
+    -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \
+    -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb \
+    -w "$PWD" /usr/bin/env <tool> "$@"
 ```
 
 ---
 
 ## 5. Security & Ownership Hardening
 
-- **Command Whitelist**: Restricts execution inside the container to trusted prefixes (`pip`, `npm`, `apt-get`, `apt`, `curl`, `rm`, `agy`, `bash`, `sh`).
+- **Command Whitelist**: Restricts execution inside the container to trusted prefixes (`pip`, `npm`, `apt-get`, `apt`, `curl`, `rm`, `agy`, `bash`, `sh`, `env`) and blocks shell operators (`;`, `>`, `<`, `&`, newline, `$()`, backticks).
 - **File Overwrite Protection**: Inodes and database paths like `installed.json` are forcefully deleted before recreating, preventing local permission lock errors (`[Errno 13] Permission denied`) from conflicting host users.

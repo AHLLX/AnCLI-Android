@@ -14,6 +14,18 @@ Thumbs.db
 # Agent/tool config (not part of the project)
 .agents/
 .mimocode/
+.reasonix/
+reasonix.toml
 
 # Compiled sync files inside the module source
 src/module/ancli/
+
+# Debug / local artifacts (must not be committed)
+agy_strings.txt
+repo_page.html
+strace_local.log
+*.tar.gz
+
+# Python
+__pycache__/
+*.pyc

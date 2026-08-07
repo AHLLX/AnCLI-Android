@@ -33,8 +33,9 @@ INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 SECRETS_DIR    = f"{ANCLI_DIR}/secrets"   # Per-tool API key files (mode 0600)
 CONFIG_FILE    = "/root/.ancli-config.json"
 
-# Allowed command prefixes for security validation
-ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy ", "bash ", "sh ")
+# Allowed command prefixes for security validation.
+# 'env ' is used by pipe-script installs to inject env vars before 'bash'.
+ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy ", "bash ", "sh ", "env ")
 
 # ---------------------------------------------------------------------------
 # Configuration & Multi-language Support
@@ -206,6 +207,47 @@ def _t(key, *args):
 # Registry & State
 # ---------------------------------------------------------------------------
 
+def _urlopen_verified(url, headers, timeout):
+    """Open a URL with TLS certificate verification; falls back to an unverified
+    context only on certificate validation errors (container CA store may be incomplete)."""
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.read()
+    except (ssl.SSLError, urllib.error.URLError) as e:
+        if not _is_cert_verification_error(e):
+            raise
+        print(f"\033[93m[!] TLS certificate verification failed ({e}); retrying this request without verification.\033[0m")
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context()) as response:
+            return response.read()
+
+
+def _is_cert_verification_error(e):
+    """True only when the failure is TLS certificate *validation* (a MITM-able
+    downgrade), not protocol/handshake errors. Keeps the unverified fallback
+    as narrow as possible."""
+    if isinstance(e, ssl.SSLCertVerificationError):
+        return True
+    return isinstance(e, urllib.error.URLError) and isinstance(e.reason, ssl.SSLCertVerificationError)
+
+
+def _fetch_registry_once(req):
+    """Perform one registry fetch with cert verification enabled; fall back to an
+    unverified context only when certificate validation fails (the PRoot container
+    may ship an incomplete CA store). Plain network errors propagate to the retry loop."""
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return json.loads(response.read().decode())
+    except (ssl.SSLError, urllib.error.URLError) as e:
+        if not _is_cert_verification_error(e):
+            raise
+        # Cert validation failed -> warn and retry once without verification,
+        # scoped to this request.
+        print(f"\033[93m[!] TLS certificate verification failed ({e}); retrying this request without verification.\033[0m")
+        with urllib.request.urlopen(req, timeout=15, context=ssl._create_unverified_context()) as response:
+            return json.loads(response.read().decode())
+
+
 def fetch_registry():
     # Local test mode fallback
     if os.path.exists(f"{ANCLI_DIR}/test_mode"):
@@ -219,22 +261,18 @@ def fetch_registry():
                     pass
 
     last_net_err = None
-    # Scoped unverified SSL context: the PRoot Ubuntu container may have incomplete CA certs.
-    # We scope this only to registry fetches rather than patching the global ssl context.
-    _ssl_ctx = ssl._create_unverified_context()
     for attempt in range(3):
         try:
             req = urllib.request.Request(REGISTRY_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=15, context=_ssl_ctx) as response:
-                data = json.loads(response.read().decode())
-                # Try to cache locally; silently ignore if the filesystem is read-only
-                # (e.g. SELinux denies writes from inside the PRoot context).
-                try:
-                    with open(LOCAL_REGISTRY, "w") as f:
-                        json.dump(data, f)
-                except OSError:
-                    pass
-                return data
+            data = _fetch_registry_once(req)
+            # Try to cache locally; silently ignore if the filesystem is read-only
+            # (e.g. SELinux denies writes from inside the PRoot context).
+            try:
+                with open(LOCAL_REGISTRY, "w") as f:
+                    json.dump(data, f)
+            except OSError:
+                pass
+            return data
         except Exception as e:
             last_net_err = e
             if attempt < 2:
@@ -322,6 +360,10 @@ def _write_secrets_file(executable, env_dict):
     try:
         os.makedirs(SECRETS_DIR, exist_ok=True)
         os.chmod(SECRETS_DIR, 0o700)
+        # Wrappers are executed by both root and the Android shell user (UID 2000).
+        # chown the dir so the shell user can traverse it and source the secrets.
+        if os.system(f"chown 2000:2000 {SECRETS_DIR} 2>/dev/null") != 0:
+            print(f"\033[93m[!] Warning: chown failed on {SECRETS_DIR}; shell user may not be able to read secrets\033[0m")
     except Exception:
         pass
 
@@ -334,6 +376,9 @@ def _write_secrets_file(executable, env_dict):
                 # shlex.quote safely handles values containing quotes or special shell chars
                 f.write(f"export {k}={shlex.quote(v)}\n")
         os.chmod(secrets_path, 0o600)
+        # Same ownership fix as installed.json: shell user must be able to read it.
+        if os.system(f"chown 2000:2000 {secrets_path} 2>/dev/null") != 0:
+            print(f"\033[93m[!] Warning: chown failed on {secrets_path}; shell user may not be able to read secrets\033[0m")
         print(f"\033[92m[OK] Secrets stored securely: {secrets_path}\033[0m")
     except Exception as e:
         print(f"\033[93m[!] Warning: Could not write secrets file: {e}\033[0m")
@@ -470,11 +515,27 @@ def remove_wrapper(executable):
 # Security
 # ---------------------------------------------------------------------------
 
+def _strip_quoted_segments(cmd):
+    """Remove single- and double-quoted segments so operator checks only apply
+    to text the shell will actually interpret (quoted content is data, not syntax)."""
+    return re.sub(r"'[^']*'|\"[^\"]*\"", "", cmd)
+
+
 def validate_cmd(cmd):
-    """Security: verify command starts with an allowed prefix and has no shell operators."""
+    """Security: verify command starts with an allowed prefix and contains no
+    shell metacharacters that could escalate to arbitrary command execution.
+    `&&`, `||` and `|` are intentionally allowed (used by registry install_cmd
+    chains and curl | bash fallbacks). Note this is defense-in-depth: commands
+    starting with `bash`/`sh` may still run arbitrary script content."""
     cmd_stripped = cmd.strip()
-    for operator in ['`', '$(']:
-        if operator in cmd_stripped:
+    # Drop benign multi-char operators and quoted content, so the standalone
+    # dangerous forms (';', '>', '<', '&', newline, $(), ``) can be flagged
+    # without rejecting legitimately quoted values (e.g. env K='a;b').
+    stripped_ops = _strip_quoted_segments(
+        cmd_stripped.replace("&&", "").replace("||", "")
+    )
+    for operator in ['`', '$(', ';', '>', '<', '&', '\n']:
+        if operator in stripped_ops:
             print(f"\033[91m[X] Blocked command with shell operator '{operator}': {cmd_stripped}\033[0m")
             return False
     if not any(cmd_stripped.startswith(prefix) for prefix in ALLOWED_CMD_PREFIXES):
@@ -554,12 +615,26 @@ def repair_env(registry):
         proot_path = f"{ANCLI_DIR}/bin/proot"
         if os.path.exists(proot_path):
             os.chmod(proot_path, 0o755)
-        # Fix binary installation folders — use 755 not 777 for security
+        # Fix binary installation directories. Avoid `chmod -R` here: it would
+        # strip setuid bits (e.g. /bin/su, /usr/bin/sudo) inside the rootfs.
+        # Instead fix the directories themselves plus each installed tool binary.
+        installed_bins = set()
         for bin_dir in ["/usr/local/bin", "/usr/bin", "/bin"]:
             full_bin = f"{ROOTFS}{bin_dir}"
             if os.path.isdir(full_bin):
-                # chown to root:root (0:0) inside container is correct for system bins
-                os.system(f"chmod -R 755 {full_bin} 2>/dev/null")
+                os.chmod(full_bin, 0o755)
+                try:
+                    for entry in os.listdir(full_bin):
+                        installed_bins.add(os.path.join(full_bin, entry))
+                except OSError:
+                    pass
+        installed = load_installed()
+        for app_id, info in installed.items():
+            exec_name = info.get('executable', app_id)
+            # The executable may live in any PATH dir of the container
+            for candidate in installed_bins:
+                if os.path.basename(candidate) == exec_name and os.path.isfile(candidate):
+                    os.chmod(candidate, 0o755)
         print("\033[92m[OK] Key binary executable permissions restored (0755).\033[0m")
     except Exception as e:
         print(f"\033[91m[X] Failed to restore binary permissions: {e}\033[0m")
@@ -690,28 +765,27 @@ def _install_pipe_script(app_id, app, registry_version="unknown"):
             opener  = urllib.request.build_opener(handler)
             urllib.request.install_opener(opener)
 
-        _ssl_ctx = ssl._create_unverified_context()
-        req = urllib.request.Request(installer_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=30, context=_ssl_ctx) as response:
-            content = response.read()
-            os.makedirs("/tmp", exist_ok=True)
-            script_path = f"/tmp/install_{app_id}.sh"
-            with open(script_path, "wb") as f:
-                f.write(content)
+        # TLS: verify certs first; fall back to unverified only on cert errors
+        # (the container CA store may be incomplete).
+        content = _urlopen_verified(installer_url, {'User-Agent': 'Mozilla/5.0'}, timeout=30)
+        os.makedirs("/tmp", exist_ok=True)
+        script_path = f"/tmp/install_{app_id}.sh"
+        with open(script_path, "wb") as f:
+            f.write(content)
 
-        # Build the shell command, prepending any script-level env vars
+        # Build the shell command, prepending any script-level env vars.
+        # Use `env KEY=VAL bash script ...` instead of a nested `bash -c '...'`
+        # wrapper: every token is individually shlex.quote()'d so values with
+        # spaces or quotes survive intact without shell-quote nesting bugs.
+        cmd = f"bash {shlex.quote(script_path)}"
         if installer_env:
             env_prefix = " ".join(
                 f"{shlex.quote(k)}={shlex.quote(v)}" for k, v in installer_env.items()
             )
-            parts = [env_prefix, "bash", script_path]
-            if installer_args:
-                parts.append(installer_args)
-            cmd = f"bash -c '{' '.join(parts)}'"
-        elif installer_args:
-            cmd = f"bash {script_path} {installer_args}"
-        else:
-            cmd = f"bash {script_path}"
+            cmd = f"env {env_prefix} {cmd}"
+        if installer_args:
+            # shlex.split honors quoting inside installer_args (e.g. --dir "/a b")
+            cmd += " " + " ".join(shlex.quote(a) for a in shlex.split(installer_args))
 
         if run_cmd(cmd):
             _install_proot_common(app_id, app, registry_version)

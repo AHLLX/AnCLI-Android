@@ -34,9 +34,13 @@ if [ -n "$PROXY_INFO" ]; then
 fi
 
 # Auto-bind potential Clash/Tun virtual IPs to local loopback to satisfy Go socket bind traversal.
-for i in $(seq 10 25); do
-    ip addr add 198.18.0.$i/32 dev lo 2>/dev/null || true
-done
+# Only run the bind loop when none of the virtual IPs is present yet (avoids 16
+# failing `ip addr add` calls on every wrapper launch).
+if ! ip addr show dev lo 2>/dev/null | grep -q "198\.18\.0\."; then
+    for i in $(seq 10 25); do
+        ip addr add 198.18.0.$i/32 dev lo 2>/dev/null || true
+    done
+fi
 
 # Fix ownership of agy/gemini/claude auth credential directories on every launch.
 # This prevents root-locked files from blocking subsequent shell-user runs.
