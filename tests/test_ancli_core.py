@@ -385,8 +385,8 @@ class TestWebUIJsonAPI:
         assert apps["mimo"]["configured_keys"] == ["OPENAI_API_KEY"]
         assert apps["agy"]["installed"] is False and apps["agy"]["native"] is True
         assert apps["agy"]["update_available"] is False  # not installed
-        assert "GEMINI_API_KEY" in apps["agy"]["env_vars"]
-        assert "HTTP_PROXY" in apps["agy"]["env_vars"]   # optional merged in
+        assert "GEMINI_API_KEY" in apps["agy"]["required_env_vars"]
+        assert "HTTP_PROXY" in apps["agy"]["optional_env_vars"]
 
     def test_status_json(self, tmp_path, monkeypatch, capsys):
         self._reg(tmp_path, monkeypatch)

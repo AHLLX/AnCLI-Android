@@ -234,6 +234,52 @@ async function ancli(args) {
   return strip(r.stdout || '');
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Run a long command in the background (output redirected to a log file) and
+// poll the log. The KernelSU JS bridge blocks the WebView while a command
+// runs, so installs/updates would freeze the UI; backgrounding keeps the
+// page responsive and streams progress into the log area.
+async function runBackground(cmd) {
+  const logFile = '/data/local/tmp/ancli/.webui_last.log';
+  const exitFile = logFile + '.exit';
+  log('$ ' + cmd + '  （后台执行）');
+  try {
+    // Shell-quote guard: cmd contains no single quotes (paths/ids only).
+    const r = await execCmd("sh -c '" + cmd + ' > ' + logFile + ' 2>&1; echo $? > ' + exitFile + "' &");
+    if (r.code !== 0 && !r.stdout && !r.stderr) {
+      log('后台任务启动失败（exit ' + r.code + '）', 'err');
+      return;
+    }
+  } catch (e) {
+    log('后台任务启动失败: ' + e, 'err');
+    return;
+  }
+  // Poll: stream new log lines, then wait for the exit marker file.
+  let last = 0;
+  for (;;) {
+    await sleep(1200);
+    let out;
+    try { out = await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null'); }
+    catch (e) { continue; }
+    const text = strip(out.stdout || '');
+    if (text) { log(text); last += (out.stdout || '').length; }
+    let done;
+    try { done = await execCmd('[ -f ' + exitFile + ' ] && cat ' + exitFile + ' || echo -n'); }
+    catch (e) { continue; }
+    const code = (done.stdout || '').trim();
+    if (code !== '') {
+      try {
+        const rest = await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null');
+        const restText = strip(rest.stdout || '');
+        if (restText) log(restText);
+      } catch (e) { /* ignore */ }
+      if (code === '0') log('✓ 完成', 'ok'); else log('退出码: ' + code, 'err');
+      break;
+    }
+  }
+}
+
 // ---------- init ----------
 async function findAncli() {
   const candidates = [
@@ -323,10 +369,8 @@ function esc(s) {
 }
 
 async function doInstall(id) {
-  if (!confirm('安装 ' + id + '？（首次安装会下载 Ubuntu 依赖，耗时较长）')) return;
-  document.querySelectorAll('button').forEach(b => b.disabled = true);
-  try { await ancli('install ' + id); } catch (e) { /* logged */ }
-  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  if (!confirm('安装 ' + id + '？（首次安装会下载 Ubuntu 依赖，耗时较长，后台执行中可继续浏览）')) return;
+  await runBackground(ANCLI + ' install ' + id);
   await loadApps();
 }
 
@@ -339,21 +383,46 @@ async function doUninstall(id) {
 }
 
 async function doUpdate(id) {
-  document.querySelectorAll('button').forEach(b => b.disabled = true);
-  try { await ancli('update ' + id); } catch (e) { /* logged */ }
-  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  await runBackground(ANCLI + ' update ' + id);
   await loadApps();
 }
 
+// ---------- env var hints (shown in the config dialog) ----------
+const VAR_HINTS = {
+  OPENAI_API_KEY: 'OpenAI / 兼容平台 API 密钥（核心认证，必填）',
+  ANTHROPIC_API_KEY: 'Anthropic Claude API 密钥',
+  GEMINI_API_KEY: 'Google Gemini API 密钥',
+  ANTIGRAVITY_API_KEY: 'Antigravity 平台密钥（留空可用 OAuth 登录）',
+  DEEPSEEK_API_KEY: 'DeepSeek API 密钥（用 DeepSeek 模型时需要）',
+  OPENAI_API_BASE: 'OpenAI 兼容 API 地址（自定义中转，如 https://api.deepseek.com/v1）',
+  ANTHROPIC_BASE_URL: 'Claude 兼容 API 地址（自定义中转）',
+  AIDER_MODEL: 'aider 默认模型名（如 gpt-4o / deepseek-chat）',
+  MIMO_MODEL: 'mimo 默认模型名',
+  ANTHROPIC_MODEL: 'claude 默认模型名',
+  HTTP_PROXY: 'HTTP 代理地址（如 http://192.168.1.5:7890）',
+  HTTPS_PROXY: 'HTTPS 代理地址',
+  ALL_PROXY: '全协议代理地址',
+  GROK_DEPLOYMENT_KEY: 'Grok 企业部署密钥（个人使用留空）',
+  GROK_CHANNEL: 'Grok 频道（stable / beta 等）',
+  GROK_PROXY_URL: 'Grok 自定义代理/中转地址',
+};
+
 function openConfig(id) {
   const app = currentApps.find(a => a.id === id);
-  if (!app || !app.env_vars.length) { alert('该工具没有可配置的环境变量'); return; }
+  if (!app) return;
+  const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
+  if (!vars.length) { alert('该工具没有可配置的环境变量'); return; }
   cfgApp = app;
   document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
   const wrap = document.getElementById('cfgFields');
-  wrap.innerHTML = app.env_vars.map(v =>
-    '<label>' + esc(v) + '</label><input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false">'
-  ).join('');
+  wrap.innerHTML = vars.map(v => {
+    const required = (app.required_env_vars || []).includes(v);
+    const hint = VAR_HINTS[v] || '可选的 API 密钥 / 地址 / 配置项';
+    return '<label>' + esc(v) + (required ? ' <span style="color:var(--err)">*必填</span>' : ' <span style="color:var(--muted)">可选</span>') +
+           '</label>' +
+           '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' + esc(hint) + '">' +
+           '<div class="hint">' + esc(hint) + '</div>';
+  }).join('');
   document.getElementById('cfgOverlay').classList.add('show');
 }
 
@@ -379,9 +448,7 @@ document.getElementById('btnRefresh').onclick = async () => { await loadStatus()
 
 document.getElementById('btnRepair').onclick = async () => {
   if (!confirm('运行 ancli repair（修复环境/权限并重新生成 wrapper）？')) return;
-  document.querySelectorAll('button').forEach(b => b.disabled = true);
-  try { await ancli('repair'); } catch (e) { /* logged */ }
-  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  await runBackground(ANCLI + ' repair');
   await loadStatus(); await loadApps();
 };
 

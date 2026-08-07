@@ -1078,7 +1078,8 @@ def list_apps_json():
             "installed_version": local_ver,
             "cloud_version": cloud_ver,
             "update_available": update_avail,
-            "env_vars": app.get('env_vars', []) + app.get('optional_env_vars', []),
+            "required_env_vars": app.get('env_vars', []),
+            "optional_env_vars": app.get('optional_env_vars', []),
             "configured_keys": list(info.get('env', {}).keys()),
         })
     print(json.dumps({"ancli_version": VERSION, "apps": apps}, ensure_ascii=False))
