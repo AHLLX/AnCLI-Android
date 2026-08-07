@@ -117,6 +117,11 @@ body.ime-open #log { background: var(--glass-strong); }
 .dialog select:focus { border-color: var(--accent); }
 .dialog select option { background: var(--bg1); color: var(--text); }
 .dialog .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.dialog textarea { width: 100%; background: rgba(255,255,255,.25); border: 1px solid var(--stroke); border-radius: 12px;
+  color: var(--text); padding: 9px 12px; font-size: 12px; font-family: ui-monospace, Consolas, monospace;
+  outline: none; resize: vertical; min-height: 90px; }
+.dialog textarea:focus { border-color: var(--accent); }
+.dialog textarea::placeholder { color: var(--muted); opacity: .7; }
 .dialog .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
 
 .presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
@@ -162,6 +167,15 @@ body.ime-open #log { background: var(--glass-strong); }
     <div class="dsub">选择下方服务商可一键填充 API 地址与模型，再填入对应密钥即可</div>
     <div class="presets" id="presetBar"></div>
     <div class="preset-note" id="presetNote"></div>
+    <div id="oauthBox" style="display:none; margin-top:14px; padding-top:14px; border-top:1px dashed var(--stroke);">
+      <label>Google OAuth 凭据导入（agy）</label>
+      <textarea id="oauthJson" rows="5" spellcheck="false"
+        placeholder="粘贴电脑上的凭据文件内容：&#10;~/.gemini/antigravity-cli/antigravity-oauth-token&#10;（如电脑上不存在该文件，说明登录存于系统凭据库，需在手机上重新 OAuth）"></textarea>
+      <div class="hint">导入后 agy 直接使用该凭据，无需在手机重新登录。</div>
+      <div class="row" style="justify-content:flex-start;">
+        <button class="small primary" onclick="importOAuth()">导入凭据</button>
+      </div>
+    </div>
     <div id="cfgFields"></div>
     <div class="hint">* 必填；留空表示跳过；已保存的密钥不会回显。</div>
     <div class="row">
@@ -597,6 +611,22 @@ function renderCfgFields(app) {
   });
 }
 
+// OAuth 凭据导入（agy）：base64 传输避免 JSON 特殊字符被 shell 破坏
+async function importOAuth() {
+  const content = document.getElementById('oauthJson').value;
+  if (!content.trim()) { alert('请先粘贴电脑上的凭据文件内容'); return; }
+  const b64 = btoa(unescape(encodeURIComponent(content)));
+  const tmp = '/data/local/tmp/ancli/.oauth_import.tmp';
+  document.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    await run('echo ' + b64 + ' | base64 -d > ' + tmp);
+    await run(ANCLI + ' import-oauth agy --file ' + tmp);
+  } catch (e) { /* logged */ } finally {
+    try { await run('rm -f ' + tmp); } catch (e) { /* ignore */ }
+    document.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
 function openConfig(id) {
   const app = currentApps.find(a => a.id === id);
   if (!app) return;
@@ -607,6 +637,10 @@ function openConfig(id) {
   document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
   document.getElementById('cfgFields').innerHTML = '';
   document.getElementById('presetNote').textContent = '';
+  // OAuth 导入区：仅已安装的 agy 显示
+  const oauthBox = document.getElementById('oauthBox');
+  oauthBox.style.display = (app.id === 'agy' && app.installed) ? 'block' : 'none';
+  if (oauthBox.style.display === 'block') document.getElementById('oauthJson').value = '';
   buildPresetBar(app);
   renderCfgFields(app);
   document.getElementById('cfgOverlay').classList.add('show');
