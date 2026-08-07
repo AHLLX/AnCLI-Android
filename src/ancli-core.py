@@ -1006,28 +1006,36 @@ def update_app(app_id, registry):
         _fix_config_permissions()
         print(f"\033[92m[OK] Successfully updated {app.get('name', app_id)} to v{reg_ver}.\033[0m")
 
-def reconfigure_app(app_id, registry):
-    """Reconfigure env vars and regenerate wrapper for an installed app."""
+def reconfigure_app(app_id, registry, set_env=None):
+    """Reconfigure env vars and regenerate wrapper for an installed app.
+    With set_env (dict from `config <id> --set K=V`), runs non-interactively
+    (used by the WebUI); otherwise prompts interactively as before."""
     installed = load_installed()
     if app_id not in installed:
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
         return
     app = registry['apps'].get(app_id, {})
-    env_dict = {}
     all_vars = app.get('env_vars', []) + app.get('optional_env_vars', [])
-    if not all_vars:
+    if not all_vars and not set_env:
         print(f"\033[93m[!] No configurable env vars for {app_id}.\033[0m")
         return
     print(f"\033[96m[*] Reconfiguring {app.get('name', app_id)}...\033[0m")
-    for var in all_vars:
-        prev_val = installed[app_id].get('env', {}).get(var, '')
-        hint = f" [{prev_val}]" if prev_val else ""
-        val = input(f"\033[96mEnter {var}{hint} (leave blank to keep/skip): \033[0m").strip()
 
-        if val:
-            env_dict[var] = val
-        elif prev_val:
-            env_dict[var] = prev_val  # Keep existing value if skipped
+    env_dict = {}
+    if set_env:
+        # Non-interactive: keep existing values, overlay the --set pairs.
+        env_dict = dict(installed[app_id].get('env', {}))
+        env_dict.update(set_env)
+    else:
+        for var in all_vars:
+            prev_val = installed[app_id].get('env', {}).get(var, '')
+            hint = f" [{prev_val}]" if prev_val else ""
+            val = input(f"\033[96mEnter {var}{hint} (leave blank to keep/skip): \033[0m").strip()
+
+            if val:
+                env_dict[var] = val
+            elif prev_val:
+                env_dict[var] = prev_val  # Keep existing value if skipped
 
     runtime_env = app.get('runtime_env', [])
     generate_proot_wrapper(app.get('executable', app_id), env_dict if env_dict else None, runtime_env,
@@ -1036,6 +1044,70 @@ def reconfigure_app(app_id, registry):
     installed[app_id]['env'] = env_dict
     save_installed(installed)
     print(f"\033[92m[OK] Reconfigured and wrapper regenerated.\033[0m")
+
+# ---------------------------------------------------------------------------
+# WebUI JSON API (non-interactive, machine-readable output)
+# ---------------------------------------------------------------------------
+
+def _binary_exists(exec_name):
+    """Check whether a tool's binary exists inside the container."""
+    return (os.path.exists(f"{ROOTFS}/usr/local/bin/{exec_name}") or
+            os.path.exists(f"{ROOTFS}/usr/bin/{exec_name}") or
+            os.path.exists(f"{ROOTFS}/root/.local/bin/{exec_name}"))
+
+
+def list_apps_json():
+    """Registry + install state as pure JSON (used by the WebUI)."""
+    registry = _load_local_registry_cache() or {}
+    installed = load_installed()
+    apps = []
+    for aid, app in registry.get('apps', {}).items():
+        info = installed.get(aid, {})
+        exec_name = info.get('executable', app.get('executable', aid))
+        local_ver = info.get('installed_version', 'unknown')
+        cloud_ver = app.get('version', registry.get('version', 'unknown'))
+        update_avail = (aid in installed and cloud_ver not in ('unknown', '')
+                        and local_ver not in ('unknown', '') and cloud_ver != local_ver)
+        apps.append({
+            "id": aid,
+            "name": app.get('name', aid),
+            "description": app.get('description', ''),
+            "native": bool(app.get('native', False)),
+            "installed": aid in installed,
+            "active": _binary_exists(exec_name) if aid in installed else False,
+            "installed_version": local_ver,
+            "cloud_version": cloud_ver,
+            "update_available": update_avail,
+            "env_vars": app.get('env_vars', []) + app.get('optional_env_vars', []),
+            "configured_keys": list(info.get('env', {}).keys()),
+        })
+    print(json.dumps({"ancli_version": VERSION, "apps": apps}, ensure_ascii=False))
+
+
+def status_json():
+    """Container/module status as pure JSON (used by the WebUI)."""
+    print(json.dumps({
+        "ancli_version": VERSION,
+        "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash"),
+        "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
+        "installed_count": len(load_installed()),
+    }, ensure_ascii=False))
+
+
+def parse_set_env(argv):
+    """Parse `--set KEY=VALUE` pairs from argv into a dict."""
+    result = {}
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--set" and i + 1 < len(argv):
+            k, _, v = argv[i + 1].partition('=')
+            if k:
+                result[k] = v
+            i += 2
+        else:
+            i += 1
+    return result
+
 
 # ---------------------------------------------------------------------------
 # UI
@@ -1150,6 +1222,9 @@ if __name__ == "__main__":
             # 'list' reads local state only — no network needed.
             # All write-ops (install/update/config/repair) fetch the latest cloud registry.
             if action == "list":
+                if "--json" in sys.argv:
+                    list_apps_json()
+                    sys.exit(0)
                 registry  = _load_local_registry_cache()  # offline-safe, no network
                 installed = load_installed()
                 if not installed:
@@ -1162,11 +1237,7 @@ if __name__ == "__main__":
 
                         # Integrity check: verify binary exists inside PRoot
                         exec_name = info.get('executable', aid)
-                        bin_exists = (
-                            os.path.exists(f"{ROOTFS}/usr/local/bin/{exec_name}") or
-                            os.path.exists(f"{ROOTFS}/usr/bin/{exec_name}") or
-                            os.path.exists(f"{ROOTFS}/root/.local/bin/{exec_name}")
-                        )
+                        bin_exists = _binary_exists(exec_name)
                         status_tag = f"\033[92m{_t('app_active')}\033[0m" if bin_exists else f"\033[91m{_t('app_broken')}\033[0m"
 
                         # Check for update available (uses local registry cache, no network)
@@ -1190,9 +1261,18 @@ if __name__ == "__main__":
                 elif action == "update" and app_id:
                     update_app(app_id, registry)
                 elif action == "config" and app_id:
-                    reconfigure_app(app_id, registry)
+                    set_env = parse_set_env(sys.argv[3:])
+                    reconfigure_app(app_id, registry, set_env if set_env else None)
                 elif action == "repair":
                     repair_env(registry)
+                elif action == "status":
+                    if "--json" in sys.argv:
+                        status_json()
+                        sys.exit(0)
+                    print(f"AnCLI v{VERSION}")
+                    print(f"rootfs ready: {os.path.exists(f'{ROOTFS}/bin/bash')}")
+                    print(f"proot deployed: {os.path.exists(f'{ANCLI_DIR}/bin/proot')}")
+                    print(f"installed apps: {len(load_installed())}")
                 else:
                     print_help()
         else:

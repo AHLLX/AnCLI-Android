@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnCLI WebUI</title>
+<style>
+:root {
+  --bg: #0f1115; --card: #171a21; --border: #262b36; --text: #d8dee9;
+  --muted: #7d8590; --accent: #3b82f6; --ok: #22c55e; --warn: #f59e0b;
+  --err: #ef4444; --native: #a855f7;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font:14px/1.6 system-ui,-apple-system,sans-serif; padding:16px; }
+h1 { font-size:18px; margin-bottom:4px; }
+.sub { color:var(--muted); font-size:12px; margin-bottom:16px; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:20px; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; }
+.card .k { color:var(--muted); font-size:11px; }
+.card .v { font-size:16px; font-weight:600; margin-top:2px; }
+.card .v.ok { color:var(--ok); } .card .v.bad { color:var(--err); }
+.app { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:10px; }
+.app .head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.app .name { font-weight:600; font-size:15px; }
+.app .desc { color:var(--muted); font-size:12px; margin:4px 0 10px; }
+.badge { font-size:11px; padding:1px 8px; border-radius:99px; border:1px solid var(--border); color:var(--muted); }
+.badge.native { border-color:var(--native); color:var(--native); }
+.badge.installed { border-color:var(--ok); color:var(--ok); }
+.badge.broken { border-color:var(--err); color:var(--err); }
+.badge.update { border-color:var(--warn); color:var(--warn); }
+.btns { display:flex; gap:8px; flex-wrap:wrap; }
+button { background:#232936; color:var(--text); border:1px solid var(--border); border-radius:8px;
+  padding:6px 14px; font-size:13px; cursor:pointer; transition:.15s; }
+button:hover { border-color:var(--accent); color:#fff; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+button.danger:hover { border-color:var(--err); color:var(--err); }
+button.small { padding:3px 10px; font-size:12px; }
+#log { background:#0a0c10; border:1px solid var(--border); border-radius:10px; padding:12px;
+  font:12px/1.5 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-all;
+  max-height:260px; overflow:auto; color:#9fb3c8; margin-top:20px; }
+#log .err { color:var(--err); } #log .ok { color:var(--ok); }
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:10; }
+.overlay.show { display:flex; }
+.dialog { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; width:min(90vw,420px); }
+.dialog h3 { margin-bottom:12px; }
+.dialog label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px; }
+.dialog input { width:100%; background:#0a0c10; border:1px solid var(--border); border-radius:8px;
+  color:var(--text); padding:8px 10px; font-size:13px; }
+.dialog input:focus { outline:none; border-color:var(--accent); }
+.dialog .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+.hint { color:var(--muted); font-size:11px; margin-top:6px; }
+</style>
+</head>
+<body>
+<h1>AnCLI 管理</h1>
+<div class="sub">Unified Linux CLI environment manager · KernelSU WebUI</div>
+
+<div class="cards" id="statusCards">
+  <div class="card"><div class="k">AnCLI 版本</div><div class="v" id="stVer">…</div></div>
+  <div class="card"><div class="k">容器 Rootfs</div><div class="v" id="stRootfs">…</div></div>
+  <div class="card"><div class="k">PRoot</div><div class="v" id="stProot">…</div></div>
+  <div class="card"><div class="k">已安装工具</div><div class="v" id="stCount">…</div></div>
+</div>
+
+<div style="display:flex; gap:8px; margin-bottom:14px;">
+  <button id="btnRepair" class="primary">修复环境 (repair)</button>
+  <button id="btnRefresh">刷新</button>
+</div>
+
+<div id="apps"></div>
+
+<div id="log"></div>
+
+<div class="overlay" id="cfgOverlay">
+  <div class="dialog">
+    <h3 id="cfgTitle">配置</h3>
+    <div id="cfgFields"></div>
+    <div class="hint">留空表示跳过；已保存的密钥不会回显。</div>
+    <div class="row">
+      <button id="cfgCancel">取消</button>
+      <button id="cfgSave" class="primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+let ANCLI = null;      // resolved ancli command path
+let currentApps = [];  // last list --json payload
+let cfgApp = null;     // app being configured
+
+// ---------- KernelSU / KsuWebUI bridge ----------
+async function sh(cmd) {
+  const bridge = window.ksu_webui || window.ap_webui || window.ksuwebui;
+  if (bridge && typeof bridge.exec === 'function') {
+    return await bridge.exec(cmd);
+  }
+  // KsuWebUI KKHTTP fallback
+  try {
+    const r = await fetch('http://127.0.0.1:8443/exec?cmd=' + encodeURIComponent(cmd), {cache:'no-store'});
+    return await r.json();
+  } catch (e) {
+    throw new Error('WebUI 桥接不可用（需要 KernelSU 0.9.5+ 或 KsuWebUI）');
+  }
+}
+
+const strip = s => (s || '').replace(/\x1b\[[0-9;]*m/g, '');
+
+function log(text, cls) {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = text;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function run(cmd) {
+  log('$ ' + cmd);
+  try {
+    const r = await sh(cmd);
+    const out = strip(r.stdout || '').trim();
+    const err = strip(r.stderr || '').trim();
+    if (out) log(out);
+    if (err) log(err, 'err');
+    if (r.code !== 0) log('exit code: ' + r.code, 'err');
+    else log('✓ 完成', 'ok');
+    return r;
+  } catch (e) {
+    log(String(e), 'err');
+    throw e;
+  }
+}
+
+async function ancli(args) {
+  const r = await run(ANCLI + ' ' + args);
+  if (r.code !== 0) throw new Error('ancli ' + args + ' failed');
+  return strip(r.stdout || '');
+}
+
+// ---------- init ----------
+async function findAncli() {
+  const candidates = [
+    '/data/adb/ksu/bin/ancli',
+    '/data/adb/ap/bin/ancli',
+    '/data/local/tmp/ancli/bin/ancli',
+    '/data/adb/modules/ancli/system/bin/ancli',
+  ];
+  for (const p of candidates) {
+    try {
+      const r = await sh('[ -x ' + p + ' ] && echo yes');
+      if (r.code === 0 && strip(r.stdout).trim() === 'yes') return p;
+    } catch (e) { /* try next */ }
+  }
+  return 'ancli';
+}
+
+async function loadStatus() {
+  try {
+    const raw = await ancli('status --json');
+    const s = JSON.parse(raw);
+    document.getElementById('stVer').textContent = s.ancli_version || '?';
+    const rf = document.getElementById('stRootfs');
+    rf.textContent = s.rootfs_ready ? '就绪' : '缺失';
+    rf.className = 'v ' + (s.rootfs_ready ? 'ok' : 'bad');
+    const pr = document.getElementById('stProot');
+    pr.textContent = s.proot_deployed ? '已部署' : '缺失';
+    pr.className = 'v ' + (s.proot_deployed ? 'ok' : 'bad');
+    document.getElementById('stCount').textContent = s.installed_count ?? '?';
+  } catch (e) {
+    log('状态加载失败: ' + e, 'err');
+  }
+}
+
+async function loadApps() {
+  const wrap = document.getElementById('apps');
+  wrap.innerHTML = '<div class="sub">加载中…</div>';
+  try {
+    const raw = await ancli('list --json');
+    const data = JSON.parse(raw);
+    currentApps = data.apps || [];
+    renderApps(currentApps);
+    document.getElementById('stVer').textContent = data.ancli_version || '?';
+  } catch (e) {
+    wrap.innerHTML = '<div class="sub">加载失败: ' + e + '</div>';
+  }
+}
+
+function renderApps(apps) {
+  const wrap = document.getElementById('apps');
+  wrap.innerHTML = '';
+  if (!apps.length) { wrap.innerHTML = '<div class="sub">registry 中没有可用工具</div>'; return; }
+  for (const a of apps) {
+    const el = document.createElement('div');
+    el.className = 'app';
+    const badges = [];
+    if (a.native) badges.push('<span class="badge native">native 直跑</span>');
+    if (a.installed) {
+      badges.push(a.active
+        ? '<span class="badge installed">已安装 v' + a.installed_version + '</span>'
+        : '<span class="badge broken">损坏</span>');
+      if (a.update_available) badges.push('<span class="badge update">可更新 → v' + a.cloud_version + '</span>');
+    } else {
+      badges.push('<span class="badge">未安装</span>');
+    }
+    if (a.configured_keys && a.configured_keys.length)
+      badges.push('<span class="badge">已配置: ' + a.configured_keys.join(', ') + '</span>');
+
+    let btns = '';
+    if (!a.installed) {
+      btns += '<button class="small primary" onclick="doInstall(\'' + a.id + '\')">安装</button>';
+    } else {
+      btns += '<button class="small" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
+      btns += '<button class="small" onclick="openConfig(\'' + a.id + '\')">配置</button>';
+      btns += '<button class="small danger" onclick="doUninstall(\'' + a.id + '\')">卸载</button>';
+    }
+    el.innerHTML =
+      '<div class="head"><span class="name">' + esc(a.name) + '</span>' + badges.join('') + '</div>' +
+      '<div class="desc">' + esc(a.description) + '</div>' +
+      '<div class="btns">' + btns + '</div>';
+    wrap.appendChild(el);
+  }
+}
+
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function doInstall(id) {
+  if (!confirm('安装 ' + id + '？（首次安装会下载 Ubuntu 依赖，耗时较长）')) return;
+  document.querySelectorAll('button').forEach(b => b.disabled = true);
+  try { await ancli('install ' + id); } catch (e) { /* logged */ }
+  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  await loadApps();
+}
+
+async function doUninstall(id) {
+  if (!confirm('卸载 ' + id + '？')) return;
+  document.querySelectorAll('button').forEach(b => b.disabled = true);
+  try { await ancli('uninstall ' + id); } catch (e) { /* logged */ }
+  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  await loadApps();
+}
+
+async function doUpdate(id) {
+  document.querySelectorAll('button').forEach(b => b.disabled = true);
+  try { await ancli('update ' + id); } catch (e) { /* logged */ }
+  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  await loadApps();
+}
+
+function openConfig(id) {
+  const app = currentApps.find(a => a.id === id);
+  if (!app || !app.env_vars.length) { alert('该工具没有可配置的环境变量'); return; }
+  cfgApp = app;
+  document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
+  const wrap = document.getElementById('cfgFields');
+  wrap.innerHTML = app.env_vars.map(v =>
+    '<label>' + esc(v) + '</label><input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false">'
+  ).join('');
+  document.getElementById('cfgOverlay').classList.add('show');
+}
+
+document.getElementById('cfgCancel').onclick = () =>
+  document.getElementById('cfgOverlay').classList.remove('show');
+
+document.getElementById('cfgSave').onclick = async () => {
+  if (!cfgApp) return;
+  const sets = [];
+  document.querySelectorAll('#cfgFields input').forEach(inp => {
+    const v = inp.value.trim();
+    if (v) sets.push('--set ' + encodeURIComponent(inp.dataset.var) + '=' + encodeURIComponent(v));
+  });
+  document.getElementById('cfgOverlay').classList.remove('show');
+  if (!sets.length) { await loadApps(); return; }
+  document.querySelectorAll('button').forEach(b => b.disabled = true);
+  try { await ancli('config ' + cfgApp.id + ' ' + sets.join(' ')); } catch (e) { /* logged */ }
+  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  await loadApps();
+};
+
+document.getElementById('btnRefresh').onclick = async () => { await loadStatus(); await loadApps(); };
+
+document.getElementById('btnRepair').onclick = async () => {
+  if (!confirm('运行 ancli repair（修复环境/权限并重新生成 wrapper）？')) return;
+  document.querySelectorAll('button').forEach(b => b.disabled = true);
+  try { await ancli('repair'); } catch (e) { /* logged */ }
+  document.querySelectorAll('button').forEach(b => b.disabled = false);
+  await loadStatus(); await loadApps();
+};
+
+(async function init() {
+  log('AnCLI WebUI 初始化…');
+  ANCLI = await findAncli();
+  log('ancli 路径: ' + ANCLI);
+  await loadStatus();
+  await loadApps();
+})();
+</script>
+</body>
+</html>

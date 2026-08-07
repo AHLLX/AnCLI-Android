@@ -343,6 +343,84 @@ class TestWrapperGeneration:
         assert not (tmp_path / "ancli" / "bin").exists()
 
 
+# ---------------------------------------------------------------------------
+# WebUI JSON API
+# ---------------------------------------------------------------------------
+
+class TestWebUIJsonAPI:
+    def _reg(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(tmp_path / "ancli" / "installed.json"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+        reg = {
+            "version": "1.0",
+            "apps": {
+                "mimo": {"name": "MiMo Code", "executable": "mimo", "native": False},
+                "agy": {"name": "Antigravity", "executable": "agy", "native": True,
+                        "version": "2.0", "env_vars": ["GEMINI_API_KEY"],
+                        "optional_env_vars": ["HTTP_PROXY"]},
+            },
+        }
+        reg_path = tmp_path / "registry.json"
+        reg_path.write_text(json.dumps(reg), encoding="utf-8")
+        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(reg_path))
+        return reg
+
+    def test_list_apps_json_clean_output(self, tmp_path, monkeypatch, capsys):
+        self._reg(tmp_path, monkeypatch)
+        core.save_installed({"mimo": {"executable": "mimo", "installed_version": "1.0",
+                                      "env": {"OPENAI_API_KEY": "x"}}})
+        os.makedirs(tmp_path / "rootfs" / "usr" / "local" / "bin", exist_ok=True)
+        (tmp_path / "rootfs" / "usr" / "local" / "bin" / "mimo").write_text("x")
+
+        core.list_apps_json()
+        data = json.loads(capsys.readouterr().out)  # must be pure JSON
+        apps = {a["id"]: a for a in data["apps"]}
+        assert apps["mimo"]["installed"] is True and apps["mimo"]["active"] is True
+        assert apps["mimo"]["configured_keys"] == ["OPENAI_API_KEY"]
+        assert apps["agy"]["installed"] is False and apps["agy"]["native"] is True
+        assert apps["agy"]["update_available"] is False  # not installed
+        assert "GEMINI_API_KEY" in apps["agy"]["env_vars"]
+        assert "HTTP_PROXY" in apps["agy"]["env_vars"]   # optional merged in
+
+    def test_status_json(self, tmp_path, monkeypatch, capsys):
+        self._reg(tmp_path, monkeypatch)
+        os.makedirs(tmp_path / "rootfs" / "bin", exist_ok=True)
+        (tmp_path / "rootfs" / "bin" / "bash").write_text("")
+        (tmp_path / "ancli" / "bin" / "proot").write_text("")
+
+        core.status_json()
+        d = json.loads(capsys.readouterr().out)
+        assert d["rootfs_ready"] is True and d["proot_deployed"] is True
+        assert d["installed_count"] == 0
+
+    def test_parse_set_env(self):
+        assert core.parse_set_env(["--set", "A=1", "--set", "B=2", "junk"]) == {"A": "1", "B": "2"}
+        assert core.parse_set_env([]) == {}
+
+    def test_reconfigure_noninteractive_merges_existing(self, tmp_path, monkeypatch):
+        self._reg(tmp_path, monkeypatch)
+        core.save_installed({"agy": {"executable": "agy", "installed_version": "1.0",
+                                     "env": {"GEMINI_API_KEY": "old"}}})
+        registry = {"apps": {"agy": {"name": "Antigravity", "executable": "agy",
+                                     "env_vars": ["GEMINI_API_KEY"]}}}
+
+        core.reconfigure_app("agy", registry, set_env={"GEMINI_API_KEY": "new"})
+
+        installed = core.load_installed()
+        assert installed["agy"]["env"] == {"GEMINI_API_KEY": "new"}
+        # wrapper regenerated with the new secret
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+        assert "secrets/agy.env" in wrapper
+        secrets = (tmp_path / "secrets" / "agy.env").read_text()
+        assert "GEMINI_API_KEY" in secrets and "new" in secrets
+
+
 def shlex_quote(s):
     import shlex
     return shlex.quote(s)
