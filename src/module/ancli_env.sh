@@ -28,13 +28,6 @@ export GODEBUG=netdns=go
 export UV_USE_IO_URING=0
 export BUN_FEATURE_FLAG_IO_URING=0
 
-# PRoot ELF loader: the bundled proot (termux build, faccessat2 fix for
-# aarch64 bash `[ -x ]`) looks for its loader at a compile-time path that
-# does not exist here — point it at ours when present.
-if [ -x /data/local/tmp/ancli/bin/loader ]; then
-    export PROOT_LOADER=/data/local/tmp/ancli/bin/loader
-fi
-
 # Locale: C.UTF-8 is always available in Ubuntu 24.04 and keeps Python/Node
 # output sane (no missing-locale warnings, UTF-8 file names).
 export LANG=C.UTF-8

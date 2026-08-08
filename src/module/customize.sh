@@ -28,15 +28,6 @@ chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
 ui_print ">> Deploying PRoot..."
 cp "$MODPATH/bin/proot" "$BIN_DIR/proot"
 chmod 755 "$BIN_DIR/proot"
-# PRoot ELF loader + talloc lib (termux proot dependencies) deploy
-if [ -f "$MODPATH/bin/loader" ]; then
-    cp "$MODPATH/bin/loader" "$BIN_DIR/loader"
-    chmod 755 "$BIN_DIR/loader"
-fi
-if [ -f "$MODPATH/bin/libtalloc.so.2" ]; then
-    cp "$MODPATH/bin/libtalloc.so.2" "$BIN_DIR/libtalloc.so.2"
-    chmod 644 "$BIN_DIR/libtalloc.so.2"
-fi
 ui_print ">> PRoot deployed successfully."
 
 # 3. Download & Extract Ubuntu Base
@@ -96,10 +87,7 @@ else
 fi
 
 # 4. Install APT Dependencies via PRoot (with idempotency guard)
-# LD_LIBRARY_PATH: bundled proot (termux build) dynamically links libtalloc.so.2
-# deployed next to it in $BIN_DIR; without this the Android linker aborts with
-# "CANNOT LINK EXECUTABLE ... libtalloc.so.2 not found".
-PROOT_CMD="env LD_LIBRARY_PATH=$BIN_DIR $BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -w /root"
+PROOT_CMD="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -w /root"
 
 # APT 依赖脚本生成（幂等）：基础工具链 = python/git/node + Java 17 + binutils
 # Java 17 供 jadx 等反编译工具；binutils 提供 strings/readelf/objdump；

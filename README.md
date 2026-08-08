@@ -148,6 +148,15 @@ cd /root/projects && mimo   # instant startup, native ext4 speed
 
 The wrapper also avoids repeating slow setup on every launch: the system proxy is detected via `dumpsys connectivity` and cached for 30 seconds (see `ancli_env.sh`), and Clash virtual-IP loopback binds are only re-applied when missing.
 
+### `bash -c 'test -x <file>'` 在容器内总是失败（faccessat2）
+
+已知问题：官方 proot（5.4.0）在 aarch64 上未映射 `faccessat2` syscall（glibc 2.39 的 bash `[ -x ]` 依赖它），导致 **bash 的权限检测误报 false**，而 `sh`（dash/toybox 走老 `access()`）正常。影响 jadx 等 Java 工具启动脚本里的 `JAVA_HOME`/`-x` 检测。
+
+**绕法**（mimo 已验证）：
+- 用 sh 写启动包装：`#!/bin/sh` + `exec java -cp /path/jadx-all.jar jadx.cli.JadxCLI "$@"`
+- 或先 `chmod +x` 后用 `sh -c` 调用
+- termux 的 proot 构建含修复但依赖 libtalloc/liblandroid-shmem（纯 Android 无），已放弃该路线
+
 ### No update notification in KernelSU/Magisk manager
 
 The manager polls `update.json` (`updateJson` in `module.prop`). If `raw.githubusercontent.com` is unreachable on your network, no update will appear — use a proxy/VPN, or point `updateJson` at a jsDelivr mirror.
