@@ -28,6 +28,12 @@ chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
 ui_print ">> Deploying PRoot..."
 cp "$MODPATH/bin/proot" "$BIN_DIR/proot"
 chmod 755 "$BIN_DIR/proot"
+# PRoot ELF loader (needed by the termux-built proot: faccessat2 fix for
+# aarch64; loader path is compile-time, so we point to ours via PROOT_LOADER)
+if [ -f "$MODPATH/bin/loader" ]; then
+    cp "$MODPATH/bin/loader" "$BIN_DIR/loader"
+    chmod 755 "$BIN_DIR/loader"
+fi
 ui_print ">> PRoot deployed successfully."
 
 # 3. Download & Extract Ubuntu Base
