@@ -96,7 +96,10 @@ else
 fi
 
 # 4. Install APT Dependencies via PRoot (with idempotency guard)
-PROOT_CMD="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -w /root"
+# LD_LIBRARY_PATH: bundled proot (termux build) dynamically links libtalloc.so.2
+# deployed next to it in $BIN_DIR; without this the Android linker aborts with
+# "CANNOT LINK EXECUTABLE ... libtalloc.so.2 not found".
+PROOT_CMD="env LD_LIBRARY_PATH=$BIN_DIR $BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -w /root"
 
 # APT 依赖脚本生成（幂等）：基础工具链 = python/git/node + Java 17 + binutils
 # Java 17 供 jadx 等反编译工具；binutils 提供 strings/readelf/objdump；
