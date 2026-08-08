@@ -10,7 +10,14 @@ ok()   { printf "${G}[OK]${NC} %s\n" "$1"; }
 err()  { printf "${R}[X]${NC} %s\n" "$1"; exit 1; }
 info() { printf "${C}>${NC} %s\n" "$1"; }
 
-MODULE_URL="https://github.com/AHLLX/AnCLI-Android/releases/latest/download/ancli-module.zip"
+# Resolve the latest module URL from update.json (single source of truth),
+# so releases only need to update that one file.
+UPDATE_JSON_URL="https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json"
+MODULE_URL=$(curl -fsSL --connect-timeout 15 --max-time 30 "$UPDATE_JSON_URL" 2>/dev/null \
+    | sed -n 's/.*"zipUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+if [ -z "${MODULE_URL:-}" ]; then
+    err "Failed to resolve module URL from $UPDATE_JSON_URL"
+fi
 TMP_ZIP="/data/local/tmp/ancli-module.zip"
 
 echo "=================================================="

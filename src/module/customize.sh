@@ -13,7 +13,7 @@ UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 UBUNTU_PATH="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
 ui_print "============================================"
-ui_print "  AnCLI Bootstrap Installer v1.2.2"
+ui_print "  AnCLI Bootstrap Installer v1.2.3"
 ui_print "============================================"
 ui_print ""
 

@@ -11,7 +11,7 @@ AnCLI uses a single, unified execution backend based on **PRoot** to run Linux c
 ```
 Host Shell
     → Wrapper (/data/adb/ksu/bin/<tool>)
-        → proot v5.3.0 (user-space chroot)
+        → proot v5.4.0 (official static build, user-space chroot)
             → Ubuntu 24.04 glibc rootfs (/data/local/tmp/ancli/rootfs/)
                 → Standalone Python/Go/JS Native Binary
 ```
@@ -66,7 +66,6 @@ The registry schema defines the metadata and installation scripts for supported 
   "install_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
   "update_cmd": "curl -L ...",
   "uninstall_cmd": "rm -f /usr/local/bin/opencode",
-  "env_vars": ["OPENAI_API_KEY"],
   "executable": "opencode"
 }
 ```

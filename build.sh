@@ -4,7 +4,7 @@
 # Packages src/module/ into a flashable ZIP
 # ============================================================
 # Usage (from repo root):
-#   sh build.sh              → outputs ancli-v1.1.0.zip
+#   sh build.sh              → outputs ancli-<version>.zip (version from module.prop)
 #   sh build.sh custom-name  → outputs custom-name.zip
 
 set -eu

@@ -1,6 +1,6 @@
-# AnCLI Compatibility Dossier (v1.0.0)
+# AnCLI Compatibility Dossier (v1.2.3)
 
-This document records the architectural boundaries, compatibility tests, and validation results of **AnCLI** on Android 15.
+This document records the architectural boundaries, compatibility tests, and validation results of **AnCLI** on Android 15/16.
 
 ---
 
@@ -40,6 +40,7 @@ These binaries are statically compiled or bundled with their own minimal Node.js
 | :--- | :--- | :--- | :--- | :--- |
 | **Aider** | Python | ✅ **Supported** | PRoot / Ubuntu Base | Runs via `pip` |
 | **MiMo Code** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
-| **Antigravity CLI (agy)** | Go | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
+| **Antigravity CLI (agy)** | Go | ✅ **Supported** | PRoot / Ubuntu Base | Release binary (dynamically linked — proot mode) |
 | **Claude Code** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
 | **OpenCode** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
+| **Grok** | Rust | ✅ **Supported** | PRoot / Ubuntu Base | Release binary (proot mode) |

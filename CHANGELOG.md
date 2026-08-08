@@ -1,4 +1,4 @@
-## AnCLI v1.2.2 — Hotfix Batch (2026-08-08)
+## AnCLI v1.2.3 — Hotfix Batch & Release (2026-08-08)
 
 ### Runtime Fixes
 - **proot reverted to official static build**: the termux build (faccessat2 fix) dynamically links `libtalloc.so.2` + `libandroid-shmem.so`, which do not exist on a pure Android host — the module installer kept failing with `CANNOT LINK EXECUTABLE`. Official 5.4.0 static proot (402KB, zero external deps) restores clean installs.

@@ -33,7 +33,7 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download `ancli-module.zip` from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-v1.2.3.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -158,7 +158,12 @@ The wrapper also avoids repeating slow setup on every launch: the system proxy i
 
 ### No update notification in KernelSU/Magisk manager
 
-The manager polls `update.json` (`updateJson` in `module.prop`). If `raw.githubusercontent.com` is unreachable on your network, no update will appear — use a proxy/VPN, or point `updateJson` at a jsDelivr mirror.
+The manager polls `update.json` (`updateJson` in `module.prop`). If `raw.githubusercontent.com` is unreachable on your network, no update will appear — use a proxy/VPN, or point `updateJson` at a jsDelivr mirror. Also verify the `zipUrl` asset name exactly matches what you uploaded to the GitHub release — a mismatch silently disables OTA.
+
+### TLS & package-source trade-offs (known)
+
+- Registry fetches and installer-script downloads verify TLS certificates first, and fall back to an **unverified** retry only when certificate validation fails (the proot container may ship an incomplete CA store). Downloads of third-party installer scripts then execute them with `bash` — review what you install.
+- `customize.sh` installs APT packages with `--allow-unauthenticated` (the rootfs ships with a minimal keyring) and downloads `ubuntu-base` without a checksum. Both are pragmatic trade-offs for a bootstrap that must work offline-first; do not extend this pattern to user-supplied inputs.
 
 ## Technical Details
 

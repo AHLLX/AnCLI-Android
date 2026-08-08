@@ -48,7 +48,7 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
         name="${wrapper##*/}"
         # Skip core infrastructure files — only sync app wrappers
         case "$name" in
-            proot|ancli-core.py|ancli|registry.json|installed.json|hosts) continue ;;
+            proot|ancli-core.py|ancli|ancli_env.sh|registry.json|installed.json|hosts) continue ;;
             .*) continue ;;
         esac
         [ -f "$wrapper" ] || continue
