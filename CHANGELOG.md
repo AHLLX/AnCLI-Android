@@ -1,3 +1,17 @@
+## AnCLI v1.2.2 — Hotfix Batch (2026-08-08)
+
+### Runtime Fixes
+- **proot reverted to official static build**: the termux build (faccessat2 fix) dynamically links `libtalloc.so.2` + `libandroid-shmem.so`, which do not exist on a pure Android host — the module installer kept failing with `CANNOT LINK EXECUTABLE`. Official 5.4.0 static proot (402KB, zero external deps) restores clean installs.
+- **agy / grok back to proot mode**: the current agy release (1.1.11) is dynamically linked (188MB); native direct-exec fails with `No such file or directory` (no `/lib64/ld-linux-aarch64.so.1` on Android). Removed `"native": true` from the registry — wrappers now run inside the container again. Verified on device: `agy --version` → 1.1.11.
+- **Known limitation documented**: bash `[ -x ]` (faccessat2) still misreports on aarch64 proot; workaround (sh wrapper / `java -cp` direct call) recorded in README and device AGENTS.md.
+
+### WebUI Config Presets
+- Added verified Anthropic-compatible endpoints (from official docs) for Claude Code config: DeepSeek `https://api.deepseek.com/anthropic`, 智谱 GLM `https://open.bigmodel.cn/api/anthropic`, Kimi `https://api.moonshot.cn/anthropic`, OpenRouter `https://openrouter.ai/api`.
+- Kimi/OpenRouter use `ANTHROPIC_AUTH_TOKEN` (UI warns to leave `ANTHROPIC_API_KEY` empty); registry `claude-code` gained the `ANTHROPIC_AUTH_TOKEN` optional field.
+- Removed dead UI fields (OPENAI_*/GEMINI_/ANTIGRAVITY_/DEEPSEEK_/GROK_*/MIMO_ hints and EXTRA_KEYS) left over from deleted config features.
+
+---
+
 ## AnCLI v1.2.2 — Security Hardening & Architecture Refactor
 
 ### Security Fixes

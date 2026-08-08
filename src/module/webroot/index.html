@@ -185,7 +185,8 @@ let cfgApp = null;     // app being configured
 // ---------- 服务商预置（官方文档核实，2026-08 二次复核） ----------
 const PROVIDERS = [
   { id: 'deepseek',    name: 'DeepSeek',       base: 'https://api.deepseek.com',                    keyUrl: 'https://platform.deepseek.com/api_keys',
-    models: ['deepseek-v4-flash', 'deepseek-v4-pro'], note: '国内直连 · 性价比高' },
+    anthropicBase: 'https://api.deepseek.com/anthropic', auth: 'key',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'], note: '国内直连 · 性价比高 · 官方 Claude 兼容' },
   { id: 'openai',      name: 'OpenAI',         base: 'https://api.openai.com/v1',                   keyUrl: 'https://platform.openai.com',
     models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] },
   { id: 'gemini',      name: 'Google Gemini',  base: 'https://generativelanguage.googleapis.com/v1beta/openai/', keyUrl: 'https://aistudio.google.com/apikey',
@@ -193,41 +194,35 @@ const PROVIDERS = [
   { id: 'groq',        name: 'Groq',           base: 'https://api.groq.com/openai/v1',              keyUrl: 'https://console.groq.com/keys',
     models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'], note: '极速推理 · 有免费额度' },
   { id: 'openrouter',  name: 'OpenRouter',     base: 'https://openrouter.ai/api/v1',                keyUrl: 'https://openrouter.ai/settings/keys',
+    anthropicBase: 'https://openrouter.ai/api', auth: 'token',
     models: ['~openai/gpt-latest', '~anthropic/claude-sonnet-latest'] },
   { id: 'zhipu',       name: '智谱 GLM',        base: 'https://open.bigmodel.cn/api/paas/v4',        keyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
-    models: ['glm-5.2', 'glm-5.1', 'glm-4.7-flash', 'glm-4-long'], note: '国内直连 · 含免费模型' },
+    anthropicBase: 'https://open.bigmodel.cn/api/anthropic', auth: 'key',
+    models: ['glm-5.2', 'glm-5.1', 'glm-4.7-flash', 'glm-4-long'], note: '国内直连 · 含免费模型 · 官方 Claude 兼容' },
   { id: 'aliyun',      name: '阿里云百炼',      base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com',
     models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'], note: '国内直连 · 通义千问' },
   { id: 'kimi',        name: 'Kimi 月之暗面',   base: 'https://api.moonshot.cn/v1',                  keyUrl: 'https://platform.kimi.com/console/api-keys',
-    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'], note: '长上下文（1M）' },
+    anthropicBase: 'https://api.moonshot.cn/anthropic', auth: 'token',
+    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'], note: '长上下文（1M）· 官方 Claude 兼容' },
   { id: 'xai',         name: 'xAI Grok',       base: 'https://api.x.ai/v1',                         keyUrl: 'https://console.x.ai/team/default/api-keys',
     models: ['grok-4.5', 'grok-4.3'] },
   { id: 'siliconflow', name: '硅基流动',        base: 'https://api.siliconflow.cn/v1',               keyUrl: 'https://cloud.siliconflow.cn/account/ak',
     models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2.5-Coder-32B-Instruct'], note: '国内 · 含免费模型' },
 ];
 
-// 字段用途提示
+// 字段用途提示（仅 registry 仍启用的 env_vars + 通用代理字段）
 const VAR_HINTS = {
-  OPENAI_API_KEY: 'OpenAI / 兼容平台 API 密钥（核心认证）',
   ANTHROPIC_API_KEY: 'Anthropic Claude API 密钥',
-  GEMINI_API_KEY: 'Google Gemini API 密钥',
-  ANTIGRAVITY_API_KEY: 'Antigravity 平台密钥（留空可用 OAuth 登录）',
-  DEEPSEEK_API_KEY: 'DeepSeek API 密钥（在 platform.deepseek.com 申请）',
-  OPENAI_API_BASE: 'OpenAI 兼容 API 地址（选择服务商后自动填充）',
+  ANTHROPIC_AUTH_TOKEN: 'Claude 兼容密钥（Kimi / OpenRouter 专用；填此项时 ANTHROPIC_API_KEY 留空）',
   ANTHROPIC_BASE_URL: 'Claude 兼容 API 地址（选择服务商后自动填充）',
-  AIDER_MODEL: 'aider 默认模型名',
-  MIMO_MODEL: 'mimo 默认模型名',
   ANTHROPIC_MODEL: 'claude 默认模型名',
   HTTP_PROXY: 'HTTP 代理地址（如 http://192.168.1.5:7890）',
   HTTPS_PROXY: 'HTTPS 代理地址',
   ALL_PROXY: '全协议代理地址',
-  GROK_DEPLOYMENT_KEY: 'Grok 企业部署密钥（个人使用留空）',
-  GROK_CHANNEL: 'Grok 频道（stable / beta 等）',
-  GROK_PROXY_URL: 'Grok 自定义代理/中转地址',
 };
 // 会被服务商预置填充的字段
-const BASE_FIELDS = ['OPENAI_API_BASE', 'ANTHROPIC_BASE_URL', 'GROK_PROXY_URL'];
-const MODEL_FIELDS = ['AIDER_MODEL', 'MIMO_MODEL', 'ANTHROPIC_MODEL'];
+const BASE_FIELDS = ['ANTHROPIC_BASE_URL'];
+const MODEL_FIELDS = ['ANTHROPIC_MODEL'];
 
 // ---------- KernelSU / KsuWebUI bridge ----------
 const BRIDGE_NAMES = ['ksu', 'ksu_webui', 'ap_webui', 'ksuwebui'];
@@ -512,9 +507,7 @@ async function doUpdate(id) {
 let selectedProvider = null;
 
 // 兼容通道密钥（配合 *_API_BASE 使用，label 跟随 provider）
-const COMPAT_KEYS = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY'];
-// 各服务商专属密钥（选了 provider 后提示"一般无需填写"）
-const EXTRA_KEYS = ['DEEPSEEK_API_KEY', 'GEMINI_API_KEY', 'ANTIGRAVITY_API_KEY', 'GROK_DEPLOYMENT_KEY'];
+const COMPAT_KEYS = ['ANTHROPIC_API_KEY'];
 
 function buildPresetBar(app) {
   const bar = document.getElementById('presetBar');
@@ -540,10 +533,16 @@ function applyProvider(p) {
   buildPresetBar(cfgApp);
   renderCfgFields(cfgApp);
   const note = document.getElementById('presetNote');
-  note.innerHTML = '已选择 <b>' + esc(p.name) + '</b>：API 地址与默认模型已填充' +
+  let msg = '已选择 <b>' + esc(p.name) + '</b>：API 地址与默认模型已填充' +
     (p.note ? ' · ' + esc(p.note) : '') +
     ' · 密钥申请 <a href="' + esc(p.keyUrl) + '" target="_blank" rel="noopener">' + esc(p.keyUrl) + '</a>' +
     '<br>模型下拉可切换：' + esc((p.models || []).join(' / '));
+  if (p.auth === 'token') {
+    msg += '<br><b>该平台需用 ANTHROPIC_AUTH_TOKEN 填密钥，ANTHROPIC_API_KEY 请保持为空（避免 401 冲突）</b>';
+  } else if (!p.anthropicBase) {
+    msg += '<br><span style="color:var(--warn)">该服务商未确认 Anthropic 兼容端点，Claude Code 可能无法直连</span>';
+  }
+  note.innerHTML = msg;
 }
 
 // 渲染配置表单（保留已输入的值；模型字段在选中 provider 后变为下拉）
@@ -559,7 +558,6 @@ function renderCfgFields(app) {
     const required = (app.required_env_vars || []).includes(v);
     const isModel = MODEL_FIELDS.includes(v);
     const isCompatKey = COMPAT_KEYS.includes(v);
-    const isExtraKey = EXTRA_KEYS.includes(v);
 
     let label = v;
     let placeholder = VAR_HINTS[v] || '可选的 API 密钥 / 地址 / 配置项';
@@ -569,8 +567,6 @@ function renderCfgFields(app) {
         label = selectedProvider.name + ' API 密钥（' + v + '）';
         placeholder = '申请密钥: ' + selectedProvider.keyUrl;
         hint = '填入 ' + selectedProvider.name + ' 的 API 密钥';
-      } else if (isExtraKey) {
-        hint += (hint ? ' · ' : '') + '当前已选 ' + selectedProvider.name + '，一般无需填写';
       }
     }
 
@@ -582,8 +578,8 @@ function renderCfgFields(app) {
         models.map(m => '<option' + (m === cur ? ' selected' : '') + '>' + esc(m) + '</option>').join('') +
         '<option value="__custom__"' + (models.indexOf(cur) < 0 ? ' selected' : '') + '>自定义…</option></select>';
     } else if (selectedProvider && BASE_FIELDS.includes(v)) {
-      // 选中服务商后 API 地址由预置覆盖
-      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" value="' + esc(selectedProvider.base) + '">';
+      // 选中服务商后 API 地址由预置覆盖（优先 Anthropic 兼容端点）
+      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" value="' + esc(selectedProvider.anthropicBase || selectedProvider.base) + '">';
     } else {
       field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' + esc(placeholder) + '" value="' + esc(vals[v] || '') + '">';
     }

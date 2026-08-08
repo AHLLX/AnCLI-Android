@@ -24,10 +24,10 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 | :--- | :--- | :--- |
 | **Aider** | Python | pip package |
 | **MiMo Code** | Node.js/JS | Precompiled Release binary |
-| **Antigravity CLI (agy)** | Go (static) | Standalone release binary — **native mode: runs without proot** |
+| **Antigravity CLI (agy)** | Go | Standalone release binary (proot mode — current release is dynamically linked) |
 | **Claude Code** | Node.js/JS | Precompiled Release binary (NPM-free) |
 | **OpenCode** | Node.js/JS | Precompiled Release binary (NPM-free) |
-| **Grok** | Rust (static) | Standalone release binary — **native mode: runs without proot** |
+| **Grok** | Rust | Standalone release binary (proot mode) |
 
 ## Installation
 
@@ -114,11 +114,10 @@ export ANCLI_MIRROR="archive.ubuntu.com"
 
 ## Native (No-PROOT) Mode
 
-Statically-linked binaries (**agy** — Go, **grok** — Rust) don't need the glibc container: their wrappers execute the binary **directly on Android**, bypassing proot entirely. This gives instant startup, no FUSE/proot translation overhead, and no `/sdcard` slowdown. The binary still lives in the container filesystem and shares its config (`/root/.config`, ...) with proot mode.
+Native mode is registry-driven (`"native": true`) and still supported, but **no registry app currently uses it**: the current agy release (1.1.11) is **dynamically linked** (188MB, needs glibc) — direct exec on the Android host fails with `No such file or directory` (missing `/lib64/ld-linux-aarch64.so.1`). agy and grok therefore run in proot mode again; their wrappers execute inside the container where glibc exists.
 
-- Detection is registry-driven (`"native": true`); wrappers are generated accordingly by `ancli install` / `ancli repair`.
-- Config keys, proxy detection, browser redirect (OAuth), and secrets work exactly as in proot mode.
-- **Toolchain bridging**: if a native tool shells out to `git` / `bash` / `curl`, the host usually lacks them — AnCLI deploys proot shims (`ancli repair`) that transparently run those commands inside the container, so git operations and scripts keep working.
+- Only **statically-linked** binaries qualify for native mode (instant startup, no proot translation overhead); the mechanism is kept for future static tools.
+- In proot mode everything else (config keys, proxy detection, browser redirect for OAuth, secrets) works unchanged.
 
 ## Troubleshooting
 
