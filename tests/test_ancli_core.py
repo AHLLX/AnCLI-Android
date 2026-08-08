@@ -426,39 +426,8 @@ class TestWebUIJsonAPI:
 
 
 # ---------------------------------------------------------------------------
-# OAuth import
+# WebUI JSON API
 # ---------------------------------------------------------------------------
-
-class TestOAuthImport:
-    def test_imports_credentials_to_agy_path(self, tmp_path, monkeypatch, capsys):
-        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
-        src = tmp_path / "token_src"
-        src.write_text('{"refresh_token": "1//0abc", "access_token": "ya29.x"}', encoding="utf-8")
-        chowns = []
-        monkeypatch.setattr(core.os, "system",
-                            lambda c: chowns.append(c) or 0)
-
-        ok = core.import_oauth("agy", str(src))
-        assert ok is True
-        dest = tmp_path / "rootfs" / "root" / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
-        assert dest.exists()
-        assert dest.read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
-        assert any("chown 2000:2000" in c and "antigravity-oauth-token" in c for c in chowns)
-        assert "imported" in capsys.readouterr().out.lower()
-
-    def test_rejects_missing_or_empty_source(self, tmp_path, monkeypatch, capsys):
-        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
-        assert core.import_oauth("agy", str(tmp_path / "nope")) is False
-        empty = tmp_path / "empty"
-        empty.write_text("", encoding="utf-8")
-        assert core.import_oauth("agy", str(empty)) is False
-
-    def test_unsupported_app_rejected(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
-        src = tmp_path / "s"; src.write_text("x", encoding="utf-8")
-        assert core.import_oauth("mimo", str(src)) is False
-
-
 # ---------------------------------------------------------------------------
 # Registry auth-config policy: only tools whose official docs confirm env-var
 # auth keep env_vars. (Claude Code: ANTHROPIC_API_KEY skips its login prompt.)

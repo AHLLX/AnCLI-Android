@@ -1067,54 +1067,6 @@ def reconfigure_app(app_id, registry, set_env=None):
     print(f"\033[92m[OK] Reconfigured and wrapper regenerated.\033[0m")
 
 # ---------------------------------------------------------------------------
-# OAuth credential import (e.g. migrate agy login from a desktop machine)
-# ---------------------------------------------------------------------------
-
-# Container-side destination (relative to ROOTFS) for each tool's OAuth
-# credentials. agy: community-verified constant path (~/.gemini/antigravity-cli/antigravity-oauth-token);
-# agy falls back to this file when no OS keyring is available (no dbus in proot).
-OAUTH_REL_PATHS = {
-    'agy': "root/.gemini/antigravity-cli/antigravity-oauth-token",
-}
-
-
-def import_oauth(app_id, src_path):
-    """Import an OAuth credentials file into the tool's container config dir.
-    Used to migrate a desktop login (e.g. ~/.gemini/antigravity-cli/antigravity-oauth-token)
-    into the Android container without re-running the OAuth flow."""
-    rel = OAUTH_REL_PATHS.get(app_id)
-    if not rel:
-        print(f"\033[91m[X] OAuth import is not supported for '{app_id}'.\033[0m")
-        return False
-    dest = f"{ROOTFS}/{rel}"
-    if not dest:
-        print(f"\033[91m[X] OAuth import is not supported for '{app_id}'.\033[0m")
-        return False
-    if not src_path or not os.path.exists(src_path):
-        print(f"\033[91m[X] Source file not found: {src_path}\033[0m")
-        return False
-    if os.path.getsize(src_path) == 0:
-        print(f"\033[91m[X] Source file is empty: {src_path}\033[0m")
-        return False
-    try:
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        # Force-delete first (AGENTS.md rule: root/shell ownership conflicts)
-        if os.path.exists(dest):
-            os.remove(dest)
-        with open(src_path, "rb") as f_src, open(dest, "wb") as f_dst:
-            f_dst.write(f_src.read())
-        os.chmod(dest, 0o600)
-        # Shell user (uid 2000) also runs the wrapper
-        os.system(f"chown 2000:2000 {dest} 2>/dev/null")
-        print(f"\033[92m[OK] OAuth credentials imported to {dest}\033[0m")
-        print("\033[96m[i] Try 'agy' now; re-login with /logout if the token is rejected.\033[0m")
-        return True
-    except Exception as e:
-        print(f"\033[91m[X] Failed to import OAuth credentials: {e}\033[0m")
-        return False
-
-
-# ---------------------------------------------------------------------------
 # WebUI JSON API (non-interactive, machine-readable output)
 # ---------------------------------------------------------------------------
 
@@ -1333,16 +1285,6 @@ if __name__ == "__main__":
                 elif action == "config" and app_id:
                     set_env = parse_set_env(sys.argv[3:])
                     reconfigure_app(app_id, registry, set_env if set_env else None)
-                elif action == "import-oauth" and app_id:
-                    src = None
-                    i = 3
-                    while i < len(sys.argv):
-                        if sys.argv[i] == "--file" and i + 1 < len(sys.argv):
-                            src = sys.argv[i + 1]
-                            i += 2
-                        else:
-                            i += 1
-                    import_oauth(app_id, src)
                 elif action == "repair":
                     repair_env(registry)
                 elif action == "status":

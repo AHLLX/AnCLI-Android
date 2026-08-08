@@ -167,15 +167,6 @@ body.ime-open #log { background: var(--glass-strong); }
     <div class="dsub">选择下方服务商可一键填充 API 地址与模型，再填入对应密钥即可</div>
     <div class="presets" id="presetBar"></div>
     <div class="preset-note" id="presetNote"></div>
-    <div id="oauthBox" style="display:none; margin-top:14px; padding-top:14px; border-top:1px dashed var(--stroke);">
-      <label>Google OAuth 凭据导入（agy）</label>
-      <textarea id="oauthJson" rows="5" spellcheck="false"
-        placeholder="粘贴电脑上的凭据文件内容：&#10;~/.gemini/antigravity-cli/antigravity-oauth-token&#10;（如电脑上不存在该文件，说明登录存于系统凭据库，需在手机上重新 OAuth）"></textarea>
-      <div class="hint">导入后 agy 直接使用该凭据，无需在手机重新登录。</div>
-      <div class="row" style="justify-content:flex-start;">
-        <button class="small primary" onclick="importOAuth()">导入凭据</button>
-      </div>
-    </div>
     <div id="cfgFields"></div>
     <div class="hint">* 必填；留空表示跳过；已保存的密钥不会回显。</div>
     <div class="row">
@@ -484,7 +475,6 @@ function renderApps(apps) {
     } else {
       btns += '<button class="small" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
       if (hasEnv) btns += '<button class="small" onclick="openConfig(\'' + a.id + '\')">配置</button>';
-      if (a.id === 'agy') btns += '<button class="small" onclick="openOAuth()">OAuth 导入</button>';
       btns += '<button class="small danger" onclick="doUninstall(\'' + a.id + '\')">卸载</button>';
     }
     el.innerHTML =
@@ -614,37 +604,6 @@ function renderCfgFields(app) {
   });
 }
 
-// OAuth 凭据导入（agy）：base64 传输避免 JSON 特殊字符被 shell 破坏
-function openOAuth() {
-  const app = currentApps.find(a => a.id === 'agy');
-  if (!app || !app.installed) { alert('请先安装 agy'); return; }
-  cfgApp = app;
-  selectedProvider = null;
-  document.getElementById('cfgTitle').textContent = 'agy · Google OAuth 凭据导入';
-  document.getElementById('cfgFields').innerHTML = '';
-  document.getElementById('presetBar').innerHTML = '';
-  document.getElementById('presetNote').textContent = '';
-  const oauthBox = document.getElementById('oauthBox');
-  oauthBox.style.display = 'block';
-  document.getElementById('oauthJson').value = '';
-  document.getElementById('cfgOverlay').classList.add('show');
-}
-
-async function importOAuth() {
-  const content = document.getElementById('oauthJson').value;
-  if (!content.trim()) { alert('请先粘贴电脑上的凭据文件内容'); return; }
-  const b64 = btoa(unescape(encodeURIComponent(content)));
-  const tmp = '/data/local/tmp/ancli/.oauth_import.tmp';
-  document.querySelectorAll('button').forEach(b => b.disabled = true);
-  try {
-    await run('echo ' + b64 + ' | base64 -d > ' + tmp);
-    await run(ANCLI + ' import-oauth agy --file ' + tmp);
-  } catch (e) { /* logged */ } finally {
-    try { await run('rm -f ' + tmp); } catch (e) { /* ignore */ }
-    document.querySelectorAll('button').forEach(b => b.disabled = false);
-  }
-}
-
 function openConfig(id) {
   const app = currentApps.find(a => a.id === id);
   if (!app) return;
@@ -655,10 +614,6 @@ function openConfig(id) {
   document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
   document.getElementById('cfgFields').innerHTML = '';
   document.getElementById('presetNote').textContent = '';
-  // OAuth 导入区：仅已安装的 agy 显示
-  const oauthBox = document.getElementById('oauthBox');
-  oauthBox.style.display = (app.id === 'agy' && app.installed) ? 'block' : 'none';
-  if (oauthBox.style.display === 'block') document.getElementById('oauthJson').value = '';
   buildPresetBar(app);
   renderCfgFields(app);
   document.getElementById('cfgOverlay').classList.add('show');
