@@ -28,11 +28,14 @@ chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
 ui_print ">> Deploying PRoot..."
 cp "$MODPATH/bin/proot" "$BIN_DIR/proot"
 chmod 755 "$BIN_DIR/proot"
-# PRoot ELF loader (needed by the termux-built proot: faccessat2 fix for
-# aarch64; loader path is compile-time, so we point to ours via PROOT_LOADER)
+# PRoot ELF loader + talloc lib (termux proot dependencies) deploy
 if [ -f "$MODPATH/bin/loader" ]; then
     cp "$MODPATH/bin/loader" "$BIN_DIR/loader"
     chmod 755 "$BIN_DIR/loader"
+fi
+if [ -f "$MODPATH/bin/libtalloc.so.2" ]; then
+    cp "$MODPATH/bin/libtalloc.so.2" "$BIN_DIR/libtalloc.so.2"
+    chmod 644 "$BIN_DIR/libtalloc.so.2"
 fi
 ui_print ">> PRoot deployed successfully."
 

@@ -27,4 +27,5 @@ if mkdir -p /data/local/tmp/ancli/shm 2>/dev/null; then
     chmod 1777 /data/local/tmp/ancli/shm 2>/dev/null || true
     SHM_BIND="-b /data/local/tmp/ancli/shm:/dev/shm"
 fi
-exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+# LD_LIBRARY_PATH: bundled proot dynamically links libtalloc.so.2 (same dir)
+LD_LIBRARY_PATH=/data/local/tmp/ancli/bin exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

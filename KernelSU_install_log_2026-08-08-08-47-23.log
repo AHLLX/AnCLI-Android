@@ -1,0 +1,52 @@
+  _  __                    _ ____  _   _ 
+ | |/ /___ _ __ _ __   ___| / ___|| | | |
+ | ' // _ \ '__| '_ \ / _ \ \___ \| | | |
+ | . \  __/ |  | | | |  __/ |___) | |_| |
+ |_|\_\___|_|  |_| |_|\___|_|____/ \___/ 
+
+- Module size: 381.65 kB
+- Installing to /data/adb/modules_update/ancli
+- Extracting module files
+- Running module installer
+- Current boot slot: _a
+- Device is system-as-root
+Archive:  /data/user/0/me.weishu.kernelsu/cache/module.zip
+  inflating: module.prop
+************
+ AnCLI Core 
+ by AHLLX 
+************
+*********************
+ Powered by KernelSU 
+*********************
+Archive:  /data/user/0/me.weishu.kernelsu/cache/module.zip
+  inflating: customize.sh
+- Extracting module files
+Archive:  /data/user/0/me.weishu.kernelsu/cache/module.zip
+  inflating: ancli_env.sh
+  inflating: customize.sh
+  inflating: module.prop
+  inflating: service.sh
+  inflating: uninstall.sh
+  inflating: ancli/ancli-core.py
+  inflating: ancli/ancli_env.sh
+  inflating: ancli/registry.json
+  inflating: bin/loader
+  inflating: bin/proot
+  inflating: system/bin/ancli
+  inflating: webroot/index.html
+============================================
+  AnCLI Bootstrap Installer v1.2.2
+============================================
+
+>> Preparing directories...
+>> Deploying PRoot...
+>> PRoot deployed successfully.
+>> Rootfs already present, skipping download.
+>> Bootstrapping APT dependencies (Python, Git, Node.js)...
+>> APT mirror: mirrors.tuna.tsinghua.edu.cn
+>> CJK locale detected (zh-CN) — will install Fcitx5 input method.
+CANNOT LINK EXECUTABLE "/data/local/tmp/ancli/bin/proot": library "libtalloc.so.2" not found: needed by main executable
+APT bootstrap failed
+- Error: Failed to install module script
+Error: Failed to install module script

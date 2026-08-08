@@ -493,7 +493,9 @@ fi
 # 6. Launch PRoot with unified global binds
 # By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
 # we prevent Node.js fs.realpath and other symlink-following logic from breaking.
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
+# LD_LIBRARY_PATH: the bundled proot (termux build) dynamically links
+# libtalloc.so.2, deployed next to it in {ANCLI_DIR}/bin.
+LD_LIBRARY_PATH={ANCLI_DIR}/bin exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
     -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
     -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
     -w "$PROOT_CWD" /usr/bin/env {executable} "$@"
@@ -795,7 +797,8 @@ def _deploy_native_shims():
 # Bridges native-mode tools to the container toolchain (git/bash/curl).
 TOOL=$(basename "$0")
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
+# LD_LIBRARY_PATH: bundled proot dynamically links libtalloc.so.2 (same dir)
+LD_LIBRARY_PATH={ANCLI_DIR}/bin exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
     -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
     -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb \\
     -w "$PWD" /usr/bin/env "$TOOL" "$@"
