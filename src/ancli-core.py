@@ -868,7 +868,7 @@ def _install_proot_common(app_id, app, registry_version="unknown"):
         "name": app['name'],
         "executable": app['executable'],
         "install_mode": "proot",
-        "installed_version": registry_version,
+        "installed_version": app.get('version', registry_version),
         "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "env": {},
     }
@@ -1077,6 +1077,30 @@ def _binary_exists(exec_name):
             os.path.exists(f"{ROOTFS}/root/.local/bin/{exec_name}"))
 
 
+def _ver_tuple(v):
+    """Parse 'v1.2.3' / '1.2.3' / 'grok-dev@1.1.7' into an int tuple; None if unparsable."""
+    m = re.search(r'(\d+)(?:\.(\d+))?(?:\.(\d+))?', str(v))
+    if not m:
+        return None
+    parts = [int(x) for x in m.groups() if x is not None]
+    return tuple(parts) or None
+
+
+def _update_available(local_ver, cloud_ver):
+    """True when the cloud version is newer than the installed one.
+
+    Old install records store the AnCLI version instead of the tool version,
+    so any parseable cloud version that is not provably <= local counts as an
+    update candidate (one `ancli update` pass fixes the record)."""
+    cv = _ver_tuple(cloud_ver)
+    if cv is None:
+        return False
+    lv = _ver_tuple(local_ver)
+    if lv is None:
+        return True
+    return lv < cv
+
+
 def list_apps_json():
     """Registry + install state as pure JSON (used by the WebUI)."""
     registry = _load_local_registry_cache() or {}
@@ -1087,8 +1111,7 @@ def list_apps_json():
         exec_name = info.get('executable', app.get('executable', aid))
         local_ver = info.get('installed_version', 'unknown')
         cloud_ver = app.get('version', registry.get('version', 'unknown'))
-        update_avail = (aid in installed and cloud_ver not in ('unknown', '')
-                        and local_ver not in ('unknown', '') and cloud_ver != local_ver)
+        update_avail = (aid in installed and _update_available(local_ver, cloud_ver))
         apps.append({
             "id": aid,
             "name": app.get('name', aid),
@@ -1266,7 +1289,7 @@ if __name__ == "__main__":
                         update_tag = ""
                         if registry and aid in registry['apps']:
                             cloud_ver = registry['apps'][aid].get('version', registry.get('version', 'unknown'))
-                            if cloud_ver != 'unknown' and local_ver != 'unknown' and cloud_ver != local_ver:
+                            if _update_available(local_ver, cloud_ver):
                                 update_tag = f" \033[93m{_t('app_update_available', cloud_ver)}\033[0m"
 
                         print(f"  \033[92m{aid}\033[0m: {info.get('name', aid)} (v{local_ver}) {status_tag}{update_tag}")

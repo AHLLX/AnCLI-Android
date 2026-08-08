@@ -9,7 +9,8 @@
       "install_cmd": "pip install --break-system-packages aider-chat",
       "update_cmd": "pip install --upgrade --break-system-packages aider-chat",
       "uninstall_cmd": "pip uninstall -y aider-chat",
-      "executable": "aider"
+      "executable": "aider",
+      "version": "0.86.0"
     },
     "mimo": {
       "name": "MiMo Code",
@@ -19,7 +20,8 @@
       "install_cmd": "curl -L https://github.com/XiaomiMiMo/MiMo-Code/releases/latest/download/mimocode-linux-arm64.tar.gz -o /tmp/mimo.tar.gz && tar -xzf /tmp/mimo.tar.gz -C /usr/local/bin && rm /tmp/mimo.tar.gz",
       "update_cmd": "curl -L https://github.com/XiaomiMiMo/MiMo-Code/releases/latest/download/mimocode-linux-arm64.tar.gz -o /tmp/mimo.tar.gz && tar -xzf /tmp/mimo.tar.gz -C /usr/local/bin && rm /tmp/mimo.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/mimo",
-      "executable": "mimo"
+      "executable": "mimo",
+      "version": "0.1.10"
     },
     "agy": {
       "name": "Antigravity CLI",
@@ -33,7 +35,8 @@
       "install_cmd": "curl -sL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin",
       "update_cmd": "agy update",
       "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
-      "executable": "agy"
+      "executable": "agy",
+      "version": "1.1.11"
     },
     "claude-code": {
       "name": "Claude Code",
@@ -50,7 +53,8 @@
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL"
       ],
-      "executable": "claude"
+      "executable": "claude",
+      "version": "2.1.226"
     },
     "opencode": {
       "name": "OpenCode",
@@ -60,7 +64,8 @@
       "install_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
       "update_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/opencode",
-      "executable": "opencode"
+      "executable": "opencode",
+      "version": "1.18.15"
     },
     "grok": {
       "name": "Grok CLI",
@@ -76,7 +81,8 @@
       "install_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "update_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "uninstall_cmd": "rm -f /usr/local/bin/grok /usr/local/bin/agent && rm -rf /root/.grok",
-      "executable": "grok"
+      "executable": "grok",
+      "version": "1.1.7"
     }
   }
 }

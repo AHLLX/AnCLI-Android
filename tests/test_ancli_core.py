@@ -453,3 +453,34 @@ def shlex_quote(s):
 def shlex_split(s):
     import shlex
     return shlex.split(s)
+
+
+# ---------------------------------------------------------------------------
+# Version comparison / update detection
+# ---------------------------------------------------------------------------
+
+class TestVersionCompare:
+    def test_ver_tuple_formats(self):
+        assert core._ver_tuple('v1.2.3') == (1, 2, 3)
+        assert core._ver_tuple('1.2.3') == (1, 2, 3)
+        assert core._ver_tuple('grok-dev@1.1.7') == (1, 1, 7)
+        assert core._ver_tuple('2.1.226') == (2, 1, 226)
+        assert core._ver_tuple('abc') is None
+        assert core._ver_tuple('') is None
+
+    def test_update_available_basic(self):
+        assert core._update_available('1.0.0', '1.0.1') is True
+        assert core._update_available('1.0.1', '1.0.0') is False
+        assert core._update_available('1.0.1', '1.0.1') is False
+        assert core._update_available('2.1.226', '2.1.226') is False
+
+    def test_update_available_old_record_migration(self):
+        # Old install records stored the AnCLI version (1.2.2) instead of the
+        # tool version; a newer cloud version must still be detected.
+        assert core._update_available('1.2.2', '2.1.226') is True
+        assert core._update_available('1.2.2', '0.1.10') is False
+
+    def test_update_available_unparsable(self):
+        assert core._update_available('unknown', '1.0.0') is True
+        assert core._update_available('1.0.0', 'unknown') is False
+        assert core._update_available('unknown', 'unknown') is False
