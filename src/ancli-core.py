@@ -432,7 +432,19 @@ fi
 
 # 5. Run the static binary straight from the container filesystem.
 #    The binary is statically linked, so it needs no glibc or proot.
-exec {ROOTFS}/usr/local/bin/{executable} "$@"
+#    Search the candidate install locations: some installer versions place
+#    the binary under /root/.local/bin instead of /usr/local/bin.
+for _cand in \
+    {ROOTFS}/usr/local/bin/{executable} \
+    {ROOTFS}/usr/bin/{executable} \
+    {ROOTFS}/root/.local/bin/{executable}; do
+    if [ -x "$_cand" ]; then
+        exec "$_cand" "$@"
+    fi
+done
+echo "[AnCLI] {executable} binary not found inside the container." >&2
+echo "        Run 'ancli install {executable}' to install it." >&2
+exit 127
 """
     else:
         wrapper = f"""#!/system/bin/sh

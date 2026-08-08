@@ -312,7 +312,11 @@ class TestWrapperGeneration:
         assert "proot -r" not in wrapper
         assert "BROWSER=" in wrapper                   # OAuth browser redirect
         assert "xdg-open" in wrapper
-        assert f"{core.ROOTFS}/usr/local/bin/agy" in wrapper  # direct exec of static bin
+        # candidate-path search (agy may live under /root/.local/bin)
+        assert "for _cand in" in wrapper
+        assert f"{core.ROOTFS}/usr/local/bin/agy" in wrapper
+        assert f"{core.ROOTFS}/root/.local/bin/agy" in wrapper
+        assert "binary not found" in wrapper          # graceful failure message
         # secrets still sourced
         assert "secrets/agy.env" in wrapper
 
