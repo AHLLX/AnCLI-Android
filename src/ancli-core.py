@@ -299,7 +299,7 @@ def _load_local_registry_cache():
     """Load registry from local disk cache only — no network request.
     Used by commands like 'list' that don't require up-to-date cloud data.
     Returns None if no cache is available."""
-    for p in [LOCAL_REGISTRY, f"{ANCLI_DIR}/registry.json", f"{ANCLI_DIR}/bin/registry.json"]:
+    for p in [LOCAL_REGISTRY, f"{ANCLI_DIR}/bin/registry.json"]:
         if os.path.exists(p):
             try:
                 with open(p, "r") as f:
