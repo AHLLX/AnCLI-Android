@@ -32,6 +32,14 @@
 ### Features
 - `ancli check [--json]`: refreshes the cloud registry, the installed versions and the official
   latest versions in one pass.
+- The **更新 button always pulls the vendor's latest channel** (that is what `update_cmd` is:
+  GitHub `releases/latest/download/...`, the vendor installer or `pip --upgrade`) and re-resolves
+  the official version right after a successful update, so the status is honest without waiting for
+  the next full check. Its tooltip shows the exact upstream command; clicking it when the badge says
+  "up to date" is a supported force re-pull.
+- Version probes do not trust the exit code: `grok --version` prints the version but exits 126 on
+  device, and some tools print it on stderr — a version found in the output wins, with a
+  stderr-merged retry.
 - WebUI: **检查更新 (check)** button, "官方最新/参考版本 + 来源" line, "可更新" highlighting on the
   update button, "未核实" markers for legacy records, and an automatic check when the cache is
   older than 6 h. Old module builds (no `check_ttl` in the payload) are detected and told to update.
@@ -45,6 +53,17 @@
 - **WebUI background log is per-run**: concurrent actions used to share `.webui_last.log` and
   interleave each other's output; the tail offset now advances by UTF-8 bytes, so logs are no
   longer duplicated/garbled.
+
+### Verified on device (2026-09-27, KernelSU)
+`ancli check` on a real device that had been stuck showing "up to date" reported, and
+`installed.json` was migrated in place without touching API keys:
+
+| Tool | Installed (probed) | Official latest | Source |
+| :--- | :--- | :--- | :--- |
+| MiMo Code | 0.1.10 (was recorded as 1.2.2) | 0.1.14 | `github:XiaomiMiMo/MiMo-Code` |
+| Antigravity CLI | 1.1.27 (was 1.2.2) | 1.2.12 | vendor manifest |
+| Claude Code | 2.1.226 | 2.1.283 | `github:anthropics/claude-code` |
+| Grok CLI | 1.0.0 (was 1.2.2) | 1.0.41 | vendor channel |
 
 ---
 

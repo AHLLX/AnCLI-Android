@@ -85,6 +85,9 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 **Update detection fields (never omit them):**
 - `version_cmd` — the **installed** version is read from the tool itself inside the container
   (ask the vendor's real binary; verified prefixes are auto-whitelisted via `_registry_exe_prefixes`).
+  Do not gate the probe on the exit code: `grok --version` prints the version but exits 126 on
+  device, and some tools print it on stderr — `_probe_installed_version` accepts any version found
+  in the output (stdout first, then a stderr-merged retry).
 - `latest` — where the **official latest** version comes from. Supported sources:
   `github` (`repo`), `pypi` (`package`), `npm` (`package`), `json` (`url` + `path`),
   `text` (`urls[]`, first version token wins), `static` (no public API — uses `version`),
@@ -98,7 +101,7 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 - There is **no Android emulator** for this project — and an emulator could not verify this module anyway (it needs a rooted real device).
 - Only use `adb` when a device is actually attached (`adb devices` lists one). Even then, stick to read-only inspection (`ls`, `cat`, `settings get`, `logcat`) unless the user explicitly asks you to flash/test.
 - **NEVER** claim the module was flashed or verified when it was not, and never flash/uninstall on your own. Fall back to `sh -n` syntax checks, `python -m pytest tests/`, and static reasoning.
-- Update detection has two runnable checks: `python -m pytest tests/` (84 cases, offline) and `python scripts/smoke_update_check.py` (hits the real upstreams and prints the WebUI payload for the known device state).
+- Update detection has two runnable checks: `python -m pytest tests/` (offline unit suite) and `python scripts/smoke_update_check.py` (hits the real upstreams and prints the WebUI payload for the known device state).
 
 ## 8. Network Proxy & VPN Constraints (CRITICAL)
 - **VPN Bypass**: Android VPNs in TUN mode (e.g. Clash, v2rayNG) bypass Root (UID 0) traffic by default. If a Python or curl script runs as root and the proxy is not explicitly set, it will ignore the VPN and fail to connect to domains like `github.com`.

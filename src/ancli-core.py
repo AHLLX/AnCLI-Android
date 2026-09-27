@@ -686,22 +686,44 @@ def run_cmd(cmd):
     )
     return result.returncode == 0
 
-def _capture_cmd(cmd, allowed_prefixes=None, timeout=60):
+def _capture_cmd(cmd, allowed_prefixes=None, timeout=60, merge_stderr=False):
     """Run a container command and capture its stdout.
 
     Used by the version probes (`version_cmd` in the registry): the child's raw
     output must never leak into `--json` output, so it is captured instead of
-    inherited. Returns (ok, stdout_text); never raises."""
+    inherited. `merge_stderr` also captures stderr, for tools that print their
+    version there. Returns (ok, text); never raises."""
     if not validate_cmd(cmd, allowed_prefixes):
         return False, ""
     try:
         result = subprocess.run(
             cmd, shell=True, executable="/bin/bash",
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT if merge_stderr else subprocess.DEVNULL,
+            timeout=timeout,
         )
     except Exception:
         return False, ""
     return result.returncode == 0, result.stdout.decode('utf-8', errors='replace')
+
+
+def _probe_installed_version(app, registry=None):
+    """Ask the installed tool for its own version via the registry `version_cmd`.
+
+    The exit code is deliberately NOT trusted: some wrappers report a spurious
+    non-zero status even after printing a valid version (grok exits 126 on
+    device) and some tools print the version on stderr. A version found in the
+    output is the tool speaking for itself, so it wins."""
+    cmd = str(app.get('version_cmd') or '').strip()
+    if not cmd:
+        return None
+    prefixes = _registry_exe_prefixes(registry)
+    for merge_stderr in (False, True):
+        _, out = _capture_cmd(cmd, prefixes, timeout=60, merge_stderr=merge_stderr)
+        ver = _first_version(out)
+        if ver:
+            return ver
+    return None
 
 # ---------------------------------------------------------------------------
 # Install / Uninstall / Update / Config / Repair
@@ -1123,17 +1145,31 @@ def update_app(app_id, registry):
     installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
     save_installed(installed)
     _fix_config_permissions()
-    # Drop this app's cached upstream version so the next `ancli check` re-reads it.
+
+    # The update command always pulls the vendor's latest channel, so immediately
+    # re-resolve the official version: the badge/status is correct without waiting
+    # for the next full `ancli check`.
+    official, source, err = _latest_version(app, registry)
     cache = _load_update_cache()
-    if app_id in (cache.get('latest') or {}):
-        cache['latest'].pop(app_id, None)
-        _save_update_cache(cache)
+    latest = dict(cache.get('latest') or {})
+    latest[app_id] = {"version": official, "source": source, "error": err}
+    _save_update_cache({"ts": cache.get('ts', 0), "latest": latest})
+
     if probed:
         print(f"\033[92m[OK] Successfully updated {name} to v{probed}.\033[0m")
     else:
         print(f"\033[92m[OK] Successfully updated {name}.\033[0m")
         print(f"\033[93m[!] Could not read the new version ('{app.get('version_cmd', '')}'); "
               "run 'ancli check' to refresh the update status.\033[0m")
+    if err:
+        print(f"\033[93m[!] Official version lookup failed after the update ({err}); "
+              "the update itself succeeded.\033[0m")
+    elif official:
+        if probed and _update_available(probed, official, True):
+            print(f"\033[93m[!] {name} reports v{probed} but the official latest is v{official} "
+                  f"[{source}] — the source may lag behind the vendor; retry later.\033[0m")
+        else:
+            print(f"\033[96m[i] {name} is on the official latest (v{official}, {source}).\033[0m")
     return True
 
 def reconfigure_app(app_id, registry, set_env=None):
@@ -1237,16 +1273,6 @@ def _update_available(local_ver, cloud_ver, local_trusted=True):
     if not local_trusted:
         return lv != cv
     return lv < cv
-
-
-def _probe_installed_version(app, registry=None):
-    """Ask the installed tool for its own version via the registry `version_cmd`.
-    Returns a version string, or None when unsupported/unavailable."""
-    cmd = str(app.get('version_cmd') or '').strip()
-    if not cmd:
-        return None
-    ok, out = _capture_cmd(cmd, _registry_exe_prefixes(registry), timeout=60)
-    return _first_version(out) if ok else None
 
 
 def _json_path(data, path):
@@ -1471,6 +1497,7 @@ def _app_record(aid, app, installed_flag, info, entry=None):
         "cloud_checked": checked,
         "cloud_error": entry.get('error'),
         "update_available": update_avail,
+        "update_cmd": app.get('update_cmd', ''),
         "required_env_vars": app.get('env_vars', []),
         "optional_env_vars": app.get('optional_env_vars', []),
         "configured_keys": list(info.get('env', {}).keys()),

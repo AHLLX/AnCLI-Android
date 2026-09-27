@@ -502,7 +502,9 @@ function renderApps(apps) {
     if (!a.installed) {
       btns += '<button class="small primary" onclick="doInstall(\'' + a.id + '\')">安装</button>';
     } else {
-      btns += '<button class="small' + (a.update_available ? ' primary' : '') + '" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
+      btns += '<button class="small' + (a.update_available ? ' primary' : '') +
+              '" title="' + esc('直接从官方源拉取最新：' + (a.update_cmd || ('ancli update ' + a.id))) +
+              '" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
       if (hasEnv) btns += '<button class="small" onclick="openConfig(\'' + a.id + '\')">配置</button>';
       btns += '<button class="small danger" onclick="doUninstall(\'' + a.id + '\')">卸载</button>';
     }
@@ -589,6 +591,13 @@ async function doUninstall(id) {
 }
 
 async function doUpdate(id) {
+  // The update command always pulls the vendor's latest channel, so clicking
+  // 更新 is a valid "force re-pull" even when the badge says up to date.
+  const app = currentApps.find(a => a.id === id);
+  if (app && !app.update_available) {
+    log('检测显示 ' + app.name + ' 已是 v' + (app.installed_version || '?') +
+        '，仍将从官方源重新拉取最新版本。');
+  }
   await runBackground(ANCLI + ' update ' + id);
   await loadApps();
 }

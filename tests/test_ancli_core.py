@@ -599,15 +599,34 @@ class TestVersionProbe:
 
     def test_probe_parses_version_cmd_output(self, monkeypatch):
         monkeypatch.setattr(core, '_capture_cmd',
-                            lambda cmd, prefixes=None, timeout=60: (True, '2.1.226 (Claude Code)\n'))
+                            lambda *a, **k: (True, '2.1.226 (Claude Code)\n'))
         assert core._probe_installed_version({'version_cmd': 'claude --version'}) == '2.1.226'
+
+    def test_probe_ignores_a_spurious_non_zero_exit_code(self, monkeypatch):
+        # On the real device `grok --version` prints the version but exits 126;
+        # the tools' own output is authoritative, not the wrapper's status.
+        monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (False, 'grok 1.0.0 (3cd0d0cbce)\n'))
+        assert core._probe_installed_version({'version_cmd': 'grok --version'}) == '1.0.0'
+
+    def test_probe_retries_with_stderr_merged(self, monkeypatch):
+        calls = []
+
+        def fake(cmd, prefixes=None, timeout=60, merge_stderr=False):
+            calls.append(merge_stderr)
+            if merge_stderr:
+                return True, 'mimo 0.1.10\n'
+            return True, ''
+
+        monkeypatch.setattr(core, '_capture_cmd', fake)
+        assert core._probe_installed_version({'version_cmd': 'mimo --version'}) == '0.1.10'
+        assert calls == [False, True]
 
     def test_probe_without_version_cmd_is_none(self):
         assert core._probe_installed_version({}) is None
 
-    def test_probe_failure_is_none(self, monkeypatch):
-        monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (False, ''))
-        assert core._probe_installed_version({'version_cmd': 'claude --version'}) is None
+    def test_probe_without_any_version_is_none(self, monkeypatch):
+        monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (True, 'no version here'))
+        assert core._probe_installed_version({'version_cmd': 'x --version'}) is None
 
 
 # ---------------------------------------------------------------------------
@@ -630,6 +649,8 @@ class TestUpdateCheckFlow:
         registry = {"version": "1.2.3", "apps": apps if apps is not None else {
             "claude-code": {"name": "Claude Code", "executable": "claude",
                             "version_cmd": "claude --version",
+                            "update_cmd": "curl -L https://github.com/anthropics/claude-code/"
+                                          "releases/latest/download/claude-linux-arm64.tar.gz -o /tmp/claude.tar.gz",
                             "latest": {"source": "github", "repo": "anthropics/claude-code"},
                             "version": "2.1.283"},
         }}
@@ -737,6 +758,43 @@ class TestUpdateCheckFlow:
         assert installed['claude-code']['installed_version'] == '2.1.283'
         assert installed['claude-code']['version_verified'] is True
         capsys.readouterr()
+
+    def test_update_app_refreshes_official_version_without_claiming_a_full_check(self, tmp_path, monkeypatch, capsys):
+        """The 更新 button pulls the vendor channel; the new official version must
+        land in the cache right away, but `ts` (last full check) must not move."""
+        registry = self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        monkeypatch.setattr(core, 'run_cmd', lambda cmd: True)
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.283')
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
+        core._save_update_cache({"ts": 111, "latest": {}})
+
+        assert core.update_app('claude-code', registry) is True
+        cache = core._load_update_cache()
+        assert cache['ts'] == 111
+        assert cache['latest']['claude-code']['version'] == '2.1.283'
+        assert 'official latest' in capsys.readouterr().out
+
+    def test_update_app_warns_when_the_source_lags_behind(self, tmp_path, monkeypatch, capsys):
+        registry = self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "1.0.0", "env": {}}})
+        monkeypatch.setattr(core, 'run_cmd', lambda cmd: True)
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '1.0.0')
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v1.1.0'})
+
+        core.update_app('claude-code', registry)
+        out = capsys.readouterr().out
+        assert 'may lag behind the vendor' in out
+
+    def test_update_cmd_is_exposed_to_the_webui(self, tmp_path, monkeypatch, capsys):
+        self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        core.list_apps_json()
+        app = json.loads(capsys.readouterr().out)['apps'][0]
+        assert 'releases/latest/download/claude-linux-arm64.tar.gz' in app['update_cmd']
 
     def test_registry_cache_prefers_newest_file(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
