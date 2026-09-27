@@ -82,6 +82,8 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 ```
 *Note: If `env_vars` is provided, `ancli-core.py` will automatically prompt the user for them and inject them into the wrapper via `export KEY="VALUE"`.*
 
+**Prefer tarball / npm / pip installs over `apt` inside the container.** The rootfs ships with a half-configured `systemd` (its postinst cannot run under proot: "Failed to resolve group 'systemd-journal'"), so `dpkg --configure -a` aborts with a proot assertion, and `apt-get` also fails archive signature checks unless every call carries `-o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true --allow-unauthenticated` (see `customize.sh`). A chain that relies on `apt-get … && npm …` therefore dies at the first step and silently falls through to whatever `||` alternative follows. Download the vendor tarball (`.tar.gz`, not `.tar.xz` — `xz` is absent) or install from npm/pip instead.
+
 **Update detection fields (never omit them):**
 - `version_cmd` — the **installed** version is read from the tool itself inside the container
   (ask the vendor's real binary; verified prefixes are auto-whitelisted via `_registry_exe_prefixes`).

@@ -1151,6 +1151,30 @@ class TestCheckFailureHandling:
         capsys.readouterr()
 
 
+class TestStateFilePermissions:
+    """AnCLI is a root tool, so its state files need no world-write bit."""
+
+    def test_installed_json_is_written_0644(self, tmp_path, monkeypatch):
+        _core_paths(tmp_path, monkeypatch)
+        modes = []
+        monkeypatch.setattr(core.os, "chmod", lambda p, m: modes.append((os.path.basename(str(p)), m)))
+
+        core.save_installed({"a": {"installed_version": "1.0"}})
+
+        assert ('installed.json', 0o644) in modes
+        assert not any(m == 0o666 for _, m in modes)
+
+    def test_update_cache_is_written_0644(self, tmp_path, monkeypatch):
+        _core_paths(tmp_path, monkeypatch)
+        modes = []
+        monkeypatch.setattr(core.os, "chmod", lambda p, m: modes.append((os.path.basename(str(p)), m)))
+
+        assert core._save_update_cache({"ts": 1, "latest": {}}) is True
+
+        assert ('.update_cache.json', 0o644) in modes
+        assert not any(m == 0o666 for _, m in modes)
+
+
 class TestReviewRegressions:
     def test_four_segment_versions_are_not_truncated(self):
         assert core._ver_tuple('1.0.0.1') == (1, 0, 0, 1)

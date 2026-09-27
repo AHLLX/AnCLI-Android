@@ -13,6 +13,16 @@
   path segment (`@deepseek-ai%2Fdsh`) and **prereleases are compared as prereleases** —
   `0.1.7-rc.2 < 0.1.7-rc.3 < 0.1.7` — instead of being flattened to `0.1.7`, which would have
   frozen the update badge for a project that only ships `-rc.N`.
+- **Device-verified**: `dsh --version` → `0.1.7-rc.2` (Node v24.21.0 bootstrapped into `/usr/local`),
+  `dsh web --no-open` listens on `127.0.0.1:3080` and answers from the phone shell too (HTTP 401
+  without the token URL it prints), wrappers land in `/data/local/tmp/ancli/bin` and
+  `/data/adb/ksu/bin`, and `ancli check` reports it as up to date from the npm registry.
+- **Why not `apt`**: the container cannot verify archive signatures (minimal keyring) and its
+  `systemd` package has been half-configured since bootstrap, so an `apt-get … && npm …` chain dies
+  at the first step and falls through to the `||` alternative — which is how the first attempt
+  installed `dsh` under Node 18 and crashed on start. The entry now unpacks the official Node
+  tarball (`.tar.gz`, because `xz` is absent) straight into `/usr/local`. Downloads try
+  npmmirror first: nodejs.org measured ~17 KB/s from the device, the mirror finished in seconds.
 
 ### Device-verified deploy path
 - Hot-patching a running module works **from inside the container**, not from a `su` one-liner: the
@@ -124,6 +134,11 @@ this diff; every finding below was reproduced, then fixed and covered by a test:
   those commands for every root shell and other modules). Confirmed on device.
 - **Credential directories are owner-only** (`chown 2000` + `u+rwX,go-rwx` instead of
   world-readable `755`).
+- **State files are root-owned 0644**: `installed.json` and `.update_cache.json` no longer carry a
+  world-write bit — AnCLI is a root tool (`su -c ancli …` or the manager's WebUI bridge), so the
+  shell user only ever needs to read them. Secrets keep 0600 + shell-uid ownership because wrappers
+  run as the shell user. Both writes also go through `os.replace` now, so a crash cannot leave the
+  database or the cache missing.
 
 **Boot / network**
 - **`service.sh` no longer overwrites the container DNS with 8.8.8.8/1.1.1.1 on every boot**:

@@ -394,16 +394,11 @@ def save_installed(installed):
         # remove()+rename() pair had a window where a crash/kill left the whole
         # database (records + configured env keys) missing.
         os.replace(tmp_file, INSTALLED_FILE)
-        # Ensure correct permission and ownership.
-        # Use Android shell UID/GID (2000:2000) numerically for reliability
-        # since 'shell' username may not exist inside the proot container's /etc/passwd.
-        # 0666 is intentional: 'ancli config' must work from a non-root terminal
-        # too. The file holds no secrets (those live in SECRETS_DIR, mode 0600).
-        try:
-            os.system(f"chown 2000:2000 {INSTALLED_FILE} 2>/dev/null")
-            os.chmod(INSTALLED_FILE, 0o666)
-        except Exception:
-            pass
+        # Root-owned 0644: AnCLI is a root tool (`su -c ancli …` / the manager's
+        # WebUI bridge), so the state file needs no shell-user write bit — only
+        # readability for `ancli list`. It holds no secrets; those live in
+        # SECRETS_DIR (0600, chowned to the shell uid so wrappers can source them).
+        os.chmod(INSTALLED_FILE, 0o644)
     except Exception as e:
         print(f"\033[91m[X] Failed to save installation database: {e}\033[0m")
         if os.path.exists(tmp_file):
@@ -1576,17 +1571,17 @@ def _save_update_cache(cache):
     """Write the update cache atomically; failure is a warning, never an error."""
     tmp = f"{UPDATE_CACHE}.tmp"
     try:
-        for path in (tmp, UPDATE_CACHE):
-            if os.path.exists(path):
-                os.remove(path)
+        # Only clear a stale temp file: os.replace() swaps the cache in one step,
+        # so a reader never observes a missing file (the old remove+rename pair
+        # left such a window).
+        if os.path.exists(tmp):
+            os.remove(tmp)
         with open(tmp, "w") as f:
             json.dump(cache, f, ensure_ascii=False, indent=2)
-        os.rename(tmp, UPDATE_CACHE)
-        # World-writable like installed.json: the Android shell user (uid 2000)
-        # must be able to refresh the cache from a non-root terminal too.
-        # Use the numeric UID/GID — 'shell' may not exist in the container passwd.
-        os.chmod(UPDATE_CACHE, 0o666)
-        os.system(f"chown 2000:2000 {UPDATE_CACHE} 2>/dev/null")
+        os.replace(tmp, UPDATE_CACHE)
+        # Root-owned 0644, like installed.json: AnCLI runs under su, and the cache
+        # only holds public version strings (no secrets).
+        os.chmod(UPDATE_CACHE, 0o644)
         return True
     except Exception as e:
         print(f"\033[93m[!] Could not write update cache: {e}\033[0m")

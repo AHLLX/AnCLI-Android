@@ -15,6 +15,11 @@ jobs = [
     (f"{STAGE}/ancli-registry.new", f"{ANCLI}/registry.json", 0o644),
     (f"{STAGE}/ancli-registry.new", f"{ANCLI}/bin/registry.json", 0o644),
     (f"{STAGE}/ancli-env.sh.new", f"{ANCLI}/bin/ancli_env.sh", 0o755),
+    # Module copies: what a reflash would deploy, so the on-device module stays
+    # consistent with the running core (overwritten by the next flash anyway).
+    (f"{STAGE}/ancli-core.py.new", "/data/adb/modules/ancli/ancli/ancli-core.py", 0o755),
+    (f"{STAGE}/ancli-registry.new", "/data/adb/modules/ancli/ancli/registry.json", 0o644),
+    (f"{STAGE}/ancli-env.sh.new", "/data/adb/modules/ancli/ancli/ancli_env.sh", 0o755),
 ]
 
 for src, dst, mode in jobs:
