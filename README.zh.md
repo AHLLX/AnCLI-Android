@@ -96,13 +96,16 @@ AnCLI 不再"猜"版本号：对每个已安装的工具，它会
 | Grok CLI | 官方通道指针（`x.ai/cli/stable`，失败时回落 GCS 镜像） |
 
 结果缓存 6 小时（`/data/local/tmp/ancli/.update_cache.json`），所以 WebUI 打开很快、离线也能看；
-WebUI 顶部有 **检查更新 (check)** 按钮可随时联网刷新，缓存过期（>6 小时）时打开页面也会自动检查。
+WebUI 顶部有 **检查更新 (check)** 按钮可随时联网刷新，缓存过期（>6 小时）时打开页面也会自动检查；
+单次查询失败时窗口缩短到 15 分钟并保留上一次已知版本（不再因为一次断网就退回 registry 声明值）。
 
 ```bash
 ancli check            # 联网刷新"本地版本 + 官方最新版本"
-ancli check --json     # 同上，机器可读（WebUI 用）
+ancli check --json     # 同上，机器可读（给脚本/自动化用；WebUI 走 ancli check + list --json）
 ancli list             # 检查后显示 "可更新 → vX (来源)"
 ```
+
+**注意**：WebUI 页面（`webroot/index.html`）只能随模块刷入更新——`ancli repair` 无法替换它（`/data/adb/modules` 受 SELinux 保护）。若 `check` 报 `[Errno 13] Permission denied`，说明当前 shell 域不能写 `/data/local/tmp/ancli`，请在 KernelSU 管理器里打开 WebUI 点「检查更新」（走管理器的 exec 通道），或换一个 root 终端再试。
 
 `ancli update` 失败（断网、代理不可用、官方 404）现在会以非 0 退出码结束，
 WebUI 会明确报错而不是假装"✓ 完成"，并且不会污染已记录的版本号。

@@ -10,6 +10,7 @@
       "update_cmd": "pip install --upgrade --break-system-packages aider-chat",
       "uninstall_cmd": "pip uninstall -y aider-chat",
       "executable": "aider",
+      "optional_env_vars": ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"],
       "version_cmd": "aider --version",
       "latest": { "source": "pypi", "package": "aider-chat" },
       "version": "0.86.2"
@@ -23,6 +24,7 @@
       "update_cmd": "curl -L https://github.com/XiaomiMiMo/MiMo-Code/releases/latest/download/mimocode-linux-arm64.tar.gz -o /tmp/mimo.tar.gz && tar -xzf /tmp/mimo.tar.gz -C /usr/local/bin && rm /tmp/mimo.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/mimo",
       "executable": "mimo",
+      "optional_env_vars": ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"],
       "version_cmd": "mimo --version",
       "latest": { "source": "github", "repo": "XiaomiMiMo/MiMo-Code" },
       "version": "0.1.14"
@@ -40,6 +42,7 @@
       "update_cmd": "agy update",
       "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
       "executable": "agy",
+      "optional_env_vars": ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"],
       "version_cmd": "agy --version",
       "latest": {
         "source": "json",
@@ -62,7 +65,10 @@
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
-        "ANTHROPIC_MODEL"
+        "ANTHROPIC_MODEL",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY"
       ],
       "executable": "claude",
       "version_cmd": "claude --version",
@@ -78,6 +84,7 @@
       "update_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/opencode",
       "executable": "opencode",
+      "optional_env_vars": ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"],
       "version_cmd": "opencode --version",
       "latest": { "source": "github", "repo": "anomalyco/opencode" },
       "version": "1.18.32"
@@ -97,6 +104,7 @@
       "update_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "uninstall_cmd": "rm -f /usr/local/bin/grok /usr/local/bin/agent && rm -rf /root/.grok",
       "executable": "grok",
+      "optional_env_vars": ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"],
       "version_cmd": "grok --version",
       "latest": {
         "source": "text",

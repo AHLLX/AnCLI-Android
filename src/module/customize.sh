@@ -219,8 +219,18 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
         for exe in $executables; do
             placeholder="$INSTANT_BIN/$exe"
             if [ ! -f "$placeholder" ]; then
-                # Write a minimal placeholder — will be overwritten by ancli install/repair
-                printf '#!/system/bin/sh\nexec sh /data/local/tmp/ancli/bin/%s "$@"\n' "$exe" > "$placeholder"
+                # Minimal placeholder — overwritten by 'ancli install'/'ancli repair'.
+                # It explains itself when the real wrapper is missing (e.g. after a
+                # manager uninstall wiped $ANCLI_DIR/bin and the user re-flashed).
+                {
+                    printf '#!/system/bin/sh\n'
+                    printf 'target="/data/local/tmp/ancli/bin/%s"\n' "$exe"
+                    printf 'if [ ! -x "$target" ]; then\n'
+                    printf '    echo "[AnCLI] %s is not set up yet. Run: ancli repair" >&2\n' "$exe"
+                    printf '    exit 127\n'
+                    printf 'fi\n'
+                    printf 'exec sh "$target" "$@"\n'
+                } > "$placeholder"
                 chmod 755 "$placeholder"
                 ui_print ">> Pre-seeded placeholder: $INSTANT_BIN/$exe"
             fi

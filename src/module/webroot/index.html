@@ -448,6 +448,7 @@ async function loadApps() {
     const data = JSON.parse(raw);
     currentApps = data.apps || [];
     lastCheck = data.last_check || 0;
+    lastCheckFailed = data.check_failed || 0;
     if (typeof data.check_ttl === 'number' && data.check_ttl > 0) checkTtl = data.check_ttl;
     supportsCheck = (typeof data.check_ttl === 'number');
     renderApps(currentApps);
@@ -534,6 +535,7 @@ function srcLabel(src) {
 
 // ---------- 版本检查状态（上次检查时间 / 过期自动检查） ----------
 let lastCheck = 0;          // epoch seconds of the last successful `ancli check`
+let lastCheckFailed = 0;    // upstream lookups that failed during that check
 let checkTtl = 21600;       // seconds, from the core (CHECK_TTL)
 let supportsCheck = false;  // false on module builds older than the check feature
 let autoCheckStarted = false;
@@ -558,7 +560,9 @@ function renderCheckInfo() {
   }
   const age = Math.max(0, Math.floor(Date.now() / 1000) - lastCheck);
   const installed = currentApps.filter(a => a.installed).length;
-  el.textContent = '上次检查官方版本: ' + fmtAge(age) + '前 · 已安装 ' + installed + ' 个工具';
+  let msg = '上次检查官方版本: ' + fmtAge(age) + '前 · 已安装 ' + installed + ' 个工具';
+  if (lastCheckFailed) msg += ' · ' + lastCheckFailed + ' 项查询失败（会更快重试）';
+  el.textContent = msg;
 }
 
 async function maybeAutoCheck() {
@@ -803,6 +807,10 @@ if (window.matchMedia) {
 
 (async function init() {
   setupImeGuard();
+  // Best-effort sweep of per-run logs left behind when a previous page was closed
+  // (or a job was aborted) before its cleanup could run.
+  try { execCmd("find /data/local/tmp/ancli -maxdepth 1 -name '.webui_*.log*' -mmin +120 -delete 2>/dev/null"); }
+  catch (e) { /* ignore */ }
   let saved = 'auto';
   try { saved = localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { /* ignore */ }
   applyTheme(saved);

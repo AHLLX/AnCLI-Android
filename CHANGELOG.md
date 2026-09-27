@@ -65,6 +65,70 @@
 | Claude Code | 2.1.226 | 2.1.283 | `github:anthropics/claude-code` |
 | Grok CLI | 1.0.0 (was 1.2.2) | 1.0.41 | vendor channel |
 
+### Independent review fixes (same release)
+Two adversarial reviews (one on the new code, one on the untouched code) ran against
+this diff; every finding below was reproduced, then fixed and covered by a test:
+
+**Data-loss / correctness**
+- **`ancli check` no longer overwrites the install database from a stale snapshot.**
+  It ran for minutes while the WebUI could install/update in parallel; writing back the
+  snapshot taken at the start rolled records back or deleted an app installed in the
+  meantime. Probes and the env migration are now merged field-by-field into a fresh read.
+- **`save_installed` uses `os.replace`**: the old remove-then-rename had a window where a
+  crash lost the whole database (records *and* configured key names).
+- **Re-installing an app keeps its configuration** (`ancli install <id>` used to blank
+  `env` and the wrapper's secrets line → "logged out" tools).
+- **A failed upstream lookup keeps the last known-good version** (and the WebUI retries
+  after 15 min instead of freezing the loss for 6 h).
+
+**WebUI configuration was stored percent-encoded (pre-existing, device-confirmed)**
+- `config` now `unquote`s values, and a migration decodes values already written to disk
+  and rewrites the secrets files. Evidence: `secrets/claude.env` held
+  `ANTHROPIC_BASE_URL=https%3A%2F%2Fapi.deepseek.com%2Fanthropic`, so Claude Code/MiMo
+  received a literal, unusable URL. Runs automatically on `ancli check` / `ancli repair`.
+
+**Security / blast radius**
+- **Registry `version_cmd` runs automatically (WebUI load), so it is now strictly validated**:
+  first token must be the app's own executable, and no shell operator is allowed — a
+  tampered registry can no longer turn "open the WebUI" into an arbitrary command chain.
+- **Version probes can no longer read a version out of an error banner** (the stderr pass is
+  limited to "stdout empty and the tool succeeded" and parsed conservatively) — that would
+  have stored e.g. `20.11.0` and hidden every real update.
+- **Host shims (`git`/`bash`/`curl`) are no longer synced into `/data/adb/ksu/bin`** by
+  `service.sh`, and a boot pass removes shims an older version copied there (they shadowed
+  those commands for every root shell and other modules). Confirmed on device.
+- **Credential directories are owner-only** (`chown 2000` + `u+rwX,go-rwx` instead of
+  world-readable `755`).
+
+**Boot / network**
+- **`service.sh` no longer overwrites the container DNS with 8.8.8.8/1.1.1.1 on every boot**:
+  it now prefers the real Android DNS servers (like `customize.sh` and `_write_resolv_conf`),
+  falling back to public resolvers only if none exist. This is what made apt/pip/curl — and
+  now `ancli check` — time out on networks where 8.8.8.8 is blocked.
+- `ancli_env.sh` exports `no_proxy=localhost,127.0.0.1,::1` (local model/MCP endpoints are
+  no longer pushed through a remote proxy) and falls back to the **last known-good proxy**
+  when the system proxy is momentarily unadvertised instead of connecting directly.
+
+**Honesty / diagnostics**
+- `ancli check` exits non-zero when *no* upstream lookup succeeded (previously "✓ 完成" on a
+  dead network); `ancli uninstall` returns the tool's own result; `--json` stays parseable
+  even if a child process writes to fd 1 (`_stdout_to_stderr` now redirects the descriptor).
+- `fetch_registry` fails fast and loudly on 4xx instead of retrying a broken URL and silently
+  serving a stale cache; offline fallback logs say whether the *fetched cache* or the
+  *bundled registry* was used.
+- The registry reports unknown `latest.source` values instead of silently treating them as
+  static, four-segment versions compare correctly, and hand-edited cache types can no longer
+  crash the CLI.
+
+**Other**
+- Downloaded installer scripts are removed from the container after use; the soft-uninstall
+  placeholder now prints "Run: ancli repair" instead of a raw 127; the interactive menu gained
+  `[c] Check for updates`; the WebUI sweeps `.webui_*.log` files older than 2 h.
+- Every app now exposes `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` as optional config, matching what
+  the README already promised for TUN-only setups (previously no app exposed them).
+- Tests: 115 cases, fully hermetic (a network guard fails any test that reaches out), including
+  regression coverage for every finding above.
+
 ---
 
 ## AnCLI v1.2.3 — Hotfix Batch & Release (2026-08-08)

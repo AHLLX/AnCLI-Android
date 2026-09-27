@@ -66,7 +66,11 @@ export XMODIFIERS=@im=fcitx
 # --- Android WiFi proxy detection & inheritance (cached for 30s) ---
 # dumpsys connectivity is a slow binder call (~1-2s); caching avoids paying it
 # on every tool launch while keeping VPN/proxy changes picked up quickly.
+# PROXY_LAST keeps the most recent *successful* detection with no expiry: when
+# this probe fails (system proxy temporarily unset, dumpsys busy), falling back to
+# the last known proxy beats silently connecting directly and timing out.
 PROXY_CACHE="/data/local/tmp/ancli/.proxy_cache"
+PROXY_LAST="/data/local/tmp/ancli/.proxy_cache_last"
 PROXY_HOST=""
 PROXY_PORT=""
 if [ -f "$PROXY_CACHE" ]; then
@@ -100,7 +104,16 @@ if [ -z "$PROXY_HOST" ]; then
             mkdir -p /data/local/tmp/ancli 2>/dev/null || true
             echo "$PROXY_HOST $PROXY_PORT $(date +%s 2>/dev/null || echo 0)" > "$PROXY_CACHE" 2>/dev/null || true
             chmod 644 "$PROXY_CACHE" 2>/dev/null || true
+            cp -f "$PROXY_CACHE" "$PROXY_LAST" 2>/dev/null || true
         fi
+    fi
+fi
+if [ -z "$PROXY_HOST" ] && [ -f "$PROXY_LAST" ]; then
+    read -r LAST_HOST LAST_PORT _ < "$PROXY_LAST" 2>/dev/null
+    if [ -n "$LAST_HOST" ] && [ -n "$LAST_PORT" ]; then
+        PROXY_HOST="$LAST_HOST"
+        PROXY_PORT="$LAST_PORT"
+        echo "[AnCLI] System proxy not advertised right now; reusing last known $PROXY_HOST:$PROXY_PORT." >&2
     fi
 fi
 if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
@@ -109,6 +122,10 @@ if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
     export HTTP_PROXY="http://$PROXY_HOST:$PROXY_PORT"
     export HTTPS_PROXY="http://$PROXY_HOST:$PROXY_PORT"
     export ALL_PROXY="http://$PROXY_HOST:$PROXY_PORT"
+    # Loopback must never go through the (possibly remote) proxy: local model
+    # servers, MCP endpoints and the container's own services live there.
+    export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
+    export NO_PROXY="$no_proxy"
 fi
 
 # Auto-bind potential Clash/Tun virtual IPs to local loopback to satisfy Go socket bind traversal.
@@ -126,9 +143,11 @@ ROOTFS="/data/local/tmp/ancli/rootfs"
 # /root must be traversable by the shell user (uid 2000) when wrappers run
 # without su; ubuntu-base ships it as 0700 root.
 chmod 755 "$ROOTFS/root" 2>/dev/null || true
+# Hand the credential dirs to the shell user and keep them owner-only: root
+# ignores DAC so it still works, and other apps can no longer read OAuth tokens.
 for _conf_dir in /root/.config /root/.gemini /root/.claude /root/.local; do
     if [ -d "$ROOTFS$_conf_dir" ]; then
         chown -R 2000:2000 "$ROOTFS$_conf_dir" 2>/dev/null || true
-        chmod -R 755 "$ROOTFS$_conf_dir" 2>/dev/null || true
+        chmod -R u+rwX,go-rwx "$ROOTFS$_conf_dir" 2>/dev/null || true
     fi
 done

@@ -97,17 +97,24 @@ latest one:
 Results are cached for 6 hours in `/data/local/tmp/ancli/.update_cache.json`, so the
 WebUI stays fast and works offline, and a highlighted **检查更新 (check)** button
 refreshes them on demand. The WebUI also checks automatically when the cache is
-older than 6 hours.
+older than 6 hours (15 minutes after a failed run, keeping the last known version
+instead of falling back to the registry's declared one).
 
 ```bash
 ancli check            # refresh installed + official versions (network)
-ancli check --json     # same, machine-readable (used by the WebUI)
+ancli check --json     # same, machine-readable (for scripts; the WebUI calls `check` + `list --json`)
 ancli list             # show "可更新 → vX (source)" once a check has run
 ```
 
 A failed `ancli update` (no network, proxy down, vendor 404) now exits non-zero,
 so the WebUI reports the failure instead of claiming success, and the recorded
 version stays untouched.
+
+**Note**: the WebUI page (`webroot/index.html`) can only be replaced by flashing the
+module — `ancli repair` cannot write it (`/data/adb/modules` is SELinux-protected). If
+`check` reports `[Errno 13] Permission denied`, the current shell domain cannot write
+`/data/local/tmp/ancli`; use the WebUI's 检查更新 button (manager exec channel) or
+another root shell.
 
 ## Network Proxy & VPN Handling
 

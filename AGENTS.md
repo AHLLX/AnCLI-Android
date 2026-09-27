@@ -47,10 +47,10 @@ When modifying the script execution logic or registry installer commands, you MU
    - Android's root and shell users create files with conflicting ownerships. When generating wrapper scripts, you MUST check if the file already exists and explicitly delete it using `os.remove` before recreating, otherwise the operation will fail with `[Errno 13] Permission denied`.
 4. **Command Whitelist Validation**:
    - Any execution inside the container must be explicitly whitelisted in `ALLOWED_CMD_PREFIXES` in `ancli-core.py`. Add `bash ` and `sh ` if running local shell script installers.
-   - Registry `version_cmd` probes (`claude --version`) go through `_capture_cmd(..., _registry_exe_prefixes())`: the executable names come from the registry and extend the whitelist for that one call only (`validate_cmd` default stays strict).
+   - Registry `version_cmd` probes (`claude --version`) go through `_capture_cmd(..., _probe_prefixes(...))`: the executable names come from the registry and extend the whitelist for that one call only (`validate_cmd` default stays strict). Because a probe runs *automatically* (WebUI page load, `ancli check`), it is stricter than `install_cmd`: `_probe_cmd_allowed()` requires the first token to equal the app's own `executable` and passes `allow_operators=False`, so no `&&`/`||`/`|` chain can be smuggled into a registry entry.
 5. **Do NOT force delete container data during Manager uninstall (CRITICAL)**:
-   - Magisk/KSU Manager uninstallations trigger `uninstall.sh` in non-interactive background. 
-   - You MUST detect TTY redirection and preserve the `/data/local/tmp/ancli/rootfs` and `installed.json` by default (only wipe `bin/` scripts), unless explicitly forced by `/data/local/tmp/ancli_force_purge`. This ensures Python dependencies (like `gitpython`) and API keys are not lost during module upgrades.
+   - Magisk/KSU Manager uninstallations trigger `uninstall.sh` in a non-interactive background shell (there is **no TTY detection** in that script — do not claim there is). It defaults to KEEP: only `$ANCLI_DIR/bin` is wiped, while `/data/local/tmp/ancli/rootfs`, `installed.json`, `secrets/`, `registry.json` and `.update_cache.json` survive. A full purge only happens when `/data/local/tmp/ancli_force_purge` exists. This ensures Python dependencies (like `gitpython`) and API keys are not lost during module upgrades.
+6. **`--json` stdout must stay parseable**: `_stdout_to_stderr()` redirects both `sys.stdout` and file descriptor 1 while data is gathered, so diagnostics from `os.system`/subprocess helpers land on stderr. Keep new diagnostics on stderr and never print to stdout from a helper used by `list --json` / `check --json`.
 
 ## 5. Physical Layout Mapping
 When debugging paths or writing cleanup logic, refer to this exact physical mapping (Host Android perspective):
@@ -91,7 +91,9 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 - `latest` — where the **official latest** version comes from. Supported sources:
   `github` (`repo`), `pypi` (`package`), `npm` (`package`), `json` (`url` + `path`),
   `text` (`urls[]`, first version token wins), `static` (no public API — uses `version`),
-  `none` (detection unavailable; the UI says so).
+  `none` (detection unavailable; the UI says so). `note` is free-text documentation for
+  humans; no code reads it. An unknown `source` is reported as an error, never treated as
+  `static`.
 - `version` — declared fallback used when the network is down or the source is `static`.
 - Rule: **never** treat a hand-written `version` as the official latest, and never write the
   registry/AnCLI version into `installed_version` — that silently disables update detection
@@ -105,7 +107,7 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 
 ## 8. Network Proxy & VPN Constraints (CRITICAL)
 - **VPN Bypass**: Android VPNs in TUN mode (e.g. Clash, v2rayNG) bypass Root (UID 0) traffic by default. If a Python or curl script runs as root and the proxy is not explicitly set, it will ignore the VPN and fail to connect to domains like `github.com`.
-- **Proxy Override**: Always parse the Android system proxy via `dumpsys connectivity`. Extract the `HttpProxy` IP and port. 
+- **Proxy Override**: Always parse the Android system proxy via `dumpsys connectivity`. Extract the `HttpProxy` IP and port. `ancli_env.sh` caches the result for 30 s, keeps the last successful value in `.proxy_cache_last` (used when the probe comes back empty, instead of silently going direct), and exports `no_proxy=localhost,127.0.0.1,::1` so local model servers/MCP endpoints are never tunnelled.
 - **DO NOT hardcode 127.0.0.1**: Android users often run proxy software on other devices (e.g. PC at `192.168.1.x`) and set the Android proxy to that IP. Always use the IP dynamically returned by `dumpsys`.
 - **Go Socket Binds**: Go binaries (like `agy`) crash when binding to `198.18.0.x` virtual IPs created by Clash TUN. Ensure `ancli_env.sh` pre-binds these to the loopback interface (`ip addr add 198.18.0.x/32 dev lo`).
 

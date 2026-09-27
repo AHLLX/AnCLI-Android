@@ -104,13 +104,21 @@ ancli list --json / WebUI  ← reads local registry + update cache only (no netw
 | `none` | – | detection unavailable by design; the UI says so instead of guessing |
 
 Failures are per app and never fatal: the error is recorded in the cache and shown
-in the WebUI, and the previous value is kept. Upstream lookups reuse the proxy
-exported by `ancli_env.sh`, so they work behind the same Android system proxy as
-the installers.
+in the WebUI, **the previously resolved version is kept**, and the auto-check window
+drops to 15 minutes (`CHECK_TTL_FAILED`) so a transient outage is retried instead of
+freezing the loss for 6 hours. Upstream lookups reuse the proxy exported by
+`ancli_env.sh`, so they work behind the same Android system proxy as the installers.
+
+Persistence is merge-based on purpose: a check can run for minutes while the WebUI
+installs or updates another tool, so probed versions and the encoded-config migration
+are merged field-by-field into a freshly re-read `installed.json`
+(`_merge_installed_fields`) rather than written back from the snapshot taken at the
+start of the run.
 
 The WebUI triggers `ancli check` itself when `last_check` in the list payload is
-older than `check_ttl` (6 h), which also migrates legacy install records that still
-hold the AnCLI framework version.
+older than `check_ttl` (6 h, or 15 min after failures), which also migrates legacy
+install records that still hold the AnCLI framework version and decodes config values
+that older WebUI builds stored percent-encoded.
 
 ---
 
