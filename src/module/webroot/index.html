@@ -1,242 +1,439 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AnCLI WebUI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>AnCLI</title>
 <style>
-/* ================= 奶咖色系 · 液态玻璃 · 圆润 ================= */
+/* ============================ 设计变量 ============================ */
 :root {
-  /* latte (light) */
-  --bg1: #f3ecdf; --bg2: #ead9c2;
-  --glass: rgba(255, 250, 240, 0.58);
-  --glass-strong: rgba(255, 250, 240, 0.82);
-  --stroke: rgba(255, 255, 255, 0.55);
-  --text: #4a3728; --muted: #8d7660; --accent: #c08552; --accent-soft: #e8cfae;
-  --ok: #7a9e6b; --warn: #d9a441; --err: #c96a5a; --native: #9a6fb0;
-  --shadow: 0 8px 32px rgba(122, 92, 60, 0.14);
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f2f3f6;
+  --surface-3: #e9ebef;
+  --border: #e4e6eb;
+  --border-strong: #d3d7de;
+  --text: #14171c;
+  --muted: #666e7a;
+  --faint: #98a0ab;
+  --accent: #b45309;
+  --accent-ink: #ffffff;
+  --accent-soft: #fdf1e3;
+  --accent-line: #f0d3ae;
+  --ok: #15803d;
+  --ok-soft: #e9f6ed;
+  --danger: #b91c1c;
+  --danger-soft: #fdecec;
+  --info: #6d28d9;
+  --info-soft: #f2ecfd;
+  --warn: #a16207;
+  --console-bg: #fbfbfc;
+  --console-text: #2b3138;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
+  --shadow: 0 12px 28px -18px rgba(16, 24, 40, .35);
+  --r-xs: 8px; --r-sm: 10px; --r: 14px; --r-lg: 18px; --r-pill: 999px;
+  --gap: 12px;
 }
 :root[data-theme="dark"] {
-  /* mocha (dark) */
-  --bg1: #2b2118; --bg2: #1d1610;
-  --glass: rgba(58, 46, 34, 0.55);
-  --glass-strong: rgba(58, 46, 34, 0.85);
-  --stroke: rgba(255, 240, 220, 0.14);
-  --text: #eeddc6; --muted: #a68f74; --accent: #d4a373; --accent-soft: #5a4632;
-  --ok: #8fae7e; --warn: #d9a441; --err: #d0816f; --native: #b78fd0;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --bg: #0e1013;
+  --surface: #16191e;
+  --surface-2: #1c2027;
+  --surface-3: #232830;
+  --border: #262b33;
+  --border-strong: #333a45;
+  --text: #e8eaee;
+  --muted: #9aa2ae;
+  --faint: #6c7481;
+  --accent: #f0a45e;
+  --accent-ink: #241704;
+  --accent-soft: #2a2015;
+  --accent-line: #4a3a24;
+  --ok: #4fbf7a;
+  --ok-soft: #14251b;
+  --danger: #f2796f;
+  --danger-soft: #2a1918;
+  --info: #b193fb;
+  --info-soft: #1e1a2c;
+  --warn: #e0aa4e;
+  --console-bg: #101317;
+  --console-text: #cfd5dd;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow: 0 14px 30px -20px rgba(0, 0, 0, .8);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { min-height: 100%; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  font: 14px/1.65 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font: 14px/1.55 system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   color: var(--text);
-  background: linear-gradient(160deg, var(--bg1), var(--bg2));
-  background-attachment: fixed;
-  padding: 18px 16px 32px;
+  background: var(--bg);
+  min-height: 100vh;
 }
-h1 { font-size: 19px; font-weight: 700; letter-spacing: .02em; }
-.sub { color: var(--muted); font-size: 12px; margin: 2px 0 14px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+::selection { background: var(--accent-soft); }
 
-.glass {
-  background: var(--glass);
-  backdrop-filter: blur(16px) saturate(1.25);
-  -webkit-backdrop-filter: blur(16px) saturate(1.25);
-  border: 1px solid var(--stroke);
-  border-radius: 22px;
-  box-shadow: var(--shadow);
+/* ============================ 顶栏 ============================ */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border-bottom: 1px solid var(--border);
 }
-.header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 2px 0; }
-.theme-switch { display: inline-flex; gap: 4px; background: var(--glass); border: 1px solid var(--stroke);
-  border-radius: 999px; padding: 3px; backdrop-filter: blur(12px); }
-.theme-switch button { border: 0; background: transparent; color: var(--muted); border-radius: 999px;
-  padding: 4px 10px; font-size: 12px; cursor: pointer; transition: .18s; }
-.theme-switch button.active { background: var(--glass-strong); color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--surface); }
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.mark {
+  width: 27px; height: 27px; flex: none; border-radius: 9px;
+  display: grid; place-items: center; color: var(--accent-ink);
+  background: linear-gradient(150deg, var(--accent), color-mix(in srgb, var(--accent) 62%, #000 12%));
+  box-shadow: var(--shadow-sm);
+}
+.mark svg { width: 15px; height: 15px; }
+.brand b { font-size: 15px; font-weight: 650; letter-spacing: .01em; }
+.brand small { display: block; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.2; }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 12px; margin: 16px 0; }
-.card { padding: 14px 16px; border-radius: 20px; }
-.card .k { color: var(--muted); font-size: 11px; }
-.card .v { font-size: 17px; font-weight: 700; margin-top: 2px; }
-.card .v.ok { color: var(--ok); } .card .v.bad { color: var(--err); }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border); }
+.seg button {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font: 500 11.5px/1 inherit; padding: 6px 10px; border-radius: var(--r-pill); transition: .16s;
+}
+.seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 
-.toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-button { background: var(--glass); color: var(--text); border: 1px solid var(--stroke); border-radius: 14px;
-  padding: 8px 18px; font-size: 13px; font-weight: 500; cursor: pointer; transition: .18s;
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-button:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
-button:active { transform: translateY(0); }
-button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #fff; border: 0; }
-button.primary:hover { color: #fff; filter: brightness(1.06); }
-button.small { padding: 5px 12px; font-size: 12px; border-radius: 11px; }
-button.danger:hover { border-color: var(--err); color: var(--err); }
+/* ============================ 布局 ============================ */
+.wrap {
+  max-width: 720px; margin: 0 auto;
+  padding: 14px 16px calc(28px + env(safe-area-inset-bottom));
+  display: grid; gap: var(--gap);
+}
+/* Grid/flex children must be allowed to shrink, otherwise a long unbreakable
+   token (a log line, a base URL) widens the page and the layout scrolls sideways. */
+.wrap > *, .app-main, .console, .list, .dlg-body { min-width: 0; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-sm);
+}
 
-.app { padding: 16px 18px; margin-bottom: 12px; border-radius: 22px; }
-.app .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.app .name { font-weight: 700; font-size: 15px; }
-.app .desc { color: var(--muted); font-size: 12px; margin: 5px 0 12px; }
-.badge { font-size: 11px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--stroke); color: var(--muted); background: var(--glass); }
-.badge.native { border-color: var(--native); color: var(--native); }
-.badge.installed { border-color: var(--ok); color: var(--ok); }
-.badge.broken { border-color: var(--err); color: var(--err); }
-.badge.update { border-color: var(--warn); color: var(--warn); }
-.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 状态条 */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); padding: 12px 4px; }
+.stat { padding: 2px 12px; min-width: 0; }
+.stat + .stat { border-left: 1px solid var(--border); }
+.stat .k { color: var(--faint); font-size: 11px; letter-spacing: .02em; }
+.stat .v { font-size: 14px; font-weight: 600; margin-top: 3px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .v.ok { color: var(--ok); }
+.stat .v.bad { color: var(--danger); }
 
-#log { margin-top: 20px; padding: 14px 16px; border-radius: 20px; font: 12px/1.55 ui-monospace, Consolas, monospace;
-  white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow: auto; color: var(--text); opacity: .92; }
-#log .err { color: var(--err); } #log .ok { color: var(--ok); }
+/* 操作行 */
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* ===== 软键盘弹出降级 =====
-   backdrop-filter 在 WebView 视口 resize（键盘弹出）时会反复重采样背景，
-   导致卡顿 / 闪屏 / 局部黑屏。检测到键盘后关闭模糊、背景换纯色、面板
-   换高不透明度，消除重采样；键盘收起后自动恢复液态玻璃。 */
-body.ime-open { background: var(--bg1); background-attachment: scroll; }
-body.ime-open .glass,
-body.ime-open .dialog,
-body.ime-open .theme-switch,
-body.ime-open button { backdrop-filter: none; -webkit-backdrop-filter: none; }
-body.ime-open .glass { background: var(--glass-strong); }
-body.ime-open .dialog { background: var(--glass-strong); }
-body.ime-open #log { background: var(--glass-strong); }
+/* 按钮 */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font: 500 13px/1 inherit; color: var(--text); cursor: pointer;
+  padding: 10px 14px; border-radius: var(--r); border: 1px solid var(--border);
+  background: var(--surface); transition: background .16s, border-color .16s, color .16s, opacity .16s;
+}
+.btn svg { width: 15px; height: 15px; flex: none; }
+.btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+.btn:active:not(:disabled) { background: var(--surface-3); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000 12%); border-color: transparent; }
+.btn.quiet { background: transparent; border-color: transparent; color: var(--muted); }
+.btn.quiet:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.btn.danger { color: var(--danger); }
+.btn.quiet.danger { color: var(--muted); }
+.btn.quiet.danger:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
+.btn.danger:hover:not(:disabled) { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+.btn.xs { padding: 6px 10px; font-size: 12px; border-radius: var(--r-sm); }
+.icon-btn {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-xs);
+  border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; transition: .16s;
+}
+.icon-btn svg { width: 14px; height: 14px; }
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 
-.overlay { position: fixed; inset: 0; background: rgba(40, 28, 16, 0.45); backdrop-filter: blur(4px);
-  display: none; align-items: center; justify-content: center; z-index: 10; }
-.overlay.show { display: flex; }
-.dialog { background: var(--glass-strong); backdrop-filter: blur(24px) saturate(1.3); -webkit-backdrop-filter: blur(24px) saturate(1.3);
-  border: 1px solid var(--stroke); border-radius: 26px; padding: 22px; width: min(92vw, 460px);
-  box-shadow: 0 20px 60px rgba(60, 40, 20, 0.3); max-height: 86vh; overflow: auto; }
-.dialog h3 { margin-bottom: 4px; font-size: 16px; }
-.dialog .dsub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
-.dialog label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; font-weight: 600; }
-.dialog input { width: 100%; background: rgba(255,255,255,.25); border: 1px solid var(--stroke); border-radius: 12px;
-  color: var(--text); padding: 9px 12px; font-size: 13px; outline: none; transition: .15s; }
-.dialog input:focus { border-color: var(--accent); background: rgba(255,255,255,.4); }
-.dialog input::placeholder { color: var(--muted); opacity: .7; }
-.dialog select { width: 100%; background: rgba(255,255,255,.25); border: 1px solid var(--stroke); border-radius: 12px;
-  color: var(--text); padding: 9px 12px; font-size: 13px; outline: none; appearance: auto; -webkit-appearance: auto; }
-.dialog select:focus { border-color: var(--accent); }
-.dialog select option { background: var(--bg1); color: var(--text); }
-.dialog .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
-.dialog textarea { width: 100%; background: rgba(255,255,255,.25); border: 1px solid var(--stroke); border-radius: 12px;
-  color: var(--text); padding: 9px 12px; font-size: 12px; font-family: ui-monospace, Consolas, monospace;
-  outline: none; resize: vertical; min-height: 90px; }
-.dialog textarea:focus { border-color: var(--accent); }
-.dialog textarea::placeholder { color: var(--muted); opacity: .7; }
-.dialog .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+/* 区块标题 */
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 2px 2px -2px; }
+.sec-head h2 { font-size: 13px; font-weight: 650; letter-spacing: .02em; }
+.meta { color: var(--faint); font-size: 11.5px; }
 
-.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
-.presets button { padding: 4px 11px; font-size: 12px; border-radius: 999px; }
-.presets button.sel { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.preset-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
-.preset-note a { color: var(--accent); text-decoration: none; }
+/* ============================ 工具列表 ============================ */
+.list { display: grid; gap: 10px; }
+.app {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 11px;
+  padding: 13px 14px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm);
+  transition: border-color .16s, box-shadow .16s;
+}
+.app[data-state="update"] { border-color: var(--accent-line); box-shadow: var(--shadow); }
+.app[data-state="update"]::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
+.mono {
+  width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
+  font: 650 14px/1 inherit; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.app[data-state="installed"] .mono { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.app[data-state="update"] .mono { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.app[data-state="broken"] .mono { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.app[data-state="native"] .mono { color: var(--info); background: var(--info-soft); border-color: transparent; }
+
+.app-main { min-width: 0; }
+.app-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.app-title .name { font-size: 14.5px; font-weight: 620; letter-spacing: .01em; }
+.desc { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.detail { color: var(--faint); font-size: 11.5px; margin-top: 2px; }
+.detail b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.app-actions { display: flex; gap: 6px; flex-wrap: wrap; grid-column: 2; margin-top: 10px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  font: 500 11px/1 inherit; padding: 4px 7px; border-radius: var(--r-pill);
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Long value lists (configured keys, upstream errors) wrap instead of pushing the
+   card wider than the viewport. */
+.chip.wrap { white-space: normal; overflow-wrap: anywhere; text-align: left; line-height: 1.45; }
+.chip.plain { background: transparent; }
+.chip.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.chip.update { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.chip.danger { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.chip.info { color: var(--info); background: var(--info-soft); border-color: transparent; }
+.chip.warn { color: var(--warn); background: var(--accent-soft); border-color: transparent; }
+.dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+
+.empty { text-align: center; color: var(--faint); font-size: 12.5px; padding: 26px 14px; }
+.skeleton { height: 62px; border-radius: var(--r-lg); border: 1px solid var(--border);
+  background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
+  background-size: 220% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* ============================ 输出控制台 ============================ */
+.console { overflow: hidden; }
+.console-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px 9px 13px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.console-head b { font-size: 12.5px; font-weight: 620; }
+.spacer { flex: 1; }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid var(--accent-line); border-top-color: var(--accent);
+  animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.log {
+  max-height: 260px; overflow: auto; overscroll-behavior: contain;
+  padding: 10px 13px; background: var(--console-bg); color: var(--console-text);
+  font: 11.5px/1.62 ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2;
+}
+.log div { min-height: 1.62em; }
+.log .l-cmd { color: var(--accent); }
+.log .l-ok { color: var(--ok); }
+.log .l-err { color: var(--danger); }
+.log .l-dim { color: var(--faint); }
+.log:empty::after { content: "等待操作…"; color: var(--faint); }
+
+/* ============================ 配置弹窗 ============================ */
+.overlay {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: end center;
+  padding: 0; background: rgba(12, 14, 18, .42);
+  opacity: 0; visibility: hidden; transition: opacity .18s, visibility .18s;
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.overlay.show { opacity: 1; visibility: visible; }
+.dialog {
+  width: min(560px, 100%); max-height: min(88vh, 760px); display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border); border-bottom: 0;
+  border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: var(--shadow);
+  transform: translateY(14px); transition: transform .2s ease;
+}
+.overlay.show .dialog { transform: none; }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 12px 12px 16px; border-bottom: 1px solid var(--border); }
+.dlg-head h3 { font-size: 14.5px; font-weight: 620; }
+.dlg-body { padding: 14px 16px 6px; overflow: auto; }
+.dlg-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); background: var(--surface); }
+.dlg-foot .btn { min-width: 88px; }
+.note { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.note a { color: var(--accent); }
+.note b { color: var(--text); }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chips:empty { display: none; }
+.chips button {
+  flex: none; font: 500 12px/1 inherit; color: var(--muted); cursor: pointer;
+  padding: 7px 11px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface-2);
+  transition: .16s;
+}
+.chips button:hover { border-color: var(--border-strong); color: var(--text); }
+.chips button.sel { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); font-weight: 600; }
+.fields { display: grid; gap: 13px; padding-bottom: 10px; }
+.field label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 5px; }
+.field label .tag { font-weight: 500; font-size: 11px; color: var(--faint); margin-left: 4px; }
+.field input, .field select {
+  width: 100%; font: 13px/1.4 inherit; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; transition: .16s;
+  -webkit-appearance: none; appearance: none;
+}
+.field select { background-image: linear-gradient(45deg, transparent 50%, var(--faint) 50%), linear-gradient(135deg, var(--faint) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 17px, calc(100% - 11px) 17px; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
+.field input:focus, .field select:focus { outline: 0; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field .hint { color: var(--faint); font-size: 11px; margin-top: 5px; line-height: 1.5; }
+.adv { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 12px; }
+.adv summary {
+  cursor: pointer; list-style: none; color: var(--muted); font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px; margin-bottom: 12px;
+}
+.adv summary::-webkit-details-marker { display: none; }
+.adv summary::before { content: "›"; display: inline-block; transition: transform .16s; font-size: 14px; line-height: 1; }
+.adv[open] summary::before { transform: rotate(90deg); }
+.adv .field + .field { margin-top: 13px; }
+
+/* ============================ 浮动提示 ============================ */
+.toast {
+  position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 60;
+  transform: translate(-50%, 12px); opacity: 0; transition: .2s;
+  max-width: min(90vw, 460px); padding: 10px 14px; border-radius: var(--r-pill);
+  background: var(--text); color: var(--surface); font-size: 12.5px; box-shadow: var(--shadow);
+  pointer-events: none; text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.err { background: var(--danger); color: #fff; }
+
+.foot { text-align: center; color: var(--faint); font-size: 11px; padding: 4px 0 2px; }
+
+@media (min-width: 620px) {
+  .app { grid-template-columns: 34px minmax(0, 1fr) auto; align-items: start; }
+  .app-actions { grid-column: auto; margin-top: 1px; }
+}
+@media (max-width: 380px) {
+  .stats { grid-template-columns: repeat(2, 1fr); row-gap: 10px; }
+  .stat:nth-child(3) { border-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
 </style>
 </head>
 <body>
 
-<div class="header">
-  <div>
-    <h1>☕ AnCLI 管理</h1>
-    <div class="sub">Unified Linux CLI environment manager · KernelSU WebUI</div>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 7l4 5-4 5M12.5 17H19"/>
+      </svg>
+    </span>
+    <span>
+      <b>AnCLI</b>
+      <small id="stVer">…</small>
+    </span>
   </div>
-  <div class="theme-switch" id="themeSwitch">
-    <button data-theme="auto" title="跟随系统">🖥 跟随</button>
-    <button data-theme="light" title="浅色（奶咖）">☀️ 浅色</button>
-    <button data-theme="dark" title="深色（摩卡）">🌙 深色</button>
+  <div class="seg" id="themeSwitch" role="group" aria-label="主题">
+    <button data-theme="auto">自动</button>
+    <button data-theme="light">浅色</button>
+    <button data-theme="dark">深色</button>
   </div>
-</div>
+</header>
 
-<div class="cards" id="statusCards">
-  <div class="card glass"><div class="k">AnCLI 版本</div><div class="v" id="stVer">…</div></div>
-  <div class="card glass"><div class="k">容器 Rootfs</div><div class="v" id="stRootfs">…</div></div>
-  <div class="card glass"><div class="k">PRoot</div><div class="v" id="stProot">…</div></div>
-  <div class="card glass"><div class="k">已安装工具</div><div class="v" id="stCount">…</div></div>
-</div>
+<main class="wrap">
+  <section class="card stats" aria-label="环境状态">
+    <div class="stat"><div class="k">Rootfs</div><div class="v" id="stRootfs">—</div></div>
+    <div class="stat"><div class="k">Proot</div><div class="v" id="stProot">—</div></div>
+    <div class="stat"><div class="k">已安装</div><div class="v" id="stCount">—</div></div>
+    <div class="stat"><div class="k">可更新</div><div class="v" id="stUpdates">—</div></div>
+  </section>
 
-<div class="toolbar">
-  <button id="btnCheck" class="primary">检查更新 (check)</button>
-  <button id="btnRefresh">刷新</button>
-  <button id="btnRepair">修复环境 (repair)</button>
-</div>
+  <section class="actions">
+    <button class="btn primary" id="btnCheck">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></svg>
+      检查更新
+    </button>
+    <button class="btn" id="btnRefresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M3 12h3M18 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+      刷新
+    </button>
+    <button class="btn quiet danger" id="btnRepair">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 21H3l1.3-9.7a4 4 0 0 0 5-5z"/></svg>
+      修复环境
+    </button>
+  </section>
 
-<div class="sub" id="checkInfo"></div>
+  <div class="sec-head">
+    <h2>工具</h2>
+    <span class="meta" id="checkInfo">尚未检查</span>
+  </div>
+  <div class="list" id="apps">
+    <div class="skeleton"></div><div class="skeleton"></div>
+  </div>
 
-<div id="apps"></div>
+  <section class="card console" aria-label="输出">
+    <div class="console-head">
+      <span class="spin" id="busySpin" hidden></span>
+      <b>输出</b>
+      <span class="meta" id="logCount">0 行</span>
+      <span class="spacer"></span>
+      <button class="icon-btn" id="btnLogCopy" title="复制全部" aria-label="复制全部">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+      </button>
+      <button class="icon-btn" id="btnLogClear" title="清空" aria-label="清空输出">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+      </button>
+      <button class="icon-btn" id="btnLogFollow" aria-pressed="true" title="自动滚动到底部" aria-label="自动滚动">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+      </button>
+    </div>
+    <div class="log" id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
+  </section>
 
-<div class="glass" id="log"></div>
+  <div class="foot">AnCLI · 系统级 AI CLI 环境管理器</div>
+</main>
 
-<div class="overlay" id="cfgOverlay">
-  <div class="dialog">
-    <h3 id="cfgTitle">配置</h3>
-    <div class="dsub">选择下方服务商可一键填充 API 地址与模型，再填入对应密钥即可</div>
-    <div class="presets" id="presetBar"></div>
-    <div class="preset-note" id="presetNote"></div>
-    <div id="cfgFields"></div>
-    <div class="hint">* 必填；留空表示跳过；已保存的密钥不会回显。</div>
-    <div class="row">
-      <button id="cfgCancel">取消</button>
-      <button id="cfgSave" class="primary">保存</button>
+<div class="overlay" id="cfgOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="cfgTitle">
+    <div class="dlg-head">
+      <h3 id="cfgTitle">配置</h3>
+      <button class="icon-btn" id="cfgClose" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dlg-body">
+      <div class="note" id="presetNote"></div>
+      <div class="chips" id="presetBar"></div>
+      <div class="fields" id="cfgFields"></div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" id="cfgCancel">取消</button>
+      <button class="btn primary" id="cfgSave">保存</button>
     </div>
   </div>
 </div>
 
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script>
-'use strict';
-let ANCLI = null;      // resolved ancli command path
-let currentApps = [];  // last list --json payload
-let cfgApp = null;     // app being configured
+/* =====================================================================
+   AnCLI WebUI — 通过 KernelSU / APatch 的 exec 接口驱动容器内的 ancli
+   ===================================================================== */
 
-// ---------- 服务商预置（官方文档核实，2026-08 二次复核） ----------
-const PROVIDERS = [
-  { id: 'deepseek',    name: 'DeepSeek',       base: 'https://api.deepseek.com',                    keyUrl: 'https://platform.deepseek.com/api_keys',
-    anthropicBase: 'https://api.deepseek.com/anthropic', auth: 'key',
-    models: ['deepseek-v4-flash', 'deepseek-v4-pro'], note: '国内直连 · 性价比高 · 官方 Claude 兼容' },
-  { id: 'openai',      name: 'OpenAI',         base: 'https://api.openai.com/v1',                   keyUrl: 'https://platform.openai.com',
-    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] },
-  { id: 'gemini',      name: 'Google Gemini',  base: 'https://generativelanguage.googleapis.com/v1beta/openai/', keyUrl: 'https://aistudio.google.com/apikey',
-    models: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-2.5-flash'] },
-  { id: 'groq',        name: 'Groq',           base: 'https://api.groq.com/openai/v1',              keyUrl: 'https://console.groq.com/keys',
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'], note: '极速推理 · 有免费额度' },
-  { id: 'openrouter',  name: 'OpenRouter',     base: 'https://openrouter.ai/api/v1',                keyUrl: 'https://openrouter.ai/settings/keys',
-    anthropicBase: 'https://openrouter.ai/api', auth: 'token',
-    models: ['~openai/gpt-latest', '~anthropic/claude-sonnet-latest'] },
-  { id: 'zhipu',       name: '智谱 GLM',        base: 'https://open.bigmodel.cn/api/paas/v4',        keyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
-    anthropicBase: 'https://open.bigmodel.cn/api/anthropic', auth: 'key',
-    models: ['glm-5.2', 'glm-5.1', 'glm-4.7-flash', 'glm-4-long'], note: '国内直连 · 含免费模型 · 官方 Claude 兼容' },
-  { id: 'aliyun',      name: '阿里云百炼',      base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com',
-    models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'], note: '国内直连 · 通义千问' },
-  { id: 'kimi',        name: 'Kimi 月之暗面',   base: 'https://api.moonshot.cn/v1',                  keyUrl: 'https://platform.kimi.com/console/api-keys',
-    anthropicBase: 'https://api.moonshot.cn/anthropic', auth: 'token',
-    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'], note: '长上下文（1M）· 官方 Claude 兼容' },
-  { id: 'xai',         name: 'xAI Grok',       base: 'https://api.x.ai/v1',                         keyUrl: 'https://console.x.ai/team/default/api-keys',
-    models: ['grok-4.5', 'grok-4.3'] },
-  { id: 'siliconflow', name: '硅基流动',        base: 'https://api.siliconflow.cn/v1',               keyUrl: 'https://cloud.siliconflow.cn/account/ak',
-    models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2.5-Coder-32B-Instruct'], note: '国内 · 含免费模型' },
-];
-
-// 字段用途提示（仅 registry 仍启用的 env_vars + 通用代理字段）
-const VAR_HINTS = {
-  ANTHROPIC_API_KEY: 'Anthropic Claude API 密钥',
-  ANTHROPIC_AUTH_TOKEN: 'Claude 兼容密钥（Kimi / OpenRouter 专用；填此项时 ANTHROPIC_API_KEY 留空）',
-  ANTHROPIC_BASE_URL: 'Claude 兼容 API 地址（选择服务商后自动填充）',
-  ANTHROPIC_MODEL: 'claude 默认模型名',
-  HTTP_PROXY: 'HTTP 代理地址（如 http://192.168.1.5:7890）',
-  HTTPS_PROXY: 'HTTPS 代理地址',
-  ALL_PROXY: '全协议代理地址',
-};
-// 会被服务商预置填充的字段
-const BASE_FIELDS = ['ANTHROPIC_BASE_URL'];
-const MODEL_FIELDS = ['ANTHROPIC_MODEL'];
-
-// ---------- KernelSU / KsuWebUI bridge ----------
+// ---------- KernelSU / KsuWebUI / APatch bridge ----------
 const BRIDGE_NAMES = ['ksu', 'ksu_webui', 'ap_webui', 'ksuwebui'];
 let bridge = null;
 let bridgeName = null;
+let bridgeLogged = false;
+let ANCLI = 'ancli';
+let currentApps = [];
+let cfgApp = null;
+let selectedProvider = null;
 
 function findBridge() {
   for (const n of BRIDGE_NAMES) {
-    if (window[n] && typeof window[n].exec === 'function') {
-      return { obj: window[n], name: n };
-    }
+    if (window[n] && typeof window[n].exec === 'function') return { obj: window[n], name: n };
   }
   return null;
 }
@@ -299,7 +496,7 @@ async function execCmd(cmd) {
       const found = await waitForBridge(10000);
       bridge = found.obj;
       bridgeName = found.name;
-      log('桥接已连接: window.' + found.name);
+      if (!bridgeLogged) { bridgeLogged = true; logLine('已连接 KernelSU WebUI 桥接', 'dim'); }
     } catch (e) {
       try { return await shHttp(cmd); }
       catch (e2) { throw new Error('WebUI 桥接不可用（等待超时且 KKHTTP 失败）：需要 KernelSU 0.9.5+ 或 KsuWebUI 框架'); }
@@ -324,56 +521,87 @@ async function shHttp(cmd) {
 }
 
 const strip = s => (s || '').replace(/\x1b\[[0-9;]*m/g, '');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function log(text, cls) {
-  const el = document.getElementById('log');
-  const line = document.createElement('div');
-  if (cls) line.className = cls;
-  line.textContent = text;
-  el.appendChild(line);
-  el.scrollTop = el.scrollHeight;
+// ---------- 输出面板 ----------
+const LOG_MAX = 500;
+let logLines = 0;
+let logFollow = true;
+const logEl = () => document.getElementById('log');
+
+function logLine(text, kind) {
+  const el = logEl();
+  const row = document.createElement('div');
+  if (kind) row.className = 'l-' + kind;
+  row.textContent = text;
+  el.appendChild(row);
+  while (el.childElementCount > LOG_MAX) el.removeChild(el.firstElementChild);
+  logLines++;
+  document.getElementById('logCount').textContent = logLines + ' 行' + (logLines > LOG_MAX ? '（仅保留最近 ' + LOG_MAX + ' 行）' : '');
+  if (logFollow) el.scrollTop = el.scrollHeight;
 }
 
-async function run(cmd) {
-  log('$ ' + cmd);
+function toast(msg, kind) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (kind === 'err' ? ' err' : '');
+  clearTimeout(el.__t);
+  el.__t = setTimeout(() => { el.className = 'toast'; }, 2600);
+}
+
+// ---------- 忙碌状态 ----------
+let busy = 0;
+function setBusy(on, label) {
+  busy = Math.max(0, busy + (on ? 1 : -1));
+  document.body.classList.toggle('busy', busy > 0);
+  document.getElementById('busySpin').hidden = busy === 0;
+  ['btnCheck', 'btnRefresh', 'btnRepair'].forEach(id => { document.getElementById(id).disabled = busy > 0; });
+  document.querySelectorAll('#apps button[data-act]').forEach(b => { b.disabled = busy > 0; });
+  if (on && label) logLine(label, 'dim');
+}
+
+// ---------- 命令执行 ----------
+// `quiet` hides the (machine-readable) stdout of internal JSON calls while still
+// surfacing failures: the console should show user actions, not payload dumps.
+async function run(cmd, quiet) {
+  logLine('$ ' + cmd, quiet ? 'dim' : 'cmd');
   try {
     const r = await sh(cmd);
     const out = strip(r.stdout || '').trim();
     const err = strip(r.stderr || '').trim();
-    if (out) log(out);
-    if (err) log(err, 'err');
-    if (r.code !== 0) log('exit code: ' + r.code, 'err');
-    else log('✓ 完成', 'ok');
+    if (out && !quiet) logLine(out);
+    if (err) logLine(err, 'err');
+    if (r.code !== 0) {
+      if (quiet && out) logLine(out, 'err');
+      logLine('exit code: ' + r.code, 'err');
+    }
     return r;
   } catch (e) {
-    log(String(e), 'err');
+    logLine(String(e), 'err');
     throw e;
   }
 }
 
-async function ancli(args) {
-  const r = await run(ANCLI + ' ' + args);
+async function ancli(args, quiet) {
+  const r = await run(ANCLI + ' ' + args, quiet);
   if (r.code !== 0) throw new Error('ancli ' + args + ' failed');
   return strip(r.stdout || '');
 }
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
+// 后台执行 + 实时输出（每次运行独立日志文件，避免两个任务互相串台）
 async function runBackground(cmd) {
-  // Unique per run: two concurrent actions (e.g. two 更新 clicks) used to share
-  // one log file and interleave each other's output.
   const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
   const logFile = '/data/local/tmp/ancli/.webui_' + tag + '.log';
   const exitFile = logFile + '.exit';
-  log('$ ' + cmd + '  （后台执行）');
+  logLine('$ ' + cmd + '  （后台执行）', 'cmd');
   try {
     const r = await execCmd("sh -c '" + cmd + ' > ' + logFile + ' 2>&1; echo $? > ' + exitFile + "' &");
     if (r.code !== 0 && !r.stdout && !r.stderr) {
-      log('后台任务启动失败（exit ' + r.code + '）', 'err');
+      logLine('后台任务启动失败（exit ' + r.code + '）', 'err');
       return;
     }
   } catch (e) {
-    log('后台任务启动失败: ' + e, 'err');
+    logLine('后台任务启动失败: ' + e, 'err');
     return;
   }
   let last = 0;
@@ -384,9 +612,8 @@ async function runBackground(cmd) {
     catch (e) { continue; }
     const text = strip(out.stdout || '');
     if (text) {
-      log(text);
-      // `tail -c` counts BYTES: advance by the UTF-8 byte length of what was
-      // read, not by the JS string length (which would re-read/mangle output).
+      logLine(text.replace(/\n$/, ''));
+      // `tail -c` 按字节计数：必须用 UTF-8 字节长度推进，否则会重复读取或截断中文
       last += new TextEncoder().encode(out.stdout || '').length;
     }
     let done;
@@ -395,130 +622,82 @@ async function runBackground(cmd) {
     const code = (done.stdout || '').trim();
     if (code !== '') {
       try {
-        const rest = await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null');
-        const restText = strip(rest.stdout || '');
-        if (restText) log(restText);
+        const rest = strip((await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null')).stdout || '');
+        if (rest) logLine(rest.replace(/\n$/, ''));
       } catch (e) { /* ignore */ }
-      if (code === '0') log('✓ 完成', 'ok'); else log('退出码: ' + code + '（命令失败，未生效）', 'err');
+      if (code === '0') logLine('✓ 完成', 'ok');
+      else logLine('退出码: ' + code + '（命令失败，未生效）', 'err');
       try { await execCmd('rm -f ' + logFile + ' ' + exitFile); } catch (e) { /* ignore */ }
       break;
     }
   }
 }
 
-// ---------- init ----------
+// ---------- 数据 ----------
 async function findAncli() {
   const candidates = [
     '/data/adb/ksu/bin/ancli',
     '/data/adb/ap/bin/ancli',
-    '/data/local/tmp/ancli/bin/ancli',
     '/data/adb/modules/ancli/system/bin/ancli',
+    '/data/local/tmp/ancli/bin/ancli',
   ];
   for (const p of candidates) {
     try {
       const r = await sh('[ -x ' + p + ' ] && echo yes');
       if (r.code === 0 && strip(r.stdout).trim() === 'yes') return p;
-    } catch (e) { /* try next */ }
+    } catch (e) { /* next */ }
   }
   return 'ancli';
 }
 
+function setStat(id, text, state) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'v' + (state ? ' ' + state : '');
+}
+
 async function loadStatus() {
   try {
-    const raw = await ancli('status --json');
-    const s = JSON.parse(raw);
-    document.getElementById('stVer').textContent = s.ancli_version || '?';
-    const rf = document.getElementById('stRootfs');
-    rf.textContent = s.rootfs_ready ? '就绪' : '缺失';
-    rf.className = 'v ' + (s.rootfs_ready ? 'ok' : 'bad');
-    const pr = document.getElementById('stProot');
-    pr.textContent = s.proot_deployed ? '已部署' : '缺失';
-    pr.className = 'v ' + (s.proot_deployed ? 'ok' : 'bad');
-    document.getElementById('stCount').textContent = s.installed_count ?? '?';
+    const s = JSON.parse(await ancli('status --json', true));
+    document.getElementById('stVer').textContent = 'v' + (s.ancli_version || '?');
+    setStat('stRootfs', s.rootfs_ready ? '就绪' : '缺失', s.rootfs_ready ? 'ok' : 'bad');
+    setStat('stProot', s.proot_deployed ? '已部署' : '缺失', s.proot_deployed ? 'ok' : 'bad');
+    setStat('stCount', (s.installed_count ?? '?') + ' 个');
   } catch (e) {
-    log('状态加载失败: ' + e, 'err');
+    logLine('状态加载失败: ' + e, 'err');
   }
 }
 
+let lastCheck = 0;
+let lastCheckFailed = 0;
+let checkTtl = 21600;
+let supportsCheck = false;
+let autoCheckStarted = false;
+
 async function loadApps() {
   const wrap = document.getElementById('apps');
-  wrap.innerHTML = '<div class="sub">加载中…</div>';
+  if (!wrap.childElementCount) wrap.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
   try {
-    const raw = await ancli('list --json');
-    const data = JSON.parse(raw);
+    const data = JSON.parse(await ancli('list --json', true));
     currentApps = data.apps || [];
     lastCheck = data.last_check || 0;
     lastCheckFailed = data.check_failed || 0;
     if (typeof data.check_ttl === 'number' && data.check_ttl > 0) checkTtl = data.check_ttl;
     supportsCheck = (typeof data.check_ttl === 'number');
+    if (data.ancli_version) document.getElementById('stVer').textContent = 'v' + data.ancli_version;
     renderApps(currentApps);
     renderCheckInfo();
-    document.getElementById('stVer').textContent = data.ancli_version || '?';
   } catch (e) {
-    wrap.innerHTML = '<div class="sub">加载失败: ' + e + '</div>';
+    wrap.innerHTML = '<div class="empty">加载失败：' + esc(e.message || e) + '</div>';
+    logLine('应用列表加载失败: ' + e, 'err');
   }
 }
 
-function renderApps(apps) {
-  const wrap = document.getElementById('apps');
-  wrap.innerHTML = '';
-  if (!apps.length) { wrap.innerHTML = '<div class="sub">registry 中没有可用工具 — 点「检查更新」拉取云端 registry</div>'; return; }
-  for (const a of apps) {
-    const el = document.createElement('div');
-    el.className = 'app glass';
-    const badges = [];
-    if (a.native) badges.push('<span class="badge native">native 直跑</span>');
-    if (a.installed) {
-      const ver = (a.installed_version && a.installed_version !== 'unknown') ? ' v' + esc(a.installed_version) : '';
-      const unverified = a.version_verified ? '' : ' · 未核实';
-      badges.push(a.active
-        ? '<span class="badge installed">已安装' + ver + unverified + '</span>'
-        : '<span class="badge broken">损坏</span>');
-      if (a.update_available) {
-        badges.push('<span class="badge update">可更新 → v' + esc(a.cloud_version) + '</span>');
-      } else if (!a.cloud_version || a.cloud_version === 'unknown' || a.cloud_source === 'none') {
-        badges.push('<span class="badge">官方版本未知</span>');
-      }
-      if (a.cloud_error) badges.push('<span class="badge broken">版本查询失败</span>');
-    } else {
-      badges.push('<span class="badge">未安装</span>');
-    }
-    if (a.configured_keys && a.configured_keys.length)
-      badges.push('<span class="badge">已配置: ' + a.configured_keys.join(', ') + '</span>');
-
-    let detail = '';
-    if (a.installed && a.cloud_version && a.cloud_version !== 'unknown' && a.cloud_source !== 'none') {
-      const label = a.cloud_checked ? '官方最新: v' + esc(a.cloud_version)
-                                    : '参考版本: v' + esc(a.cloud_version) + '（registry 声明，未联网核实）';
-      detail += '<div class="desc">' + label + ' · 来源: ' + esc(srcLabel(a.cloud_source)) +
-                (a.cloud_error ? ' · 查询失败: ' + esc(a.cloud_error) : '') + '</div>';
-    }
-    if (a.installed && !a.version_verified) {
-      detail += '<div class="desc">本地版本来自旧记录，点「检查更新」读取工具真实版本</div>';
-    }
-
-    let btns = '';
-    const hasEnv = (a.required_env_vars && a.required_env_vars.length) ||
-                   (a.optional_env_vars && a.optional_env_vars.length);
-    if (!a.installed) {
-      btns += '<button class="small primary" onclick="doInstall(\'' + a.id + '\')">安装</button>';
-    } else {
-      btns += '<button class="small' + (a.update_available ? ' primary' : '') +
-              '" title="' + esc('直接从官方源拉取最新：' + (a.update_cmd || ('ancli update ' + a.id))) +
-              '" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
-      if (hasEnv) btns += '<button class="small" onclick="openConfig(\'' + a.id + '\')">配置</button>';
-      btns += '<button class="small danger" onclick="doUninstall(\'' + a.id + '\')">卸载</button>';
-    }
-    el.innerHTML =
-      '<div class="head"><span class="name">' + esc(a.name) + '</span>' + badges.join('') + '</div>' +
-      '<div class="desc">' + esc(a.description) + '</div>' +
-      detail +
-      '<div class="btns">' + btns + '</div>';
-    wrap.appendChild(el);
-  }
+function esc(s) {
+  return String(s === undefined || s === null ? '' : s)
+    .replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Upstream source label for the "官方最新" line.
 const SOURCE_LABELS = [
   [/^github:/, '官方 GitHub'],
   [/^pypi:/, '官方 PyPI'],
@@ -533,13 +712,6 @@ function srcLabel(src) {
   return src || '未知来源';
 }
 
-// ---------- 版本检查状态（上次检查时间 / 过期自动检查） ----------
-let lastCheck = 0;          // epoch seconds of the last successful `ancli check`
-let lastCheckFailed = 0;    // upstream lookups that failed during that check
-let checkTtl = 21600;       // seconds, from the core (CHECK_TTL)
-let supportsCheck = false;  // false on module builds older than the check feature
-let autoCheckStarted = false;
-
 function fmtAge(sec) {
   if (sec < 60) return sec + ' 秒';
   if (sec < 3600) return Math.floor(sec / 60) + ' 分钟';
@@ -549,81 +721,182 @@ function fmtAge(sec) {
 
 function renderCheckInfo() {
   const el = document.getElementById('checkInfo');
-  if (!el) return;
-  if (!supportsCheck) {
-    el.textContent = '当前模块版本不支持官方版本检查 — 请先在管理器里更新 AnCLI 模块。';
-    return;
-  }
-  if (!lastCheck) {
-    el.textContent = '尚未检查过官方版本。';
-    return;
-  }
+  if (!supportsCheck) { el.textContent = '当前模块版本不支持版本检查'; return; }
+  if (!lastCheck) { el.textContent = '尚未检查官方版本'; return; }
   const age = Math.max(0, Math.floor(Date.now() / 1000) - lastCheck);
-  const installed = currentApps.filter(a => a.installed).length;
-  let msg = '上次检查官方版本: ' + fmtAge(age) + '前 · 已安装 ' + installed + ' 个工具';
-  if (lastCheckFailed) msg += ' · ' + lastCheckFailed + ' 项查询失败（会更快重试）';
+  let msg = '上次检查 ' + fmtAge(age) + '前';
+  if (lastCheckFailed) msg += ' · ' + lastCheckFailed + ' 项查询失败';
   el.textContent = msg;
+}
+
+function renderApps(apps) {
+  const wrap = document.getElementById('apps');
+  const pending = apps.filter(a => a.installed && a.update_available).length;
+  setStat('stUpdates', pending ? pending + ' 个' : '无', pending ? null : 'ok');
+  setStat('stCount', apps.filter(a => a.installed).length + ' 个');
+  if (!apps.length) {
+    wrap.innerHTML = '<div class="card empty">registry 中没有可用工具 — 点「检查更新」拉取云端 registry</div>';
+    return;
+  }
+  wrap.innerHTML = apps.map(a => {
+    const chips = [];
+    let state = 'idle';
+    if (a.native) { chips.push('<span class="chip info"><span class="dot"></span>native 直跑</span>'); state = 'native'; }
+
+    if (a.installed) {
+      if (a.active) {
+        state = a.update_available ? 'update' : 'installed';
+        const ver = (a.installed_version && a.installed_version !== 'unknown') ? ' v' + esc(a.installed_version) : '';
+        chips.push('<span class="chip' + (a.version_verified ? ' ok' : ' warn') + '"><span class="dot"></span>已安装' + ver +
+                   (a.version_verified ? '' : ' · 未核实') + '</span>');
+      } else {
+        state = 'broken';
+        chips.push('<span class="chip danger"><span class="dot"></span>已损坏</span>');
+      }
+      if (a.update_available) {
+        chips.push('<span class="chip update"><span class="dot"></span>可更新 → v' + esc(a.cloud_version) + '</span>');
+      } else if (!a.cloud_version || a.cloud_version === 'unknown' || a.cloud_source === 'none') {
+        chips.push('<span class="chip plain">官方版本未知</span>');
+      }
+      if (a.cloud_error) chips.push('<span class="chip danger">版本查询失败</span>');
+    } else {
+      chips.push('<span class="chip plain">未安装</span>');
+    }
+
+    const details = [];
+    if (a.installed && a.cloud_version && a.cloud_version !== 'unknown' && a.cloud_source !== 'none') {
+      const label = a.cloud_checked ? '官方最新' : '参考版本';
+      details.push(label + ' <b>v' + esc(a.cloud_version) + '</b> · ' + esc(srcLabel(a.cloud_source)) +
+                   (a.cloud_error ? ' · 查询失败' : ''));
+    }
+    const keys = a.configured_keys || [];
+    if (keys.length) details.push('已配置 ' + esc(keys.join(' · ')));
+    if (a.installed && !a.version_verified) details.push('本地版本来自旧记录，点「检查更新」读取工具真实版本');
+
+    const hasEnv = (a.required_env_vars && a.required_env_vars.length) ||
+                   (a.optional_env_vars && a.optional_env_vars.length);
+    const btns = [];
+    if (!a.installed) {
+      btns.push('<button class="btn xs primary" data-act="install">安装</button>');
+    } else {
+      btns.push('<button class="btn xs' + (a.update_available ? ' primary' : '') + '" data-act="update" title="' +
+                esc('从官方源拉取最新：' + (a.update_cmd || ('ancli update ' + a.id))) + '">更新</button>');
+      if (hasEnv) btns.push('<button class="btn xs" data-act="config">配置</button>');
+      btns.push('<button class="btn xs danger" data-act="uninstall">卸载</button>');
+    }
+
+    const who = a.id || a.name || '?';
+    const initial = esc(String(a.name || who).trim().charAt(0).toUpperCase());
+    return '<div class="app" data-state="' + state + '" data-id="' + esc(a.id) + '">' +
+             '<div class="mono" aria-hidden="true">' + initial + '</div>' +
+             '<div class="app-main">' +
+               '<div class="app-title"><span class="name">' + esc(a.name) + '</span>' + chips.join('') + '</div>' +
+               (a.description ? '<div class="desc">' + esc(a.description) + '</div>' : '') +
+               (details.length ? '<div class="detail">' + details.join('<br>') + '</div>' : '') +
+             '</div>' +
+             '<div class="app-actions">' + btns.join('') + '</div>' +
+           '</div>';
+  }).join('');
+}
+
+// ---------- 动作 ----------
+function updateTooltip(id) { return id; }
+
+async function doInstall(id) {
+  const app = currentApps.find(a => a.id === id) || { name: id };
+  if (!confirm('安装 ' + app.name + '？\n首次安装需要下载依赖，耗时较长（后台执行，可继续浏览）。')) return;
+  setBusy(true, '开始安装 ' + app.name);
+  try { await runBackground(ANCLI + ' install ' + id); }
+  finally { setBusy(false); await loadApps(); await loadStatus(); }
+}
+
+async function doUpdate(id) {
+  const app = currentApps.find(a => a.id === id) || { name: id };
+  if (!app.update_available) {
+    logLine('检测显示 ' + app.name + ' 已是 v' + (app.installed_version || '?') + '，仍将从官方源重新拉取最新版本。', 'dim');
+  }
+  setBusy(true, '开始更新 ' + app.name);
+  try { await runBackground(ANCLI + ' update ' + id); }
+  finally { setBusy(false); await loadApps(); await loadStatus(); }
+}
+
+async function doUninstall(id) {
+  const app = currentApps.find(a => a.id === id) || { name: id };
+  if (!confirm('卸载 ' + app.name + '？\n（用户数据与密钥会保留，只有再安装时才会用到）')) return;
+  setBusy(true);
+  try { await ancli('uninstall ' + id); }
+  catch (e) { /* 已在输出面板记录 */ }
+  finally { setBusy(false); await loadApps(); await loadStatus(); }
+}
+
+async function doCheck() {
+  if (!supportsCheck) { toast('当前模块版本不支持版本检查，请先更新 AnCLI 模块', 'err'); return; }
+  setBusy(true, '查询官方最新版本…');
+  try { await runBackground(ANCLI + ' check'); }
+  finally { setBusy(false); await loadApps(); await loadStatus(); }
+}
+
+async function doRepair() {
+  if (!confirm('运行环境修复？\n会重写 DNS、权限、wrapper，并统一全局 skills 目录。')) return;
+  setBusy(true, '修复环境中…');
+  try { await runBackground(ANCLI + ' repair'); }
+  finally { setBusy(false); await loadStatus(); await loadApps(); }
 }
 
 async function maybeAutoCheck() {
   if (autoCheckStarted || !supportsCheck) return;
   const age = lastCheck ? Math.floor(Date.now() / 1000) - lastCheck : Infinity;
   if (age < checkTtl) return;
-  if (!currentApps.some(a => a.installed)) return;   // nothing installed -> nothing to check
+  if (!currentApps.some(a => a.installed)) return;
   autoCheckStarted = true;
-  log('官方版本信息已过期（' + (lastCheck ? fmtAge(age) + '前' : '从未检查') + '），自动运行 ancli check…');
-  await runBackground(ANCLI + ' check');
-  await loadApps();
+  logLine('官方版本信息已过期（' + (lastCheck ? fmtAge(age) + '前' : '从未检查') + '），自动检查…', 'dim');
+  setBusy(true);
+  try { await runBackground(ANCLI + ' check'); }
+  finally { setBusy(false); await loadApps(); }
 }
 
-function esc(s) {
-  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
+// ---------- 服务商预置 ----------
+const PROVIDERS = [
+  { id: 'deepseek', name: 'DeepSeek', base: 'https://api.deepseek.com', anthropicBase: 'https://api.deepseek.com/anthropic',
+    keyUrl: 'https://platform.deepseek.com/api_keys', auth: 'key',
+    models: ['deepseek-chat', 'deepseek-reasoner'], note: '国内直连 · 官方 Claude 兼容端点' },
+  { id: 'zhipu', name: '智谱 GLM', base: 'https://open.bigmodel.cn/api/paas/v4',
+    keyUrl: 'https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys',
+    anthropicBase: 'https://open.bigmodel.cn/api/anthropic', auth: 'key',
+    models: ['glm-5.2', 'glm-5.1', 'glm-4.7-flash', 'glm-4-long'], note: '国内直连 · 含免费模型 · 官方 Claude 兼容' },
+  { id: 'aliyun', name: '阿里云百炼', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', keyUrl: 'https://bailian.console.aliyun.com',
+    models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'], note: '国内直连 · 通义千问' },
+  { id: 'kimi', name: 'Kimi 月之暗面', base: 'https://api.moonshot.cn/v1', keyUrl: 'https://platform.kimi.com/console/api-keys',
+    anthropicBase: 'https://api.moonshot.cn/anthropic', auth: 'token',
+    models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'], note: '长上下文（1M）· 官方 Claude 兼容' },
+  { id: 'xai', name: 'xAI Grok', base: 'https://api.x.ai/v1', keyUrl: 'https://console.x.ai/team/default/api-keys',
+    models: ['grok-4.5', 'grok-4.3'] },
+  { id: 'siliconflow', name: '硅基流动', base: 'https://api.siliconflow.cn/v1', keyUrl: 'https://cloud.siliconflow.cn/account/ak',
+    models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2.5-Coder-32B-Instruct'], note: '国内 · 含免费模型' },
+];
 
-async function doInstall(id) {
-  if (!confirm('安装 ' + id + '？（首次安装会下载 Ubuntu 依赖，耗时较长，后台执行中可继续浏览）')) return;
-  await runBackground(ANCLI + ' install ' + id);
-  await loadApps();
-}
-
-async function doUninstall(id) {
-  if (!confirm('卸载 ' + id + '？')) return;
-  document.querySelectorAll('button').forEach(b => b.disabled = true);
-  try { await ancli('uninstall ' + id); } catch (e) { /* logged */ }
-  document.querySelectorAll('button').forEach(b => b.disabled = false);
-  await loadApps();
-}
-
-async function doUpdate(id) {
-  // The update command always pulls the vendor's latest channel, so clicking
-  // 更新 is a valid "force re-pull" even when the badge says up to date.
-  const app = currentApps.find(a => a.id === id);
-  if (app && !app.update_available) {
-    log('检测显示 ' + app.name + ' 已是 v' + (app.installed_version || '?') +
-        '，仍将从官方源重新拉取最新版本。');
-  }
-  await runBackground(ANCLI + ' update ' + id);
-  await loadApps();
-}
-
-// ---------- 配置弹窗（含服务商一键预置） ----------
-let selectedProvider = null;
-
-// 兼容通道密钥（配合 *_API_BASE 使用，label 跟随 provider）
+const VAR_HINTS = {
+  ANTHROPIC_API_KEY: 'Anthropic Claude API 密钥',
+  ANTHROPIC_AUTH_TOKEN: 'Claude 兼容密钥（Kimi / OpenRouter 专用；填此项时 ANTHROPIC_API_KEY 留空）',
+  ANTHROPIC_BASE_URL: 'Claude 兼容 API 地址（选择服务商后自动填充）',
+  ANTHROPIC_MODEL: 'claude 默认模型名',
+  HTTP_PROXY: 'HTTP 代理地址（如 http://192.168.1.5:7890）',
+  HTTPS_PROXY: 'HTTPS 代理地址',
+  ALL_PROXY: '全协议代理地址',
+};
+const BASE_FIELDS = ['ANTHROPIC_BASE_URL'];
+const MODEL_FIELDS = ['ANTHROPIC_MODEL'];
 const COMPAT_KEYS = ['ANTHROPIC_API_KEY'];
 
 function buildPresetBar(app) {
   const bar = document.getElementById('presetBar');
   const fields = (app.required_env_vars || []).concat(app.optional_env_vars || []);
-  const hasBase = fields.some(f => BASE_FIELDS.includes(f));
-  const hasModel = fields.some(f => MODEL_FIELDS.includes(f));
+  const relevant = fields.some(f => BASE_FIELDS.includes(f) || MODEL_FIELDS.includes(f));
   bar.innerHTML = '';
-  if (!hasBase && !hasModel) {
-    document.getElementById('presetNote').textContent = '';
-    return;
-  }
+  if (!relevant) { document.getElementById('presetNote').textContent = ''; return; }
   for (const p of PROVIDERS) {
     const b = document.createElement('button');
+    b.type = 'button';
     b.textContent = p.name;
     b.onclick = () => applyProvider(p);
     if (selectedProvider && selectedProvider.id === p.id) b.classList.add('sel');
@@ -638,26 +911,23 @@ function applyProvider(p) {
   const note = document.getElementById('presetNote');
   let msg = '已选择 <b>' + esc(p.name) + '</b>：API 地址与默认模型已填充' +
     (p.note ? ' · ' + esc(p.note) : '') +
-    ' · 密钥申请 <a href="' + esc(p.keyUrl) + '" target="_blank" rel="noopener">' + esc(p.keyUrl) + '</a>' +
+    ' · <a href="' + esc(p.keyUrl) + '" target="_blank" rel="noopener">申请密钥</a>' +
     '<br>模型下拉可切换：' + esc((p.models || []).join(' / '));
   if (p.auth === 'token') {
-    msg += '<br><b>该平台需用 ANTHROPIC_AUTH_TOKEN 填密钥，ANTHROPIC_API_KEY 请保持为空（避免 401 冲突）</b>';
+    msg += '<br><b>该平台需用 ANTHROPIC_AUTH_TOKEN 填密钥，ANTHROPIC_API_KEY 留空（避免 401 冲突）</b>';
   } else if (!p.anthropicBase) {
-    msg += '<br><span style="color:var(--warn)">该服务商未确认 Anthropic 兼容端点，Claude Code 可能无法直连</span>';
+    msg += '<br>该服务商未确认 Anthropic 兼容端点，Claude Code 可能无法直连';
   }
   note.innerHTML = msg;
 }
 
-// 渲染配置表单（保留已输入的值；模型字段在选中 provider 后变为下拉）
 function renderCfgFields(app) {
-  // 1) 收集当前值（input + select）
   const vals = {};
-  document.querySelectorAll('#cfgFields input, #cfgFields select').forEach(el => {
-    vals[el.dataset.var] = el.value;
-  });
+  document.querySelectorAll('#cfgFields input, #cfgFields select').forEach(el => { vals[el.dataset.var] = el.value; });
   const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
   const wrap = document.getElementById('cfgFields');
-  wrap.innerHTML = vars.map(v => {
+
+  const fieldHtml = v => {
     const required = (app.required_env_vars || []).includes(v);
     const isModel = MODEL_FIELDS.includes(v);
     const isCompatKey = COMPAT_KEYS.includes(v);
@@ -665,12 +935,10 @@ function renderCfgFields(app) {
     let label = v;
     let placeholder = VAR_HINTS[v] || '可选的 API 密钥 / 地址 / 配置项';
     let hint = VAR_HINTS[v] || '';
-    if (selectedProvider) {
-      if (isCompatKey) {
-        label = selectedProvider.name + ' API 密钥（' + v + '）';
-        placeholder = '申请密钥: ' + selectedProvider.keyUrl;
-        hint = '填入 ' + selectedProvider.name + ' 的 API 密钥';
-      }
+    if (selectedProvider && isCompatKey) {
+      label = selectedProvider.name + ' API 密钥';
+      placeholder = '申请密钥: ' + selectedProvider.keyUrl;
+      hint = '填入 ' + selectedProvider.name + ' 的 API 密钥';
     }
 
     let field;
@@ -681,18 +949,30 @@ function renderCfgFields(app) {
         models.map(m => '<option' + (m === cur ? ' selected' : '') + '>' + esc(m) + '</option>').join('') +
         '<option value="__custom__"' + (models.indexOf(cur) < 0 ? ' selected' : '') + '>自定义…</option></select>';
     } else if (selectedProvider && BASE_FIELDS.includes(v)) {
-      // 选中服务商后 API 地址由预置覆盖（优先 Anthropic 兼容端点）
-      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" value="' + esc(selectedProvider.anthropicBase || selectedProvider.base) + '">';
+      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" value="' +
+              esc(selectedProvider.anthropicBase || selectedProvider.base) + '">';
     } else {
-      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' + esc(placeholder) + '" value="' + esc(vals[v] || '') + '">';
+      field = '<input data-var="' + esc(v) + '" autocomplete="off" spellcheck="false" placeholder="' +
+              esc(placeholder) + '" value="' + esc(vals[v] || '') + '">';
     }
 
-    return '<label>' + esc(label) + (required ? ' <span style="color:var(--err)">*必填</span>' : ' <span style="color:var(--muted)">可选</span>') +
-           '</label>' + field +
-           (hint ? '<div class="hint">' + esc(hint) + '</div>' : '');
-  }).join('');
+    // A hint that merely repeats the placeholder is noise: the placeholder already
+    // shows inside the empty field.
+    const hintHtml = (hint && hint !== placeholder) ? '<div class="hint">' + esc(hint) + '</div>' : '';
+    return '<div class="field"><label>' + esc(label) +
+           (required ? '<span class="tag">必填</span>' : '') + '</label>' + field + hintHtml + '</div>';
+  };
 
-  // select 选"自定义…"时切换回输入框
+  // Proxy plumbing is rarely the reason someone opens this dialog: keep it folded.
+  const ADVANCED = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY'];
+  const primary = vars.filter(v => !ADVANCED.includes(v));
+  const advanced = vars.filter(v => ADVANCED.includes(v));
+  wrap.innerHTML = primary.map(fieldHtml).join('') +
+    (advanced.length
+      ? '<details class="adv"><summary>高级 · 代理设置（' + advanced.length + '）</summary>' +
+        advanced.map(fieldHtml).join('') + '</details>'
+      : '');
+
   wrap.querySelectorAll('select').forEach(sel => {
     sel.addEventListener('change', () => {
       if (sel.value === '__custom__') {
@@ -707,7 +987,7 @@ function openConfig(id) {
   const app = currentApps.find(a => a.id === id);
   if (!app) return;
   const vars = (app.required_env_vars || []).concat(app.optional_env_vars || []);
-  if (!vars.length) { alert('该工具没有可配置的环境变量'); return; }
+  if (!vars.length) { toast('该工具没有可配置的环境变量'); return; }
   cfgApp = app;
   selectedProvider = null;
   document.getElementById('cfgTitle').textContent = '配置 ' + app.name;
@@ -715,108 +995,147 @@ function openConfig(id) {
   document.getElementById('presetNote').textContent = '';
   buildPresetBar(app);
   renderCfgFields(app);
-  document.getElementById('cfgOverlay').classList.add('show');
+  const ov = document.getElementById('cfgOverlay');
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
 }
 
-document.getElementById('cfgCancel').onclick = () =>
-  document.getElementById('cfgOverlay').classList.remove('show');
+function closeConfig() {
+  const ov = document.getElementById('cfgOverlay');
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
 
-document.getElementById('cfgSave').onclick = async () => {
+async function saveConfig() {
   if (!cfgApp) return;
   const sets = [];
   document.querySelectorAll('#cfgFields input, #cfgFields select').forEach(el => {
     const v = el.value.trim();
     if (v && v !== '__custom__') sets.push('--set ' + encodeURIComponent(el.dataset.var) + '=' + encodeURIComponent(v));
   });
-  document.getElementById('cfgOverlay').classList.remove('show');
-  if (!sets.length) { await loadApps(); return; }
-  document.querySelectorAll('button').forEach(b => b.disabled = true);
-  try { await ancli('config ' + cfgApp.id + ' ' + sets.join(' ')); } catch (e) { /* logged */ }
-  document.querySelectorAll('button').forEach(b => b.disabled = false);
-  await loadApps();
+  const id = cfgApp.id;
+  closeConfig();
+  if (!sets.length) { toast('没有填写任何内容，未做修改'); return; }
+  setBusy(true, '写入配置…');
+  try {
+    await ancli('config ' + id + ' ' + sets.join(' '));
+    toast('配置已保存');
+  } catch (e) { toast('配置保存失败，见输出', 'err'); }
+  finally { setBusy(false); await loadApps(); }
+}
+
+/* ================= 事件绑定 ================= */
+document.getElementById('apps').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn || busy > 0) return;
+  const host = btn.closest('.app');
+  if (!host) return;
+  const id = host.dataset.id;
+  const act = btn.dataset.act;
+  if (act === 'install') doInstall(id);
+  else if (act === 'update') doUpdate(id);
+  else if (act === 'config') openConfig(id);
+  else if (act === 'uninstall') doUninstall(id);
+});
+
+document.getElementById('btnCheck').onclick = doCheck;
+document.getElementById('btnRefresh').onclick = async () => {
+  setBusy(true, '刷新状态…');
+  try { await loadStatus(); await loadApps(); }
+  finally { setBusy(false); }
+};
+document.getElementById('btnRepair').onclick = doRepair;
+
+document.getElementById('cfgCancel').onclick = closeConfig;
+document.getElementById('cfgClose').onclick = closeConfig;
+document.getElementById('cfgSave').onclick = saveConfig;
+document.getElementById('cfgOverlay').addEventListener('click', e => {
+  if (e.target.id === 'cfgOverlay') closeConfig();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
+});
+
+document.getElementById('btnLogClear').onclick = () => {
+  logEl().innerHTML = '';
+  logLines = 0;
+  document.getElementById('logCount').textContent = '0 行';
+};
+document.getElementById('btnLogFollow').onclick = e => {
+  logFollow = !logFollow;
+  e.currentTarget.setAttribute('aria-pressed', String(logFollow));
+  if (logFollow) logEl().scrollTop = logEl().scrollHeight;
+};
+document.getElementById('btnLogCopy').onclick = async () => {
+  const text = logEl().innerText;
+  if (!text) { toast('输出为空'); return; }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+    else {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    toast('已复制输出');
+  } catch (e) { toast('复制失败，请长按选择文本', 'err'); }
 };
 
-document.getElementById('btnRefresh').onclick = async () => { await loadStatus(); await loadApps(); };
-
-document.getElementById('btnCheck').onclick = async () => {
-  if (!supportsCheck) { alert('当前模块版本不支持官方版本检查 — 请先在管理器里更新 AnCLI 模块。'); return; }
-  await runBackground(ANCLI + ' check');
-  await loadStatus(); await loadApps();
-};
-
-document.getElementById('btnRepair').onclick = async () => {
-  if (!confirm('运行 ancli repair（修复环境/权限并重新生成 wrapper）？')) return;
-  await runBackground(ANCLI + ' repair');
-  await loadStatus(); await loadApps();
-};
-
-// ---------- 软键盘检测（弹出时降级液态玻璃，避免卡顿/闪屏） ----------
+// ---------- 软键盘检测（弹出时关掉模糊，避免卡顿/闪屏） ----------
 function setupImeGuard() {
   const vv = window.visualViewport;
+  const mark = open => {
+    document.body.classList.toggle('ime-open', open);
+    if (open) {
+      const inp = document.activeElement;
+      if (inp && (inp.tagName === 'INPUT' || inp.tagName === 'SELECT')) {
+        try { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { /* ignore */ }
+      }
+    }
+  };
   if (!vv) {
-    // Fallback: classic resize heuristic
     let lastH = window.innerHeight;
     window.addEventListener('resize', () => {
       const h = window.innerHeight;
-      if (Math.abs(lastH - h) > 120) {
-        document.body.classList.toggle('ime-open', h < lastH);
-        lastH = h;
-      }
+      if (Math.abs(lastH - h) > 120) { mark(h < lastH); lastH = h; }
     });
     return;
   }
-  let lastH = vv.height;
-  vv.addEventListener('resize', () => {
-    const h = vv.height;
-    // Keyboard visible when the visual viewport shrinks significantly
-    const open = h < window.innerHeight * 0.72;
-    document.body.classList.toggle('ime-open', open);
-    // Keep dialog input visible above the keyboard
-    const inp = document.activeElement;
-    if (open && inp && inp.tagName === 'INPUT') {
-      try { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { /* ignore */ }
-    }
-    lastH = h;
-  });
+  vv.addEventListener('resize', () => { mark(vv.height < window.innerHeight * 0.72); });
 }
 
-// ---------- 主题：跟随系统 / 手动指定 ----------
+// ---------- 主题 ----------
 function applyTheme(mode) {
   const root = document.documentElement;
   if (mode === 'auto') {
-    root.removeAttribute('data-theme');
     const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (dark) root.setAttribute('data-theme', 'dark');
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
   } else {
     root.setAttribute('data-theme', mode);
   }
-  document.querySelectorAll('#themeSwitch button').forEach(b =>
-    b.classList.toggle('active', b.dataset.theme === mode));
+  document.querySelectorAll('#themeSwitch button').forEach(b => b.classList.toggle('active', b.dataset.theme === mode));
   try { localStorage.setItem('ancli_theme', mode); } catch (e) { /* ignore */ }
 }
-
-document.querySelectorAll('#themeSwitch button').forEach(b => {
-  b.onclick = () => applyTheme(b.dataset.theme);
-});
+document.querySelectorAll('#themeSwitch button').forEach(b => { b.onclick = () => applyTheme(b.dataset.theme); });
 if (window.matchMedia) {
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-    const saved = localStorage.getItem('ancli_theme') || 'auto';
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    let saved = 'auto';
+    try { saved = localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { /* ignore */ }
     if (saved === 'auto') applyTheme('auto');
   });
 }
 
+// ---------- 启动 ----------
 (async function init() {
   setupImeGuard();
-  // Best-effort sweep of per-run logs left behind when a previous page was closed
-  // (or a job was aborted) before its cleanup could run.
-  try { execCmd("find /data/local/tmp/ancli -maxdepth 1 -name '.webui_*.log*' -mmin +120 -delete 2>/dev/null"); }
-  catch (e) { /* ignore */ }
   let saved = 'auto';
   try { saved = localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { /* ignore */ }
   applyTheme(saved);
-  log('AnCLI WebUI 初始化…');
+  // 清理上次页面被关闭/任务中断时残留的单次日志（2 小时前）
+  try { execCmd("find /data/local/tmp/ancli -maxdepth 1 -name '.webui_*.log*' -mmin +120 -delete 2>/dev/null"); }
+  catch (e) { /* ignore */ }
   ANCLI = await findAncli();
-  log('ancli 路径: ' + ANCLI);
   await loadStatus();
   await loadApps();
   await maybeAutoCheck();

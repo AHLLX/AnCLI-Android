@@ -2163,6 +2163,17 @@ if __name__ == "__main__":
                 else:
                     setup_skill_dirs()
                 sys.exit(0)
+            elif action == "status":
+                # No registry needed: fetching one would let retry diagnostics land
+                # on stdout and break the WebUI's JSON.parse (observed on device).
+                if "--json" in sys.argv:
+                    status_json()
+                    sys.exit(0)
+                print(f"AnCLI v{VERSION}")
+                print(f"rootfs ready: {os.path.exists(f'{ROOTFS}/bin/bash')}")
+                print(f"proot deployed: {os.path.exists(f'{ANCLI_DIR}/bin/proot')}")
+                print(f"installed apps: {len(load_installed())}")
+                sys.exit(0)
             elif action == "check":
                 if "--json" in sys.argv:
                     cache = check_updates_json()
@@ -2196,14 +2207,6 @@ if __name__ == "__main__":
                     reconfigure_app(app_id, registry, set_env if set_env else None)
                 elif action == "repair":
                     repair_env(registry)
-                elif action == "status":
-                    if "--json" in sys.argv:
-                        status_json()
-                        sys.exit(0)
-                    print(f"AnCLI v{VERSION}")
-                    print(f"rootfs ready: {os.path.exists(f'{ROOTFS}/bin/bash')}")
-                    print(f"proot deployed: {os.path.exists(f'{ANCLI_DIR}/bin/proot')}")
-                    print(f"installed apps: {len(load_installed())}")
                 else:
                     print_help()
                 # Non-zero exit on a failed install/update/uninstall so the WebUI

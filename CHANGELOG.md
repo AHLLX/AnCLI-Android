@@ -1,3 +1,43 @@
+## Unreleased — WebUI rebuilt (clean layout, verified by rendering)
+
+### Fixed
+- **`ancli status --json` could return unparseable JSON.** The action fell through to the branch that
+  fetches the cloud registry first, so a retry diagnostic (`[!] Retry 1/3: …`) landed on stdout ahead
+  of the payload and the WebUI's `JSON.parse` failed — the status strip silently kept stale values.
+  `status` is now dispatched before the registry fetch (it needs no registry) and its dead duplicate
+  branch is gone.
+- **The page scrolled sideways.** Long unbreakable content (configured-key lists, JSON in the output
+  panel) pushed the layout wider than the viewport; grid children now shrink (`min-width: 0`) and long
+  values wrap instead of being clipped.
+- Install/update/uninstall/config no longer leave every button enabled mid-run (a double tap could
+  start two jobs), and the running action can no longer be re-triggered by a stale render.
+
+### Changed
+- **Layout and visual language rebuilt** on a neutral surface palette with one bronze accent, hairline
+  borders and a single soft shadow — the previous "liquid glass" blur on every card is gone (only the
+  sticky bar and the dialog sheet blur, and the blur is dropped while the soft keyboard is open, which
+  is where it used to cost frames).
+- **Status strip** now answers the useful questions at a glance: rootfs / proot / installed count /
+  **updates available** (the module version moved to the header, where it was already shown).
+- **Tool rows**: status monogram, name plus state chips (installed · verified, update → vX, broken,
+  native), one-line description, then a muted detail line for the official version + source and the
+  configured keys. An updateable tool gets an accent rail and an accent action button.
+- **Output panel**: capped at the last 500 lines with a line counter, auto-scroll toggle, copy-all and
+  clear. `status/list --json` payloads are no longer dumped there (they go through a quiet path and
+  only surface on failure), the WebUI bridge connects with a single log line, and ANSI codes are
+  stripped as before.
+- **Config dialog** became a bottom sheet: keyboard/mouse dismissible (`Esc`, backdrop, ×), body scroll
+  lock, provider presets as a scrolling chip row, hints no longer duplicate the placeholder, and the
+  proxy fields fold into an "高级 · 代理设置" section.
+- Accessibility: `:focus-visible` rings, `aria-live` status regions, `prefers-reduced-motion` respected,
+  safe-area insets for notches and the keyboard.
+
+### Verification
+- Rendering reviewed with a new local harness (`.webui-preview/`, `window.ksu` stubbed with device
+  payloads): light, dark, dialog and console screenshots, which is how the sideways overflow and the
+  duplicated hint text were caught. Deployed to the device (module `webroot/index.html`, 0644, no BOM,
+  LF) and the page loads against the live bridge.
+
 ## Unreleased — reboot-verified boot fixes + real DNS inheritance
 
 ### Boot script (verified across three real reboots)

@@ -32,3 +32,8 @@ __pycache__/
 
 # KernelSU install logs
 KernelSU_install_log_*.log
+
+# WebUI screenshot harness scratch (build.js itself is committed)
+.webui-preview/chrome-profile/
+.webui-preview/preview-*.html
+.webui-preview/shot-*.png
