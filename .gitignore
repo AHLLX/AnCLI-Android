@@ -37,3 +37,8 @@ KernelSU_install_log_*.log
 .webui-preview/chrome-profile/
 .webui-preview/preview-*.html
 .webui-preview/shot-*.png
+
+# Scratch files (commit messages, temp extractions)
+.commit-msg*.txt
+.git-commit-msg.txt
+.tmp_*
