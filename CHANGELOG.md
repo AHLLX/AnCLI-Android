@@ -1,3 +1,28 @@
+## Unreleased — DeepSeek Harness app + WebUI official-version detection
+
+### New app
+- **DeepSeek Harness (`dsh`)** joins the registry: installed from the official npm package
+  `@deepseek-ai/dsh` after bootstrapping a modern Node (the container's apt Node is 18, `dsh`
+  needs `^22.19 || >=24`). Registry entry exposes `DEEPSEEK_API_KEY`/`DEEPSEEK_BASE_URL` plus the
+  proxy trio, probes `dsh --version`, and resolves its official latest version from the npm
+  registry. `dsh web` serves the Web UI on `127.0.0.1:3080` and reaches the phone's browser through
+  AnCLI's existing `xdg-open` bridge; `dsh headless "task"` runs one-shot tasks. DSH reads exactly
+  the proxy variables the AnCLI wrapper already exports, and its `$DSH_HOME` (`/root/.dsh`) survives
+  module upgrades.
+- Version detection learned two things the new app needed: **scoped npm names** are queried as one
+  path segment (`@deepseek-ai%2Fdsh`) and **prereleases are compared as prereleases** —
+  `0.1.7-rc.2 < 0.1.7-rc.3 < 0.1.7` — instead of being flattened to `0.1.7`, which would have
+  frozen the update badge for a project that only ships `-rc.N`.
+
+### Device-verified deploy path
+- Hot-patching a running module works **from inside the container**, not from a `su` one-liner: the
+  KernelSU mount namespace used by `su -c` denies writes to `/data/local/tmp/ancli/*` and
+  `/data/adb/modules/ancli/*` even with SELinux permissive, while the proot child (same kernel
+  objects) writes them fine. Verified by replacing `bin/ancli-core.py`, both registry copies,
+  `bin/ancli_env.sh` and `webroot/index.html`, and by deleting the stale `.webui_last.log` residue —
+  so the WebUI page *can* be updated without a reflash as long as the write goes through the
+  container.
+
 ## Unreleased — WebUI could not detect official versions
 
 ### Bug Fixes

@@ -28,6 +28,31 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 | **Claude Code** | Node.js/JS | Precompiled Release binary (NPM-free) |
 | **OpenCode** | Node.js/JS | Precompiled Release binary (NPM-free) |
 | **Grok** | Rust | Standalone release binary (proot mode) |
+| **DeepSeek Harness (dsh)** | Node.js/JS | npm package `@deepseek-ai/dsh` + Node LTS bootstrap (needs Node ≥ 22.19) |
+
+### DeepSeek Harness on Android
+
+`dsh` is the one app that is installed from **npm** rather than a prebuilt binary, because its
+launcher resolves 80+ plugin-bundle packages. The registry entry therefore bootstraps a modern
+Node first (the container's apt Node is 18; `dsh` requires `^22.19 || >=24`) and then installs the
+CLI from the official registry:
+
+```bash
+ancli install dsh        # apt xz-utils → npm i -g n → n lts → npm i -g @deepseek-ai/dsh
+dsh --version            # runtime version (also what `ancli check` probes)
+dsh web                  # Web UI on http://127.0.0.1:3080 — opens the phone's browser via AnCLI's xdg-open bridge
+dsh web --no-open        # …or just print the URL
+dsh headless "summarize this repo"   # one-shot task, prints the answer and exits
+```
+
+- **API key**: run `ancli config dsh` and set `DEEPSEEK_API_KEY` (optionally `DEEPSEEK_BASE_URL`),
+  or enter it in the Web UI under Settings → Models. Either way it lands in `/root/.dsh`
+  (`$DSH_HOME`), which module upgrades preserve.
+- **Proxy**: DSH reads `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY` — exactly what the AnCLI
+  wrapper already exports from the Android system proxy, so it works without TUN mode.
+- **Profiles**: `web`, `headless`, `sdk`, `sdk-minimal` and `acp` auto-initialize on first use.
+  `dsh tui` is *not* a shipped profile — install it with `dsh plugin --profile tui add …` (needs
+  `pnpm`) if you want the full-screen terminal agent.
 
 ## Installation
 

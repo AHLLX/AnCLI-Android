@@ -28,6 +28,23 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 | **Claude Code** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
 | **OpenCode** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
 | **Grok** | Rust (静态链接) | 独立发布二进制文件（PRoot 容器） |
+| **DeepSeek Harness (dsh)** | Node.js/JS | npm 包 `@deepseek-ai/dsh` + Node LTS 引导（要求 Node ≥ 22.19） |
+
+### 在安卓上使用 DeepSeek Harness
+
+`dsh` 是唯一从 **npm** 安装的工具（它的启动器要解析 80 多个插件 bundle 包），因此注册表条目会先引导一个现代 Node，再从官方源安装 CLI：
+
+```bash
+ancli install dsh        # apt xz-utils → npm i -g n → n lts → npm i -g @deepseek-ai/dsh
+dsh --version            # 运行时版本（也是 ancli check 探测的值）
+dsh web                  # Web UI 监听 http://127.0.0.1:3080，并通过 AnCLI 的 xdg-open 桥接直接拉起手机浏览器
+dsh web --no-open        # 或者只打印 URL，不自动开浏览器
+dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
+```
+
+- **API 密钥**：`ancli config dsh` 填 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_BASE_URL`），或在 Web UI 的 Settings → Models 里填写。两者都会落到 `/root/.dsh`（即 `$DSH_HOME`），模块升级不会丢。
+- **代理**：DSH 读取 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY`，正是 AnCLI wrapper 已经从安卓系统代理注入的变量，因此不需要 TUN 模式也能走代理。
+- **Profile**：`web`、`headless`、`sdk`、`sdk-minimal`、`acp` 首次运行会自动初始化；`dsh tui` **不是**内置 profile，需要 `dsh plugin --profile tui add …`（依赖 `pnpm`）才能用全屏终端形态。
 
 ## 安装方法
 

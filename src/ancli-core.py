@@ -1391,9 +1391,33 @@ def _binary_exists(exec_name):
 
 def _first_version(text):
     """Extract the first version-like token from arbitrary tool output:
-    'v2.1.283' -> '2.1.283', 'grok 1.0.0 (3cd0d0cbce)' -> '1.0.0'. None if absent."""
-    m = re.search(r'\d+(?:\.\d+)+', str(text or ''))
-    return m.group(0) if m else None
+    'v2.1.283' -> '2.1.283', 'grok 1.0.0 (3cd0d0cbce)' -> '1.0.0',
+    '0.1.7-rc.2' -> '0.1.7-rc.2' (a prerelease suffix stays attached).
+    Up to four numeric segments are kept. None if nothing parses."""
+    m = re.search(r'(\d+(?:\.\d+){1,3})(?:-([0-9A-Za-z.\-]+))?', str(text or ''))
+    if not m:
+        return None
+    return f"{m.group(1)}-{m.group(2)}" if m.group(2) else m.group(1)
+
+
+def _ver_key(v):
+    """Total-order sortable key for a version string, prerelease-aware.
+
+    Semver-ish ordering matters here because some upstreams (DeepSeek Harness)
+    ship only prereleases: '0.1.7-rc.2' < '0.1.7-rc.3' < '0.1.7'. Comparing bare
+    numeric cores would call all three equal and freeze the update badge.
+    Returns None when no version can be parsed (callers treat that as unknown)."""
+    m = re.search(r'(\d+(?:\.\d+){0,3})(?:[-+]([0-9A-Za-z.\-]+))?', str(v or ''))
+    if not m:
+        return None
+    core = [int(x) for x in m.group(1).split('.')]
+    core = (core + [0, 0, 0, 0])[:4]
+    prerelease = m.group(2)
+    if not prerelease:
+        return tuple(core) + (1, 0, 0, 0, 0)
+    nums = [int(x) for x in re.findall(r'\d+', prerelease)][:4]
+    nums = (nums + [0, 0, 0, 0])[:4]
+    return tuple(core) + (0,) + tuple(nums)
 
 
 def _ver_tuple(v):
@@ -1415,10 +1439,10 @@ def _update_available(local_ver, cloud_ver, local_trusted=True):
     "newer" than a tool's real version and would silently hide every update.
     For those records any difference counts as a candidate — one `ancli check`
     (or `ancli update`) rewrites the record with the tool's real version."""
-    cv = _ver_tuple(cloud_ver)
+    cv = _ver_key(cloud_ver)
     if cv is None:
         return False
-    lv = _ver_tuple(local_ver)
+    lv = _ver_key(local_ver)
     if lv is None:
         return True
     if not local_trusted:
@@ -1483,7 +1507,9 @@ def _latest_version(app, registry):
             data = _http_json(f"https://pypi.org/pypi/{spec.get('package', '')}/json")
             return _first_version(_json_path(data, 'info.version')), label, None
         if src == 'npm':
-            data = _http_json(f"https://registry.npmjs.org/{spec.get('package', '')}/latest")
+            pkg = str(spec.get('package', ''))
+            # A scoped name is one path segment on the registry: @scope%2Fname
+            data = _http_json(f"https://registry.npmjs.org/{pkg.replace('/', '%2F')}/latest")
             return _first_version(_json_path(data, 'version')), label, None
         if src == 'json':
             data = _http_json(spec.get('url', ''))

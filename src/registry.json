@@ -115,6 +115,31 @@
         "note": "Vendor channel pointer (x.ai/cli/<channel>) with the GCS mirror the installer falls back to."
       },
       "version": "1.0.41"
+    },
+    "dsh": {
+      "name": "DeepSeek Harness",
+      "description": "DeepSeek's agent harness: `dsh web` UI, `dsh headless \"task\"`",
+      "author": "DeepSeek AI",
+      "install_mode": "proot",
+      "install_cmd": "curl -fsSL -o /tmp/node.tar.gz https://registry.npmmirror.com/-/binary/node/v24.21.0/node-v24.21.0-linux-arm64.tar.gz || curl -fsSL -o /tmp/node.tar.gz https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.gz && tar -xzf /tmp/node.tar.gz -C /usr/local --strip-components=1 && rm -f /tmp/node.tar.gz && /usr/local/bin/npm install -g @deepseek-ai/dsh || /usr/local/bin/npm install -g --registry=https://registry.npmmirror.com @deepseek-ai/dsh",
+      "update_cmd": "npm install -g @deepseek-ai/dsh || npm install -g --registry=https://registry.npmmirror.com @deepseek-ai/dsh",
+      "uninstall_cmd": "npm uninstall -g @deepseek-ai/dsh",
+      "executable": "dsh",
+      "env_vars": [],
+      "optional_env_vars": [
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY"
+      ],
+      "version_cmd": "dsh --version",
+      "latest": {
+        "source": "npm",
+        "package": "@deepseek-ai/dsh",
+        "note": "Requires Node ^22.19 || >=24; the container's apt Node is 18, so install_cmd unpacks the official Node LTS tarball (.tar.gz — no xz, no apt, no GPG keyring) into /usr/local and installs with that npm. Bump the pinned Node version + this note together. Reads HTTPS_PROXY/HTTP_PROXY/NO_PROXY from the environment (AnCLI injects the Android proxy) and keeps its config in /root/.dsh, which module upgrades preserve."
+      },
+      "version": "0.1.7-rc.2"
     }
   }
 }

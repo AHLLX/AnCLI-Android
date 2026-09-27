@@ -445,22 +445,27 @@ class TestWebUIJsonAPI:
 # ---------------------------------------------------------------------------
 
 def test_registry_env_vars_only_claude_code():
-    """Policy: only Claude Code exposes AI-provider keys (its login prompt can be
-    skipped); every app may expose the generic proxy trio, which is the documented
-    escape hatch for TUN-only setups."""
+    """Policy: every app exposes the generic proxy trio (the documented escape hatch
+    for TUN-only setups). Provider keys are exposed only where the vendor documents
+    env-based auth — Claude Code (Anthropic) and DeepSeek Harness (DeepSeek); the
+    other tools own their login flow internally."""
     with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json'), encoding='utf-8') as f:
         reg = json.load(f)
     assert 'claude-code' in reg['apps']
     proxy_vars = {'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'}
+    provider_vars = {
+        'claude-code': {'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN',
+                        'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL'},
+        'dsh': {'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL'},
+    }
     for aid, app in reg['apps'].items():
         exposed = set(app.get('env_vars') or []) | set(app.get('optional_env_vars') or [])
-        non_proxy = exposed - proxy_vars
+        allowed = proxy_vars | provider_vars.get(aid, set())
         assert app.get('optional_env_vars'), f'{aid} must expose the proxy escape hatch'
         assert proxy_vars <= exposed, f'{aid} is missing the proxy env vars'
-        if aid == 'claude-code':
-            assert non_proxy, 'claude-code must keep its Anthropic env vars'
-        else:
-            assert not non_proxy, f'{aid} must not expose non-proxy env vars: {sorted(non_proxy)}'
+        assert exposed <= allowed, f'{aid} exposes unexpected env vars: {sorted(exposed - allowed)}'
+        if aid in provider_vars:
+            assert provider_vars[aid] <= exposed, f'{aid} must keep its provider keys'
 
 
 def shlex_quote(s):
@@ -1150,6 +1155,30 @@ class TestReviewRegressions:
     def test_four_segment_versions_are_not_truncated(self):
         assert core._ver_tuple('1.0.0.1') == (1, 0, 0, 1)
         assert core._update_available('1.0.0', '1.0.0.1') is True
+
+    def test_prerelease_versions_are_compared_not_truncated(self):
+        """DeepSeek Harness publishes only prereleases: '0.1.7-rc.2' must not be
+        flattened to '0.1.7', or the update badge freezes forever."""
+        assert core._first_version('0.1.7-rc.2') == '0.1.7-rc.2'
+        assert core._update_available('0.1.7-rc.2', '0.1.7-rc.3') is True
+        assert core._update_available('0.1.7-rc.3', '0.1.7-rc.2') is False
+        # a release outranks its own prereleases
+        assert core._update_available('0.1.7-rc.2', '0.1.7') is True
+        assert core._update_available('0.1.7', '0.1.7-rc.3') is False
+        assert core._update_available('0.1.6', '0.1.7-rc.2') is True
+
+    def test_scoped_npm_packages_use_one_path_segment(self, monkeypatch):
+        urls = []
+
+        def fake(url, timeout=15):
+            urls.append(url)
+            return {'version': '0.1.7-rc.2'}
+
+        monkeypatch.setattr(core, '_http_json', fake)
+        ver, src, err = core._latest_version(
+            {'latest': {'source': 'npm', 'package': '@deepseek-ai/dsh'}}, {})
+        assert (ver, src, err) == ('0.1.7-rc.2', 'npm:@deepseek-ai/dsh', None)
+        assert urls == ['https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest']
 
     def test_unknown_latest_source_is_reported_not_silently_static(self):
         ver, src, err = core._latest_version({'latest': {'source': 'gitlab'}, 'version': '1.0'}, {})
