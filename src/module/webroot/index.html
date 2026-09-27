@@ -153,9 +153,12 @@ body.ime-open #log { background: var(--glass-strong); }
 </div>
 
 <div class="toolbar">
-  <button id="btnRepair" class="primary">修复环境 (repair)</button>
+  <button id="btnCheck" class="primary">检查更新 (check)</button>
   <button id="btnRefresh">刷新</button>
+  <button id="btnRepair">修复环境 (repair)</button>
 </div>
+
+<div class="sub" id="checkInfo"></div>
 
 <div id="apps"></div>
 
@@ -357,7 +360,10 @@ async function ancli(args) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function runBackground(cmd) {
-  const logFile = '/data/local/tmp/ancli/.webui_last.log';
+  // Unique per run: two concurrent actions (e.g. two 更新 clicks) used to share
+  // one log file and interleave each other's output.
+  const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
+  const logFile = '/data/local/tmp/ancli/.webui_' + tag + '.log';
   const exitFile = logFile + '.exit';
   log('$ ' + cmd + '  （后台执行）');
   try {
@@ -377,7 +383,12 @@ async function runBackground(cmd) {
     try { out = await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null'); }
     catch (e) { continue; }
     const text = strip(out.stdout || '');
-    if (text) { log(text); last += (out.stdout || '').length; }
+    if (text) {
+      log(text);
+      // `tail -c` counts BYTES: advance by the UTF-8 byte length of what was
+      // read, not by the JS string length (which would re-read/mangle output).
+      last += new TextEncoder().encode(out.stdout || '').length;
+    }
     let done;
     try { done = await execCmd('[ -f ' + exitFile + ' ] && cat ' + exitFile + ' || echo -n'); }
     catch (e) { continue; }
@@ -388,7 +399,8 @@ async function runBackground(cmd) {
         const restText = strip(rest.stdout || '');
         if (restText) log(restText);
       } catch (e) { /* ignore */ }
-      if (code === '0') log('✓ 完成', 'ok'); else log('退出码: ' + code, 'err');
+      if (code === '0') log('✓ 完成', 'ok'); else log('退出码: ' + code + '（命令失败，未生效）', 'err');
+      try { await execCmd('rm -f ' + logFile + ' ' + exitFile); } catch (e) { /* ignore */ }
       break;
     }
   }
@@ -435,7 +447,11 @@ async function loadApps() {
     const raw = await ancli('list --json');
     const data = JSON.parse(raw);
     currentApps = data.apps || [];
+    lastCheck = data.last_check || 0;
+    if (typeof data.check_ttl === 'number' && data.check_ttl > 0) checkTtl = data.check_ttl;
+    supportsCheck = (typeof data.check_ttl === 'number');
     renderApps(currentApps);
+    renderCheckInfo();
     document.getElementById('stVer').textContent = data.ancli_version || '?';
   } catch (e) {
     wrap.innerHTML = '<div class="sub">加载失败: ' + e + '</div>';
@@ -445,22 +461,40 @@ async function loadApps() {
 function renderApps(apps) {
   const wrap = document.getElementById('apps');
   wrap.innerHTML = '';
-  if (!apps.length) { wrap.innerHTML = '<div class="sub">registry 中没有可用工具</div>'; return; }
+  if (!apps.length) { wrap.innerHTML = '<div class="sub">registry 中没有可用工具 — 点「检查更新」拉取云端 registry</div>'; return; }
   for (const a of apps) {
     const el = document.createElement('div');
     el.className = 'app glass';
     const badges = [];
     if (a.native) badges.push('<span class="badge native">native 直跑</span>');
     if (a.installed) {
+      const ver = (a.installed_version && a.installed_version !== 'unknown') ? ' v' + esc(a.installed_version) : '';
+      const unverified = a.version_verified ? '' : ' · 未核实';
       badges.push(a.active
-        ? '<span class="badge installed">已安装 v' + a.installed_version + '</span>'
+        ? '<span class="badge installed">已安装' + ver + unverified + '</span>'
         : '<span class="badge broken">损坏</span>');
-      if (a.update_available) badges.push('<span class="badge update">可更新 → v' + a.cloud_version + '</span>');
+      if (a.update_available) {
+        badges.push('<span class="badge update">可更新 → v' + esc(a.cloud_version) + '</span>');
+      } else if (!a.cloud_version || a.cloud_version === 'unknown' || a.cloud_source === 'none') {
+        badges.push('<span class="badge">官方版本未知</span>');
+      }
+      if (a.cloud_error) badges.push('<span class="badge broken">版本查询失败</span>');
     } else {
       badges.push('<span class="badge">未安装</span>');
     }
     if (a.configured_keys && a.configured_keys.length)
       badges.push('<span class="badge">已配置: ' + a.configured_keys.join(', ') + '</span>');
+
+    let detail = '';
+    if (a.installed && a.cloud_version && a.cloud_version !== 'unknown' && a.cloud_source !== 'none') {
+      const label = a.cloud_checked ? '官方最新: v' + esc(a.cloud_version)
+                                    : '参考版本: v' + esc(a.cloud_version) + '（registry 声明，未联网核实）';
+      detail += '<div class="desc">' + label + ' · 来源: ' + esc(srcLabel(a.cloud_source)) +
+                (a.cloud_error ? ' · 查询失败: ' + esc(a.cloud_error) : '') + '</div>';
+    }
+    if (a.installed && !a.version_verified) {
+      detail += '<div class="desc">本地版本来自旧记录，点「检查更新」读取工具真实版本</div>';
+    }
 
     let btns = '';
     const hasEnv = (a.required_env_vars && a.required_env_vars.length) ||
@@ -468,16 +502,72 @@ function renderApps(apps) {
     if (!a.installed) {
       btns += '<button class="small primary" onclick="doInstall(\'' + a.id + '\')">安装</button>';
     } else {
-      btns += '<button class="small" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
+      btns += '<button class="small' + (a.update_available ? ' primary' : '') + '" onclick="doUpdate(\'' + a.id + '\')">更新</button>';
       if (hasEnv) btns += '<button class="small" onclick="openConfig(\'' + a.id + '\')">配置</button>';
       btns += '<button class="small danger" onclick="doUninstall(\'' + a.id + '\')">卸载</button>';
     }
     el.innerHTML =
       '<div class="head"><span class="name">' + esc(a.name) + '</span>' + badges.join('') + '</div>' +
       '<div class="desc">' + esc(a.description) + '</div>' +
+      detail +
       '<div class="btns">' + btns + '</div>';
     wrap.appendChild(el);
   }
+}
+
+// Upstream source label for the "官方最新" line.
+const SOURCE_LABELS = [
+  [/^github:/, '官方 GitHub'],
+  [/^pypi:/, '官方 PyPI'],
+  [/^npm:/, '官方 npm'],
+  [/^manifest$/, '官方发布清单'],
+  [/^channel$/, '官方通道'],
+  [/^registry$/, 'registry 声明'],
+  [/^none$/, '无官方接口'],
+];
+function srcLabel(src) {
+  for (const pair of SOURCE_LABELS) if (pair[0].test(src || '')) return pair[1];
+  return src || '未知来源';
+}
+
+// ---------- 版本检查状态（上次检查时间 / 过期自动检查） ----------
+let lastCheck = 0;          // epoch seconds of the last successful `ancli check`
+let checkTtl = 21600;       // seconds, from the core (CHECK_TTL)
+let supportsCheck = false;  // false on module builds older than the check feature
+let autoCheckStarted = false;
+
+function fmtAge(sec) {
+  if (sec < 60) return sec + ' 秒';
+  if (sec < 3600) return Math.floor(sec / 60) + ' 分钟';
+  if (sec < 86400) return Math.floor(sec / 3600) + ' 小时';
+  return Math.floor(sec / 86400) + ' 天';
+}
+
+function renderCheckInfo() {
+  const el = document.getElementById('checkInfo');
+  if (!el) return;
+  if (!supportsCheck) {
+    el.textContent = '当前模块版本不支持官方版本检查 — 请先在管理器里更新 AnCLI 模块。';
+    return;
+  }
+  if (!lastCheck) {
+    el.textContent = '尚未检查过官方版本。';
+    return;
+  }
+  const age = Math.max(0, Math.floor(Date.now() / 1000) - lastCheck);
+  const installed = currentApps.filter(a => a.installed).length;
+  el.textContent = '上次检查官方版本: ' + fmtAge(age) + '前 · 已安装 ' + installed + ' 个工具';
+}
+
+async function maybeAutoCheck() {
+  if (autoCheckStarted || !supportsCheck) return;
+  const age = lastCheck ? Math.floor(Date.now() / 1000) - lastCheck : Infinity;
+  if (age < checkTtl) return;
+  if (!currentApps.some(a => a.installed)) return;   // nothing installed -> nothing to check
+  autoCheckStarted = true;
+  log('官方版本信息已过期（' + (lastCheck ? fmtAge(age) + '前' : '从未检查') + '），自动运行 ancli check…');
+  await runBackground(ANCLI + ' check');
+  await loadApps();
 }
 
 function esc(s) {
@@ -635,6 +725,12 @@ document.getElementById('cfgSave').onclick = async () => {
 
 document.getElementById('btnRefresh').onclick = async () => { await loadStatus(); await loadApps(); };
 
+document.getElementById('btnCheck').onclick = async () => {
+  if (!supportsCheck) { alert('当前模块版本不支持官方版本检查 — 请先在管理器里更新 AnCLI 模块。'); return; }
+  await runBackground(ANCLI + ' check');
+  await loadStatus(); await loadApps();
+};
+
 document.getElementById('btnRepair').onclick = async () => {
   if (!confirm('运行 ancli repair（修复环境/权限并重新生成 wrapper）？')) return;
   await runBackground(ANCLI + ' repair');
@@ -706,6 +802,7 @@ if (window.matchMedia) {
   log('ancli 路径: ' + ANCLI);
   await loadStatus();
   await loadApps();
+  await maybeAutoCheck();
 })();
 </script>
 </body>

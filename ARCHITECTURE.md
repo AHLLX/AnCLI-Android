@@ -66,9 +66,51 @@ The registry schema defines the metadata and installation scripts for supported 
   "install_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
   "update_cmd": "curl -L ...",
   "uninstall_cmd": "rm -f /usr/local/bin/opencode",
-  "executable": "opencode"
+  "executable": "opencode",
+  "version_cmd": "opencode --version",
+  "latest": { "source": "github", "repo": "anomalyco/opencode" },
+  "version": "1.18.32"
 }
 ```
+
+`version_cmd` is what makes update detection honest: after install/update (and on
+every `ancli check`) the core runs it **inside the container** and stores the
+version the tool reports. Storing the registry's declared `version` instead is a
+trap — the record then always equals the registry, so no comparison can ever see a
+newer upstream release (see CHANGELOG: "WebUI could not detect official versions").
+
+### 3.1 Update detection pipeline
+
+```
+ancli check ─┬─ fetch_registry()            → refreshes /root/.ancli-registry.json
+             ├─ _probe_installed_version()  → `version_cmd` per installed tool (container)
+             ├─ _latest_version()           → official API per registry `latest` spec
+             └─ _save_update_cache()        → /data/local/tmp/ancli/.update_cache.json
+                                                {"ts": epoch, "latest": {app: {...}}}
+
+ancli list --json / WebUI  ← reads local registry + update cache only (no network)
+```
+
+`latest.source` values supported by `_latest_version()`:
+
+| source | fields | resolution |
+| :--- | :--- | :--- |
+| `github` | `repo` | `releases/latest` → `tag_name` |
+| `pypi` | `package` | `info.version` |
+| `npm` | `package` | version of the `latest` dist-tag |
+| `json` | `url`, `path` | dotted path inside a JSON manifest (vendor release manifests) |
+| `text` | `urls[]` | first version token of a channel pointer, tried in order |
+| `static` | – | the registry's declared `version` (no public API exists) |
+| `none` | – | detection unavailable by design; the UI says so instead of guessing |
+
+Failures are per app and never fatal: the error is recorded in the cache and shown
+in the WebUI, and the previous value is kept. Upstream lookups reuse the proxy
+exported by `ancli_env.sh`, so they work behind the same Android system proxy as
+the installers.
+
+The WebUI triggers `ancli check` itself when `last_check` in the list payload is
+older than `check_ttl` (6 h), which also migrates legacy install records that still
+hold the AnCLI framework version.
 
 ---
 

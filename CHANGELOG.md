@@ -1,3 +1,53 @@
+## Unreleased — WebUI could not detect official versions
+
+### Bug Fixes
+**The WebUI never knew a tool's real version (root cause)**
+- **Root Cause**: `installed_version` was written as the *registry's* declared version (or, in
+  older records, the AnCLI framework version itself — the device showed `mimo v1.2.2` while
+  `mimo --version` printed `0.1.10`). Two consequences: the recorded value always equalled the
+  comparison target, so no update ever appeared, and records like `1.2.2` compared "newer" than
+  a real tool version (`grok 1.0.0` vs `1.1.7`), silently suppressing genuine updates.
+- **Fix**: install/update/`check` now probe the tool itself (`version_cmd` in the registry) inside
+  the container and store that, with a `version_verified` flag. Legacy records are treated as
+  untrusted: a differing official version counts as an update until the first `check` rewrites them.
+
+**"Official latest version" was a hand-maintained number**
+- **Root Cause**: `cloud_version` came from a static `version` field in `registry.json`, and
+  `ancli list --json` read only the local cache (no network). On the real device every installed
+  tool looked up to date while anthropics/claude-code had already moved 2.1.226 → 2.1.283.
+- **Fix**: new `latest` registry spec resolved at check time from the vendor's own endpoint —
+  GitHub Releases, PyPI, npm, a JSON release manifest (`agy`) or a text channel pointer (`grok`,
+  GCS mirror fallback). Results are cached 6 h in `/data/local/tmp/ancli/.update_cache.json`;
+  `ancli list --json` merges the cache (offline-safe) and the WebUI shows the source of every
+  version. Registry versions refreshed: aider 0.86.2, mimo 0.1.14, agy 1.2.12, claude-code
+  2.1.283, opencode 1.18.32, grok 1.0.41.
+
+**Failed updates were reported as success**
+- **Root Cause**: `update_app()` returned nothing and `ancli update` always exited 0, so a failed
+  download ("curl: Couldn't connect to server") still ended as WebUI "✓ 完成" — the stale version
+  and no-op update looked fine.
+- **Fix**: install/update/uninstall propagate their result and exit non-zero on failure with an
+  explicit message; the WebUI logs a red `退出码: N（命令失败，未生效）`.
+
+### Features
+- `ancli check [--json]`: refreshes the cloud registry, the installed versions and the official
+  latest versions in one pass.
+- WebUI: **检查更新 (check)** button, "官方最新/参考版本 + 来源" line, "可更新" highlighting on the
+  update button, "未核实" markers for legacy records, and an automatic check when the cache is
+  older than 6 h. Old module builds (no `check_ttl` in the payload) are detected and told to update.
+
+### Other Fixes
+- **Bundled registry deployed to the path the core reads**: `customize.sh` wrote
+  `$ANCLI_DIR/registry.json` while the core reads `$ANCLI_DIR/bin/registry.json`; both are now
+  written and the newest-mtime copy wins, so a stale leftover can no longer shadow a fresh registry.
+- **`--json` stdout stays parseable**: registry retries, corrupted-state warnings and blocked-command
+  notices are redirected to stderr during `list --json` / `check --json`.
+- **WebUI background log is per-run**: concurrent actions used to share `.webui_last.log` and
+  interleave each other's output; the tail offset now advances by UTF-8 bytes, so logs are no
+  longer duplicated/garbled.
+
+---
+
 ## AnCLI v1.2.3 — Hotfix Batch & Release (2026-08-08)
 
 ### Runtime Fixes

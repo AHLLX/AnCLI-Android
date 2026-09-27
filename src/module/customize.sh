@@ -189,7 +189,11 @@ cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
-# Deploy bundled fallback registry
+# Deploy bundled fallback registry to BOTH locations: the core reads
+# $BIN_DIR/registry.json (newest mtime wins), while older core builds looked for
+# $ANCLI_DIR/registry.json. Writing both keeps offline first-boot working on
+# every core version.
+cp "$MODPATH/ancli/registry.json" "$BIN_DIR/registry.json" 2>/dev/null || true
 cp "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true
 
 

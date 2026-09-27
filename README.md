@@ -62,6 +62,7 @@ ancli uninstall <app_id>       # Uninstall an application
 ancli update <app_id>          # Update an installed application
 ancli config <app_id>          # Reconfigure environment variables
 ancli list                     # List installed applications
+ancli check                    # Check official latest versions / available updates
 ancli repair                   # Detect and repair environment issues
 ancli --help                   # Show help message
 ancli --version                # Show version info
@@ -76,6 +77,37 @@ opencode
 mimo
 agy
 ```
+
+### Update Detection (official versions)
+
+AnCLI does not guess versions. For every installed tool it asks **the tool itself**
+(`version_cmd`, e.g. `claude --version`) for the installed version, and asks the
+**vendor's own release endpoint** (`latest` in `registry.json`) for the official
+latest one:
+
+| Tool | Official source |
+| :--- | :--- |
+| Aider | PyPI (`aider-chat`) |
+| MiMo Code | GitHub Releases (`XiaomiMiMo/MiMo-Code`) |
+| Antigravity CLI | Vendor release manifest (`antigravity-cli-auto-updater…/manifests/linux_arm64.json`) |
+| Claude Code | GitHub Releases (`anthropics/claude-code`) |
+| OpenCode | GitHub Releases (`anomalyco/opencode`) |
+| Grok CLI | Vendor channel pointer (`x.ai/cli/stable`, GCS mirror as fallback) |
+
+Results are cached for 6 hours in `/data/local/tmp/ancli/.update_cache.json`, so the
+WebUI stays fast and works offline, and a highlighted **检查更新 (check)** button
+refreshes them on demand. The WebUI also checks automatically when the cache is
+older than 6 hours.
+
+```bash
+ancli check            # refresh installed + official versions (network)
+ancli check --json     # same, machine-readable (used by the WebUI)
+ancli list             # show "可更新 → vX (source)" once a check has run
+```
+
+A failed `ancli update` (no network, proxy down, vendor 404) now exits non-zero,
+so the WebUI reports the failure instead of claiming success, and the recorded
+version stays untouched.
 
 ## Network Proxy & VPN Handling
 
@@ -159,6 +191,8 @@ The wrapper also avoids repeating slow setup on every launch: the system proxy i
 ### No update notification in KernelSU/Magisk manager
 
 The manager polls `update.json` (`updateJson` in `module.prop`). If `raw.githubusercontent.com` is unreachable on your network, no update will appear — use a proxy/VPN, or point `updateJson` at a jsDelivr mirror. Also verify the `zipUrl` asset name exactly matches what you uploaded to the GitHub release — a mismatch silently disables OTA.
+
+This is separate from **tool** updates inside the module: the module OTA upgrades AnCLI itself, while the WebUI's 检查更新 / `ancli check` reports newer versions of the AI CLIs you installed. Both need working network + proxy.
 
 ### TLS & package-source trade-offs (known)
 

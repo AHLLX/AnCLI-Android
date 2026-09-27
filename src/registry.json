@@ -10,7 +10,9 @@
       "update_cmd": "pip install --upgrade --break-system-packages aider-chat",
       "uninstall_cmd": "pip uninstall -y aider-chat",
       "executable": "aider",
-      "version": "0.86.0"
+      "version_cmd": "aider --version",
+      "latest": { "source": "pypi", "package": "aider-chat" },
+      "version": "0.86.2"
     },
     "mimo": {
       "name": "MiMo Code",
@@ -21,7 +23,9 @@
       "update_cmd": "curl -L https://github.com/XiaomiMiMo/MiMo-Code/releases/latest/download/mimocode-linux-arm64.tar.gz -o /tmp/mimo.tar.gz && tar -xzf /tmp/mimo.tar.gz -C /usr/local/bin && rm /tmp/mimo.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/mimo",
       "executable": "mimo",
-      "version": "0.1.10"
+      "version_cmd": "mimo --version",
+      "latest": { "source": "github", "repo": "XiaomiMiMo/MiMo-Code" },
+      "version": "0.1.14"
     },
     "agy": {
       "name": "Antigravity CLI",
@@ -36,7 +40,14 @@
       "update_cmd": "agy update",
       "uninstall_cmd": "rm -f /usr/local/bin/agy /root/.local/bin/agy",
       "executable": "agy",
-      "version": "1.1.11"
+      "version_cmd": "agy --version",
+      "latest": {
+        "source": "json",
+        "url": "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json",
+        "path": "version",
+        "note": "Official Antigravity release manifest (same endpoint the vendor installer reads)."
+      },
+      "version": "1.2.12"
     },
     "claude-code": {
       "name": "Claude Code",
@@ -54,7 +65,9 @@
         "ANTHROPIC_MODEL"
       ],
       "executable": "claude",
-      "version": "2.1.226"
+      "version_cmd": "claude --version",
+      "latest": { "source": "github", "repo": "anthropics/claude-code" },
+      "version": "2.1.283"
     },
     "opencode": {
       "name": "OpenCode",
@@ -65,7 +78,9 @@
       "update_cmd": "curl -L https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-arm64.tar.gz -o /tmp/opencode.tar.gz && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz",
       "uninstall_cmd": "rm -f /usr/local/bin/opencode",
       "executable": "opencode",
-      "version": "1.18.15"
+      "version_cmd": "opencode --version",
+      "latest": { "source": "github", "repo": "anomalyco/opencode" },
+      "version": "1.18.32"
     },
     "grok": {
       "name": "Grok CLI",
@@ -82,7 +97,16 @@
       "update_cmd": "curl -fsSL https://x.ai/cli/install.sh | bash",
       "uninstall_cmd": "rm -f /usr/local/bin/grok /usr/local/bin/agent && rm -rf /root/.grok",
       "executable": "grok",
-      "version": "1.1.7"
+      "version_cmd": "grok --version",
+      "latest": {
+        "source": "text",
+        "urls": [
+          "https://x.ai/cli/stable",
+          "https://storage.googleapis.com/grok-build-public-artifacts/cli/stable"
+        ],
+        "note": "Vendor channel pointer (x.ai/cli/<channel>) with the GCS mirror the installer falls back to."
+      },
+      "version": "1.0.41"
     }
   }
 }

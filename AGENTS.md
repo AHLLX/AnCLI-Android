@@ -17,6 +17,9 @@ You must understand these three pillars before writing any code:
    - Runs *inside* the Proot Ubuntu container.
    - Fetches `registry.json` from the cloud.
    - Generates Bash wrappers and injects them into the Android host.
+   - `ancli check` resolves each installed tool's *real* version (`version_cmd`) and the
+     vendor's *official* latest version (`latest` in the registry), caching both in
+     `/data/local/tmp/ancli/.update_cache.json` for the WebUI.
    - **CONSTRAINT**: Must rely strictly on the Python Standard Library (e.g., use `urllib.request`, NOT `requests`).
 3. **`src/module/ancli_env.sh` (The Environment Bridger)**:
    - Sourced dynamically by the wrapper script before PRoot execution.
@@ -44,6 +47,7 @@ When modifying the script execution logic or registry installer commands, you MU
    - Android's root and shell users create files with conflicting ownerships. When generating wrapper scripts, you MUST check if the file already exists and explicitly delete it using `os.remove` before recreating, otherwise the operation will fail with `[Errno 13] Permission denied`.
 4. **Command Whitelist Validation**:
    - Any execution inside the container must be explicitly whitelisted in `ALLOWED_CMD_PREFIXES` in `ancli-core.py`. Add `bash ` and `sh ` if running local shell script installers.
+   - Registry `version_cmd` probes (`claude --version`) go through `_capture_cmd(..., _registry_exe_prefixes())`: the executable names come from the registry and extend the whitelist for that one call only (`validate_cmd` default stays strict).
 5. **Do NOT force delete container data during Manager uninstall (CRITICAL)**:
    - Magisk/KSU Manager uninstallations trigger `uninstall.sh` in non-interactive background. 
    - You MUST detect TTY redirection and preserve the `/data/local/tmp/ancli/rootfs` and `installed.json` by default (only wipe `bin/` scripts), unless explicitly forced by `/data/local/tmp/ancli_force_purge`. This ensures Python dependencies (like `gitpython`) and API keys are not lost during module upgrades.
@@ -55,6 +59,7 @@ When debugging paths or writing cleanup logic, refer to this exact physical mapp
 - **NPM Globals**: `/data/local/tmp/ancli/rootfs/usr/local/lib/node_modules/`
 - **Pip Globals**: `/data/local/tmp/ancli/rootfs/usr/local/lib/python3.12/dist-packages/`
 - **Core Script**: `/data/local/tmp/ancli/bin/ancli-core.py`
+- **Update Cache**: `/data/local/tmp/ancli/.update_cache.json` (official latest versions from `ancli check`)
 - **Magisk Module**: `/data/adb/modules/ancli/`
 
 ## 6. Adding New Apps to Registry
@@ -69,15 +74,31 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
   "uninstall_cmd": "npm uninstall -g something",
   "env_vars": ["ANY_REQUIRED_API_KEY"], 
   "optional_env_vars": ["ANY_PROXY_BASE_URL"],
-  "executable": "command_name_to_bind"
+  "executable": "command_name_to_bind",
+  "version_cmd": "something --version",
+  "latest": { "source": "npm", "package": "something" },
+  "version": "1.2.3"
 }
 ```
 *Note: If `env_vars` is provided, `ancli-core.py` will automatically prompt the user for them and inject them into the wrapper via `export KEY="VALUE"`.*
+
+**Update detection fields (never omit them):**
+- `version_cmd` — the **installed** version is read from the tool itself inside the container
+  (ask the vendor's real binary; verified prefixes are auto-whitelisted via `_registry_exe_prefixes`).
+- `latest` — where the **official latest** version comes from. Supported sources:
+  `github` (`repo`), `pypi` (`package`), `npm` (`package`), `json` (`url` + `path`),
+  `text` (`urls[]`, first version token wins), `static` (no public API — uses `version`),
+  `none` (detection unavailable; the UI says so).
+- `version` — declared fallback used when the network is down or the source is `static`.
+- Rule: **never** treat a hand-written `version` as the official latest, and never write the
+  registry/AnCLI version into `installed_version` — that silently disables update detection
+  (see CHANGELOG: "WebUI could not detect official versions").
 
 ## 7. Testing Constraints
 - There is **no Android emulator** for this project — and an emulator could not verify this module anyway (it needs a rooted real device).
 - Only use `adb` when a device is actually attached (`adb devices` lists one). Even then, stick to read-only inspection (`ls`, `cat`, `settings get`, `logcat`) unless the user explicitly asks you to flash/test.
 - **NEVER** claim the module was flashed or verified when it was not, and never flash/uninstall on your own. Fall back to `sh -n` syntax checks, `python -m pytest tests/`, and static reasoning.
+- Update detection has two runnable checks: `python -m pytest tests/` (84 cases, offline) and `python scripts/smoke_update_check.py` (hits the real upstreams and prints the WebUI payload for the known device state).
 
 ## 8. Network Proxy & VPN Constraints (CRITICAL)
 - **VPN Bypass**: Android VPNs in TUN mode (e.g. Clash, v2rayNG) bypass Root (UID 0) traffic by default. If a Python or curl script runs as root and the proxy is not explicitly set, it will ignore the VPN and fail to connect to domains like `github.com`.

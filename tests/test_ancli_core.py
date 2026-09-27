@@ -484,3 +484,290 @@ class TestVersionCompare:
         assert core._update_available('unknown', '1.0.0') is True
         assert core._update_available('1.0.0', 'unknown') is False
         assert core._update_available('unknown', 'unknown') is False
+
+
+# ---------------------------------------------------------------------------
+# Official ("upstream") version detection
+# ---------------------------------------------------------------------------
+
+class TestFirstVersion:
+    @pytest.mark.parametrize("text,expected", [
+        ('v2.1.283', '2.1.283'),
+        ('2.1.226 (Claude Code)', '2.1.226'),
+        ('grok 1.0.0 (3cd0d0cbce)', '1.0.0'),
+        ('aider 0.86.2', '0.86.2'),
+        ('1.0.41\n', '1.0.41'),
+        ('', None),
+        (None, None),
+        ('no version here', None),
+    ])
+    def test_extracts_first_version_token(self, text, expected):
+        assert core._first_version(text) == expected
+
+
+class TestLatestVersion:
+    def _app(self, spec, declared='9.9.9'):
+        return {'latest': spec, 'version': declared}
+
+    def test_github_release_tag(self, monkeypatch):
+        urls = []
+
+        def fake_json(url, timeout=15):
+            urls.append(url)
+            return {'tag_name': 'v2.1.283'}
+
+        monkeypatch.setattr(core, '_http_json', fake_json)
+        ver, src, err = core._latest_version(
+            self._app({'source': 'github', 'repo': 'anthropics/claude-code'}), {})
+        assert (ver, src, err) == ('2.1.283', 'github:anthropics/claude-code', None)
+        assert urls == ['https://api.github.com/repos/anthropics/claude-code/releases/latest']
+
+    def test_pypi_uses_dotted_path(self, monkeypatch):
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'info': {'version': '0.86.2'}})
+        ver, src, err = core._latest_version(self._app({'source': 'pypi', 'package': 'aider-chat'}), {})
+        assert (ver, src, err) == ('0.86.2', 'pypi:aider-chat', None)
+
+    def test_npm_latest_dist_tag(self, monkeypatch):
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'version': '1.2.3'})
+        assert core._latest_version(self._app({'source': 'npm', 'package': 'x'}), {})[0] == '1.2.3'
+
+    def test_json_manifest_path(self, monkeypatch):
+        payload = {'version': '1.2.12', 'url': 'https://example/x.tar.gz'}
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: payload)
+        ver, src, err = core._latest_version(
+            self._app({'source': 'json', 'url': 'https://example/manifest.json', 'path': 'version'}), {})
+        assert (ver, src, err) == ('1.2.12', 'manifest', None)
+
+    def test_text_channel_falls_back_to_mirror(self, monkeypatch):
+        tried = []
+
+        def fake_text(url, timeout=15):
+            tried.append(url)
+            if 'x.ai' in url:
+                raise OSError('connection refused')
+            return '1.0.41\n'
+
+        monkeypatch.setattr(core, '_http_text', fake_text)
+        spec = {'source': 'text', 'urls': ['https://x.ai/cli/stable',
+                                          'https://storage.googleapis.com/grok-build-public-artifacts/cli/stable']}
+        assert core._latest_version(self._app(spec), {}) == ('1.0.41', 'channel', None)
+        assert len(tried) == 2
+
+    def test_text_channel_reports_error_when_all_urls_fail(self, monkeypatch):
+        def boom(url, timeout=15):
+            raise OSError('no route')
+
+        monkeypatch.setattr(core, '_http_text', boom)
+        ver, src, err = core._latest_version(self._app({'source': 'text', 'urls': ['https://x/1']}), {})
+        assert ver is None and src == 'channel' and 'no route' in err
+
+    def test_static_source_uses_declared_version(self):
+        assert core._latest_version(self._app({'source': 'static'}, declared='1.1.27'), {}) == \
+            ('1.1.27', 'registry', None)
+
+    def test_none_source_is_explicitly_undetectable(self):
+        assert core._latest_version(self._app({'source': 'none'}, declared='1.0.0'), {}) == \
+            (None, 'none', None)
+
+    def test_missing_spec_falls_back_to_declared_version(self):
+        # A registry entry written before this feature must still work.
+        assert core._latest_version({'version': '3.4.5'}, {}) == ('3.4.5', 'registry', None)
+
+    def test_network_failure_is_reported_not_raised(self, monkeypatch):
+        def boom(url, timeout=15):
+            raise OSError('tls handshake failed')
+
+        monkeypatch.setattr(core, '_http_json', boom)
+        ver, src, err = core._latest_version(self._app({'source': 'github', 'repo': 'a/b'}), {})
+        assert ver is None and src == 'github:a/b' and 'tls handshake failed' in err
+
+
+# ---------------------------------------------------------------------------
+# Installed-version probing
+# ---------------------------------------------------------------------------
+
+class TestVersionProbe:
+    def test_registry_executables_extend_the_whitelist_only(self):
+        registry = {'apps': {'claude-code': {'executable': 'claude'}}}
+        prefixes = core._registry_exe_prefixes(registry)
+        assert 'claude ' in prefixes
+        assert core.validate_cmd('claude --version', prefixes) is True
+        # The default whitelist is unchanged: an arbitrary command stays blocked.
+        assert core.validate_cmd('claude --version') is False
+        assert core.validate_cmd('cat /etc/passwd', prefixes) is False
+        assert core.validate_cmd('claude --version; rm -rf /', prefixes) is False
+
+    def test_probe_parses_version_cmd_output(self, monkeypatch):
+        monkeypatch.setattr(core, '_capture_cmd',
+                            lambda cmd, prefixes=None, timeout=60: (True, '2.1.226 (Claude Code)\n'))
+        assert core._probe_installed_version({'version_cmd': 'claude --version'}) == '2.1.226'
+
+    def test_probe_without_version_cmd_is_none(self):
+        assert core._probe_installed_version({}) is None
+
+    def test_probe_failure_is_none(self, monkeypatch):
+        monkeypatch.setattr(core, '_capture_cmd', lambda *a, **k: (False, ''))
+        assert core._probe_installed_version({'version_cmd': 'claude --version'}) is None
+
+
+# ---------------------------------------------------------------------------
+# `ancli check` / update cache / list --json integration
+# ---------------------------------------------------------------------------
+
+class TestUpdateCheckFlow:
+    def _env(self, tmp_path, monkeypatch, apps=None):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(tmp_path / "ancli" / "installed.json"))
+        monkeypatch.setattr(core, "UPDATE_CACHE", str(tmp_path / "ancli" / ".update_cache.json"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+        os.makedirs(tmp_path / "rootfs" / "usr" / "local" / "bin", exist_ok=True)
+        (tmp_path / "rootfs" / "usr" / "local" / "bin" / "claude").write_text("x")
+        registry = {"version": "1.2.3", "apps": apps if apps is not None else {
+            "claude-code": {"name": "Claude Code", "executable": "claude",
+                            "version_cmd": "claude --version",
+                            "latest": {"source": "github", "repo": "anthropics/claude-code"},
+                            "version": "2.1.283"},
+        }}
+        reg_path = tmp_path / "registry.json"
+        reg_path.write_text(json.dumps(registry), encoding="utf-8")
+        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(reg_path))
+        return registry
+
+    def test_check_updates_probes_installed_and_caches_official(self, tmp_path, monkeypatch, capsys):
+        registry = self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.283')
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
+
+        cache = core.check_updates(registry)
+        capsys.readouterr()
+
+        # installed.json now holds the tool's real version, marked verified
+        installed = core.load_installed()
+        assert installed['claude-code']['installed_version'] == '2.1.283'
+        assert installed['claude-code']['version_verified'] is True
+        # upstream verdict cached
+        assert cache['latest']['claude-code']['version'] == '2.1.283'
+        assert cache['latest']['claude-code']['source'] == 'github:anthropics/claude-code'
+        assert cache['ts'] > 0
+        assert json.loads((tmp_path / "ancli" / ".update_cache.json").read_text())['latest']['claude-code']['version'] == '2.1.283'
+
+    def test_check_updates_json_emits_pure_json(self, tmp_path, monkeypatch, capsys):
+        registry = self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        monkeypatch.setattr(core, 'fetch_registry', lambda: registry)
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.226')
+        monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
+
+        core.check_updates_json()
+        data = json.loads(capsys.readouterr().out)   # must be parseable with no noise
+        assert data['updates'] == 1
+        app = data['apps'][0]
+        assert app['id'] == 'claude-code'
+        assert app['update_available'] is True
+        assert app['cloud_version'] == '2.1.283'
+        assert app['cloud_source'] == 'github:anthropics/claude-code'
+
+    def test_list_apps_json_reports_cached_official_version(self, tmp_path, monkeypatch, capsys):
+        self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226",
+                                             "version_verified": True, "env": {}}})
+        core._save_update_cache({"ts": 1700000000, "latest": {
+            "claude-code": {"version": "2.1.283", "source": "github:anthropics/claude-code", "error": None}}})
+
+        core.list_apps_json()
+        data = json.loads(capsys.readouterr().out)
+        app = data['apps'][0]
+        assert data['last_check'] == 1700000000
+        assert data['check_ttl'] == core.CHECK_TTL
+        assert app['cloud_version'] == '2.1.283'
+        assert app['update_available'] is True
+
+    def test_list_apps_json_flags_update_for_unverified_legacy_record(self, tmp_path, monkeypatch, capsys):
+        self._env(tmp_path, monkeypatch)
+        # Legacy record: holds the AnCLI version (1.2.2) instead of the tool's own.
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "1.2.2", "env": {}}})
+        core._save_update_cache({"ts": 1, "latest": {
+            "claude-code": {"version": "2.1.283", "source": "github:anthropics/claude-code", "error": None}}})
+
+        core.list_apps_json()
+        app = json.loads(capsys.readouterr().out)['apps'][0]
+        assert app['version_verified'] is False
+        assert app['update_available'] is True   # no longer silently "up to date"
+
+    def test_list_apps_json_reports_unknown_official_source(self, tmp_path, monkeypatch, capsys):
+        self._env(tmp_path, monkeypatch, apps={
+            "grok": {"name": "Grok CLI", "executable": "grok", "version_cmd": "grok --version",
+                     "latest": {"source": "none"}, "version": "1.0.41"}})
+        core.save_installed({"grok": {"name": "Grok CLI", "executable": "grok",
+                                      "installed_version": "1.0.0", "version_verified": True, "env": {}}})
+        core.list_apps_json()
+        app = json.loads(capsys.readouterr().out)['apps'][0]
+        assert app['cloud_source'] == 'none'
+        assert app['update_available'] is False
+
+    def test_update_app_failure_returns_false_and_keeps_record(self, tmp_path, monkeypatch, capsys):
+        registry = self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        monkeypatch.setattr(core, 'run_cmd', lambda cmd: False)
+
+        assert core.update_app('claude-code', registry) is False
+        assert core.load_installed()['claude-code']['installed_version'] == '2.1.226'
+        assert 'Update failed' in capsys.readouterr().out
+
+    def test_update_app_success_records_probed_version(self, tmp_path, monkeypatch, capsys):
+        registry = self._env(tmp_path, monkeypatch)
+        core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
+                                             "installed_version": "2.1.226", "env": {}}})
+        monkeypatch.setattr(core, 'run_cmd', lambda cmd: True)
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.283')
+
+        assert core.update_app('claude-code', registry) is True
+        installed = core.load_installed()
+        assert installed['claude-code']['installed_version'] == '2.1.283'
+        assert installed['claude-code']['version_verified'] is True
+        capsys.readouterr()
+
+    def test_registry_cache_prefers_newest_file(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(tmp_path / "fetched.json"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+        (tmp_path / "fetched.json").write_text(json.dumps({"version": "old", "apps": {}}), encoding="utf-8")
+        (tmp_path / "ancli" / "bin" / "registry.json").write_text(json.dumps({"version": "new", "apps": {}}), encoding="utf-8")
+        (tmp_path / "ancli" / "registry.json").write_text(json.dumps({"version": "middle", "apps": {}}), encoding="utf-8")
+        os.utime(tmp_path / "fetched.json", (1000, 1000))
+        os.utime(tmp_path / "ancli" / "bin" / "registry.json", (3000, 3000))
+        os.utime(tmp_path / "ancli" / "registry.json", (2000, 2000))
+
+        assert core._load_local_registry_cache()['version'] == 'new'
+
+
+# ---------------------------------------------------------------------------
+# Registry schema: every app must be updatable by construction
+# ---------------------------------------------------------------------------
+
+def test_registry_declares_probe_and_official_source():
+    with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json'), encoding='utf-8') as f:
+        reg = json.load(f)
+    required_key = {'github': 'repo', 'pypi': 'package', 'npm': 'package',
+                    'json': 'url', 'text': 'urls', 'static': None, 'none': None}
+    assert reg['apps'], 'registry must define apps'
+    for aid, app in reg['apps'].items():
+        assert app.get('version_cmd'), f'{aid}: version_cmd is required to read the real installed version'
+        assert app.get('version'), f'{aid}: a declared fallback version is required'
+        spec = app.get('latest')
+        assert isinstance(spec, dict), f'{aid}: latest spec is required'
+        assert spec.get('source') in required_key, f'{aid}: unknown latest.source {spec.get("source")!r}'
+        key = required_key[spec['source']]
+        if key:
+            assert spec.get(key), f'{aid}: latest.{key} is required for source {spec["source"]}'

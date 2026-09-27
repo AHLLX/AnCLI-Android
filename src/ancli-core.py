@@ -8,6 +8,7 @@ import subprocess
 import urllib.request
 import re
 import ssl
+import contextlib
 
 # SSL verification is scoped per-request in fetch_registry() and _install_pipe_script()
 # to handle incomplete CAs inside the PRoot container.
@@ -32,6 +33,11 @@ LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 SECRETS_DIR    = f"{ANCLI_DIR}/secrets"   # Per-tool API key files (mode 0600)
 CONFIG_FILE    = "/root/.ancli-config.json"
+# Upstream "official latest version" cache written by `ancli check` and merged
+# into `ancli list --json` (so the WebUI shows update badges without needing a
+# network round-trip on every page load).
+UPDATE_CACHE   = f"{ANCLI_DIR}/.update_cache.json"
+CHECK_TTL      = 6 * 3600                 # seconds; the WebUI auto-checks when older
 
 # Allowed command prefixes for security validation.
 # 'env ' is used by pipe-script installs to inject env vars before 'bash'.
@@ -99,6 +105,7 @@ STRINGS = {
   ancli update <app_id>          更新指定的应用
   ancli config <app_id>          重新配置应用的环境变量
   ancli list                     列出所有已安装的应用
+  ancli check                    联网检查官方最新版本与可更新项
   ancli repair                   检测并修复 DNS、权限和封装
   ancli --version                显示版本
   ancli --help                   显示此帮助信息
@@ -165,6 +172,7 @@ STRINGS = {
   ancli update <app_id>          Update an installed app
   ancli config <app_id>          Reconfigure env vars for an app
   ancli list                     List all installed apps
+  ancli check                    Check official latest versions and available updates
   ancli repair                   Detect and repair DNS, permissions, and wrappers
   ancli --version                Show version
   ancli --help                   Show this help message
@@ -231,6 +239,19 @@ def _is_cert_verification_error(e):
     return isinstance(e, urllib.error.URLError) and isinstance(e.reason, ssl.SSLCertVerificationError)
 
 
+def _http_text(url, timeout=15):
+    """Fetch a URL as text (TLS verified, unverified only on cert errors).
+    urllib honours the http_proxy/https_proxy vars exported by ancli_env.sh,
+    so this works behind the same Android system proxy as the installers."""
+    return _urlopen_verified(url, {'User-Agent': 'AnCLI'}, timeout).decode('utf-8', errors='replace')
+
+
+def _http_json(url, timeout=15):
+    """Fetch a URL and decode it as JSON."""
+    return json.loads(_http_text(url, timeout))
+
+
+
 def _fetch_registry_once(req):
     """Perform one registry fetch with cert verification enabled; fall back to an
     unverified context only when certificate validation fails (the PRoot container
@@ -278,34 +299,48 @@ def fetch_registry():
             if attempt < 2:
                 print(f"\033[93m[!] Retry {attempt+1}/3: {e}\033[0m")
                 time.sleep(2)
-    # All retries exhausted, fall back to user local cache
-    if os.path.exists(LOCAL_REGISTRY):
-        print(f"\033[93m[!] Using local cache (network unavailable: {last_net_err})\033[0m")
-        with open(LOCAL_REGISTRY, "r") as f:
-            return json.load(f)
-
-    # Critical Edge Case: If offline and no cache exists (e.g., first install),
-    # try loading the bundled fallback registry shipped with the module zip.
-    fallback_path = f"{ANCLI_DIR}/bin/registry.json"
-    if os.path.exists(fallback_path):
-        print(f"\033[93m[!] Using bundled fallback registry (offline first boot)\033[0m")
-        with open(fallback_path, "r") as f:
-            return json.load(f)
+    # All retries exhausted, fall back to the newest local copy: the cache
+    # written by an earlier successful fetch, else the registry shipped inside
+    # the module ZIP (needed for a first boot with no network at all).
+    cached = _load_local_registry_cache()
+    if cached is not None:
+        print(f"\033[93m[!] Using local registry cache (network unavailable: {last_net_err})\033[0m")
+        return cached
 
     print(f"\033[91m[X] Failed to fetch registry, no cache, and no fallback found: {last_net_err}\033[0m")
     sys.exit(1)
 
+# Registry copies that can exist on disk (resolved at call time so tests and
+# path overrides stay valid). The core reads 'bin/registry.json' (shipped by
+# customize.sh); 'registry.json' is accepted too because older module builds
+# deployed it there.
+def _registry_cache_paths():
+    return (LOCAL_REGISTRY, f"{ANCLI_DIR}/bin/registry.json", f"{ANCLI_DIR}/registry.json")
+
+def _registry_cache_candidates():
+    """Existing registry files, newest modification time first.
+
+    Choosing by mtime means a stale leftover can never shadow a freshly
+    fetched/deployed registry (the bug that hid new per-app versions before)."""
+    found = []
+    for p in _registry_cache_paths():
+        try:
+            if os.path.exists(p):
+                found.append((os.path.getmtime(p), p))
+        except OSError:
+            continue
+    found.sort(key=lambda item: item[0], reverse=True)
+    return [p for _, p in found]
+
 def _load_local_registry_cache():
     """Load registry from local disk cache only — no network request.
-    Used by commands like 'list' that don't require up-to-date cloud data.
     Returns None if no cache is available."""
-    for p in [LOCAL_REGISTRY, f"{ANCLI_DIR}/bin/registry.json"]:
-        if os.path.exists(p):
-            try:
-                with open(p, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
+    for p in _registry_cache_candidates():
+        try:
+            with open(p, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
     return None
 
 def load_installed():
@@ -599,12 +634,16 @@ def _strip_quoted_segments(cmd):
     )
 
 
-def validate_cmd(cmd):
+def validate_cmd(cmd, allowed_prefixes=None):
     """Security: verify command starts with an allowed prefix and contains no
     shell metacharacters that could escalate to arbitrary command execution.
     `&&`, `||` and `|` are intentionally allowed (used by registry install_cmd
     chains and curl | bash fallbacks). Note this is defense-in-depth: commands
-    starting with `bash`/`sh` may still run arbitrary script content."""
+    starting with `bash`/`sh` may still run arbitrary script content.
+
+    `allowed_prefixes` extends the whitelist for one call — used by registry
+    version probes (`claude --version`), whose executable names come from the
+    same registry that already supplies arbitrary install_cmd strings."""
     cmd_stripped = cmd.strip()
     # Drop benign multi-char operators and quoted content, so the standalone
     # dangerous forms (';', '>', '<', '&', newline, $(), ``) can be flagged
@@ -616,11 +655,24 @@ def validate_cmd(cmd):
         if operator in stripped_ops:
             print(f"\033[91m[X] Blocked command with shell operator '{operator}': {cmd_stripped}\033[0m")
             return False
-    if not any(cmd_stripped.startswith(prefix) for prefix in ALLOWED_CMD_PREFIXES):
+    prefixes = tuple(allowed_prefixes) if allowed_prefixes else ALLOWED_CMD_PREFIXES
+    if not any(cmd_stripped.startswith(prefix) for prefix in prefixes):
         print(f"\033[91m[X] Blocked untrusted command: {cmd_stripped}\033[0m")
-        print(f"\033[93m    Allowed prefixes: {', '.join(ALLOWED_CMD_PREFIXES)}\033[0m")
+        print(f"\033[93m    Allowed prefixes: {', '.join(prefixes)}\033[0m")
         return False
     return True
+
+def _registry_exe_prefixes(registry=None):
+    """ALLOWED_CMD_PREFIXES plus every registry executable, so a registry-defined
+    `version_cmd` (e.g. "claude --version") can run while no arbitrary command can."""
+    prefixes = list(ALLOWED_CMD_PREFIXES)
+    reg = registry if registry is not None else (_load_local_registry_cache() or {})
+    for app in (reg.get('apps') or {}).values():
+        exe = str(app.get('executable', ''))
+        if exe and not any(c in exe for c in '/\\') and '..' not in exe and exe.replace('-', '').replace('_', '').isalnum():
+            prefixes.append(f"{exe} ")
+    return tuple(prefixes)
+
 
 def run_cmd(cmd):
     if not validate_cmd(cmd):
@@ -633,6 +685,23 @@ def run_cmd(cmd):
         executable="/bin/bash"
     )
     return result.returncode == 0
+
+def _capture_cmd(cmd, allowed_prefixes=None, timeout=60):
+    """Run a container command and capture its stdout.
+
+    Used by the version probes (`version_cmd` in the registry): the child's raw
+    output must never leak into `--json` output, so it is captured instead of
+    inherited. Returns (ok, stdout_text); never raises."""
+    if not validate_cmd(cmd, allowed_prefixes):
+        return False, ""
+    try:
+        result = subprocess.run(
+            cmd, shell=True, executable="/bin/bash",
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout,
+        )
+    except Exception:
+        return False, ""
+    return result.returncode == 0, result.stdout.decode('utf-8', errors='replace')
 
 # ---------------------------------------------------------------------------
 # Install / Uninstall / Update / Config / Repair
@@ -858,6 +927,23 @@ PATH="/system/bin:$PATH" /system/bin/am start -a android.intent.action.VIEW -d "
     except Exception:
         pass
 
+def _record_installed_version(installed, app_id, app, registry_version="unknown"):
+    """Store the version the *tool itself* reports (registry `version_cmd`).
+
+    Recording the registry's declared version instead is what made the WebUI's
+    update badges useless: the record then equals the registry value, so a
+    comparison can never see a newer upstream release. Falls back to the
+    declared version only when the probe is unavailable."""
+    probed = _probe_installed_version(app)
+    record = installed[app_id]
+    if probed:
+        record['installed_version'] = probed
+        record['version_verified'] = True
+    else:
+        record['installed_version'] = record.get('installed_version') or app.get('version', registry_version)
+        record['version_verified'] = False
+    return probed
+
 def _install_proot_common(app_id, app, registry_version="unknown"):
     """Shared post-install bookkeeping: write wrapper and save state."""
     runtime_env = app.get('runtime_env', [])
@@ -868,26 +954,28 @@ def _install_proot_common(app_id, app, registry_version="unknown"):
         "name": app['name'],
         "executable": app['executable'],
         "install_mode": "proot",
-        "installed_version": app.get('version', registry_version),
+        "installed_version": "unknown",
         "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "env": {},
     }
+    probed = _record_installed_version(installed, app_id, app, registry_version)
     save_installed(installed)
     # Fix permissions immediately so the tool is usable without a reboot
     _fix_config_permissions()
-    print(f"\033[92m[OK] Successfully installed {app['name']}! Type '{app['executable']}' to run.\033[0m")
+    suffix = f" v{probed}" if probed else ""
+    print(f"\033[92m[OK] Successfully installed {app['name']}{suffix}! Type '{app['executable']}' to run.\033[0m")
     print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
 
 def install_app(app_id, registry):
     if app_id not in registry['apps']:
         print(f"\033[91m[X] App {app_id} not found in registry.\033[0m")
-        return
+        return False
     app = registry['apps'][app_id]
     reg_ver = app.get('version', registry.get('version', 'unknown'))
 
     print(f"\033[92m[*] Installing {app['name']}...\033[0m")
     print(f"\033[96m[i] Backend: proot\033[0m")
-    _install_proot(app_id, app, reg_ver)
+    return _install_proot(app_id, app, reg_ver)
 
 def _install_pipe_script(app_id, app, registry_version="unknown"):
     """Install a tool by downloading its installer script via Python urllib, then executing it.
@@ -899,7 +987,7 @@ def _install_pipe_script(app_id, app, registry_version="unknown"):
 
     if not installer_url:
         print(f"\033[91m[X] No 'installer_url' in registry entry for {app_id}.\033[0m")
-        return
+        return False
 
     try:
         print(f"\033[96m[*] Downloading {app['name']} installer via Python (bypasses pipe escaping)...\033[0m")
@@ -936,16 +1024,18 @@ def _install_pipe_script(app_id, app, registry_version="unknown"):
 
         if run_cmd(cmd):
             _install_proot_common(app_id, app, registry_version)
-        else:
-            print(f"\033[91m[X] Installer script failed for {app_id}.\033[0m")
+            return True
+        print(f"\033[91m[X] Installer script failed for {app_id}.\033[0m")
+        return False
 
     except Exception as e:
         print(f"\033[91m[X] Python downloader failed: {e}\033[0m")
         print("\033[93m[!] Falling back to registry install_cmd...\033[0m")
         if run_cmd(app.get('install_cmd', f"echo 'No install_cmd for {app_id}'" )):
             _install_proot_common(app_id, app, registry_version)
-        else:
-            print(f"\033[91m[X] Installation failed.\033[0m")
+            return True
+        print(f"\033[91m[X] Installation failed.\033[0m")
+        return False
 
 
 def _install_proot(app_id, app, registry_version="unknown"):
@@ -953,7 +1043,7 @@ def _install_proot(app_id, app, registry_version="unknown"):
     Dispatches to the appropriate installer based on the registry 'install_method' field:
       'pipe_script' — downloads an installer script via Python urllib (bypasses ADB escaping)
       'cmd'         — runs install_cmd directly inside the container (default)
-    """
+    Returns True only when the tool was actually installed."""
     import shutil
     # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands
     if not shutil.which("curl"):
@@ -967,56 +1057,84 @@ def _install_proot(app_id, app, registry_version="unknown"):
     # Dispatch based on install_method defined in registry
     install_method = app.get('install_method', 'cmd')
     if install_method == 'pipe_script':
-        _install_pipe_script(app_id, app, registry_version)
-    else:
-        # Generic direct command install path
-        if run_cmd(app['install_cmd']):
-            _install_proot_common(app_id, app, registry_version)
-        else:
-            print(f"\033[91m[X] Installation failed.\033[0m")
+        return _install_pipe_script(app_id, app, registry_version)
+
+    # Generic direct command install path
+    if run_cmd(app['install_cmd']):
+        _install_proot_common(app_id, app, registry_version)
+        return True
+    print(f"\033[91m[X] Installation failed.\033[0m")
+    return False
 
 
 def uninstall_app(app_id, registry):
     installed = load_installed()
     if app_id not in installed:
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
-        return
+        return False
     app = registry['apps'].get(app_id, {})
     cmd = app.get('uninstall_cmd', f"echo 'No uninstall cmd for {app_id}'")
     print(f"\033[93m[*] Uninstalling {app.get('name', app_id)}...\033[0m")
 
-    run_cmd(cmd)
+    ok = run_cmd(cmd)
 
     remove_wrapper(app.get('executable', app_id))
     del installed[app_id]
     save_installed(installed)
+    # Forget the removed app's upstream version so it is not shown as installed.
+    cache = _load_update_cache()
+    if app_id in (cache.get('latest') or {}):
+        cache['latest'].pop(app_id, None)
+        _save_update_cache(cache)
+    if not ok:
+        print("\033[93m[!] The tool's own uninstall command failed, but its wrappers and "
+              "install record were removed.\033[0m")
     print(f"\033[92m[OK] Successfully uninstalled.\033[0m")
+    return True
 
 def update_app(app_id, registry):
-    """Update an installed app, regenerate wrapper using cached env, and update version."""
+    """Update an installed app, regenerate the wrapper with cached env, and record
+    the version the tool now reports. Returns True only on a successful update, so
+    a failed download surfaces as a non-zero exit instead of a fake success."""
     installed = load_installed()
     if app_id not in installed:
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
-        return
+        return False
     app = registry['apps'].get(app_id, {})
     cmd = app.get('update_cmd', f"echo 'No update cmd for {app_id}'")
-    print(f"\033[93m[*] Updating {app.get('name', app_id)}...\033[0m")
+    name = app.get('name', app_id)
+    print(f"\033[93m[*] Updating {name}...\033[0m")
 
-    if run_cmd(cmd):
-        cached_env = installed[app_id].get('env', {})
-        if cached_env:
-            print(f"\033[92m[i] Re-injecting stored configuration keys: {', '.join(cached_env.keys())}\033[0m")
+    if not run_cmd(cmd):
+        print(f"\033[91m[X] Update failed for {name} — '{cmd}' did not succeed.\033[0m")
+        print("\033[93m[!] The installed version is unchanged. Check your network/proxy, "
+              "then retry or inspect the log above.\033[0m")
+        return False
 
-        runtime_env = app.get('runtime_env', [])
-        generate_proot_wrapper(app.get('executable', app_id), cached_env if cached_env else None, runtime_env,
-                               app.get('native', False))
+    cached_env = installed[app_id].get('env', {})
+    if cached_env:
+        print(f"\033[92m[i] Re-injecting stored configuration keys: {', '.join(cached_env.keys())}\033[0m")
 
-        reg_ver = app.get('version', registry.get('version', 'unknown'))
-        installed[app_id]['installed_version'] = reg_ver
-        installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
-        save_installed(installed)
-        _fix_config_permissions()
-        print(f"\033[92m[OK] Successfully updated {app.get('name', app_id)} to v{reg_ver}.\033[0m")
+    runtime_env = app.get('runtime_env', [])
+    generate_proot_wrapper(app.get('executable', app_id), cached_env if cached_env else None, runtime_env,
+                           app.get('native', False))
+
+    probed = _record_installed_version(installed, app_id, app, app.get('version', registry.get('version', 'unknown')))
+    installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
+    save_installed(installed)
+    _fix_config_permissions()
+    # Drop this app's cached upstream version so the next `ancli check` re-reads it.
+    cache = _load_update_cache()
+    if app_id in (cache.get('latest') or {}):
+        cache['latest'].pop(app_id, None)
+        _save_update_cache(cache)
+    if probed:
+        print(f"\033[92m[OK] Successfully updated {name} to v{probed}.\033[0m")
+    else:
+        print(f"\033[92m[OK] Successfully updated {name}.\033[0m")
+        print(f"\033[93m[!] Could not read the new version ('{app.get('version_cmd', '')}'); "
+              "run 'ancli check' to refresh the update status.\033[0m")
+    return True
 
 def reconfigure_app(app_id, registry, set_env=None):
     """Reconfigure env vars and regenerate wrapper for an installed app.
@@ -1070,11 +1188,27 @@ def reconfigure_app(app_id, registry, set_env=None):
 # WebUI JSON API (non-interactive, machine-readable output)
 # ---------------------------------------------------------------------------
 
+@contextlib.contextmanager
+def _stdout_to_stderr():
+    """Keep `--json` stdout parseable: progress/diagnostics go to stderr.
+    (fetch_registry retries, corrupted-state warnings and blocked-command
+    notices would otherwise be emitted before the JSON document.)"""
+    with contextlib.redirect_stdout(sys.stderr):
+        yield
+
+
 def _binary_exists(exec_name):
     """Check whether a tool's binary exists inside the container."""
     return (os.path.exists(f"{ROOTFS}/usr/local/bin/{exec_name}") or
             os.path.exists(f"{ROOTFS}/usr/bin/{exec_name}") or
             os.path.exists(f"{ROOTFS}/root/.local/bin/{exec_name}"))
+
+
+def _first_version(text):
+    """Extract the first version-like token from arbitrary tool output:
+    'v2.1.283' -> '2.1.283', 'grok 1.0.0 (3cd0d0cbce)' -> '1.0.0'. None if absent."""
+    m = re.search(r'\d+(?:\.\d+)+', str(text or ''))
+    return m.group(0) if m else None
 
 
 def _ver_tuple(v):
@@ -1086,57 +1220,315 @@ def _ver_tuple(v):
     return tuple(parts) or None
 
 
-def _update_available(local_ver, cloud_ver):
-    """True when the cloud version is newer than the installed one.
+def _update_available(local_ver, cloud_ver, local_trusted=True):
+    """True when the upstream version is newer than the installed one.
 
-    Old install records store the AnCLI version instead of the tool version,
-    so any parseable cloud version that is not provably <= local counts as an
-    update candidate (one `ancli update` pass fixes the record)."""
+    `local_trusted=False` marks install records written before version probing
+    existed: they hold the AnCLI framework version (e.g. 1.2.2), which compares
+    "newer" than a tool's real version and would silently hide every update.
+    For those records any difference counts as a candidate — one `ancli check`
+    (or `ancli update`) rewrites the record with the tool's real version."""
     cv = _ver_tuple(cloud_ver)
     if cv is None:
         return False
     lv = _ver_tuple(local_ver)
     if lv is None:
         return True
+    if not local_trusted:
+        return lv != cv
     return lv < cv
 
 
-def list_apps_json():
-    """Registry + install state as pure JSON (used by the WebUI)."""
-    registry = _load_local_registry_cache() or {}
+def _probe_installed_version(app, registry=None):
+    """Ask the installed tool for its own version via the registry `version_cmd`.
+    Returns a version string, or None when unsupported/unavailable."""
+    cmd = str(app.get('version_cmd') or '').strip()
+    if not cmd:
+        return None
+    ok, out = _capture_cmd(cmd, _registry_exe_prefixes(registry), timeout=60)
+    return _first_version(out) if ok else None
+
+
+def _json_path(data, path):
+    """Resolve a dotted path ('info.version') inside parsed JSON; None when missing."""
+    cur = data
+    for part in str(path or '').split('.'):
+        if not part:
+            continue
+        if isinstance(cur, list):
+            try:
+                cur = cur[int(part)]
+            except (ValueError, IndexError):
+                return None
+        elif isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            return None
+        if cur is None:
+            return None
+    return cur
+
+
+def _latest_version(app, registry):
+    """Resolve a tool's *official* latest version from its upstream source.
+
+    Registry `latest` spec (see AGENTS.md §6):
+      {"source": "github", "repo": "owner/repo"}       -> releases/latest tag_name
+      {"source": "pypi",   "package": "name"}          -> info.version
+      {"source": "npm",    "package": "name"}          -> version of the latest dist-tag
+      {"source": "json",   "url": URL, "path": "a.b"}  -> dotted path in a JSON document
+      {"source": "text",   "urls": [URL, ...]}         -> first version token in a text body
+      {"source": "static"}                             -> the registry's declared "version"
+      {"source": "none"}                               -> detection unavailable by design
+
+    Returns (version|None, source_label, error|None). Never raises: a network
+    failure must not break `list`/`check` — it is reported per app instead."""
+    spec = app.get('latest') if isinstance(app.get('latest'), dict) else {}
+    src = spec.get('source')
+    # Human/machine label used in logs, the update cache and the WebUI.
+    label = src or 'unknown'
+    if src == 'github':
+        label = f"github:{spec.get('repo', '')}"
+    elif src in ('pypi', 'npm'):
+        label = f"{src}:{spec.get('package', '')}"
+    elif src == 'json':
+        label = 'manifest'
+    elif src == 'text':
+        label = 'channel'
+    try:
+        if src == 'github':
+            data = _http_json(f"https://api.github.com/repos/{spec.get('repo', '')}/releases/latest")
+            return _first_version(data.get('tag_name')), label, None
+        if src == 'pypi':
+            data = _http_json(f"https://pypi.org/pypi/{spec.get('package', '')}/json")
+            return _first_version(_json_path(data, 'info.version')), label, None
+        if src == 'npm':
+            data = _http_json(f"https://registry.npmjs.org/{spec.get('package', '')}/latest")
+            return _first_version(_json_path(data, 'version')), label, None
+        if src == 'json':
+            data = _http_json(spec.get('url', ''))
+            return _first_version(_json_path(data, spec.get('path', 'version'))), label, None
+        if src == 'text':
+            last_err = None
+            for url in (spec.get('urls') or [spec.get('url')]):
+                if not url:
+                    continue
+                try:
+                    ver = _first_version(_http_text(url))
+                except Exception as e:
+                    last_err = e
+                    continue
+                if ver:
+                    return ver, label, None
+            return None, label, str(last_err) if last_err else 'no version in channel response'
+    except Exception as e:
+        return None, label, str(e)
+
+    if src == 'none':
+        return None, 'none', None
+    # 'static' (or a legacy entry without a spec): the registry's declared version.
+    declared = app.get('version') or registry.get('version')
+    if declared:
+        return declared, 'registry', None
+    return None, 'none', None
+
+
+def _load_update_cache():
+    """Results of the last `ancli check` (never fatal: {} when absent/corrupt)."""
+    try:
+        with open(UPDATE_CACHE, "r") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            data.setdefault('ts', 0)
+            data.setdefault('latest', {})
+            return data
+    except Exception:
+        pass
+    return {"ts": 0, "latest": {}}
+
+
+def _save_update_cache(cache):
+    """Write the update cache atomically; failure is a warning, never an error."""
+    tmp = f"{UPDATE_CACHE}.tmp"
+    try:
+        for path in (tmp, UPDATE_CACHE):
+            if os.path.exists(path):
+                os.remove(path)
+        with open(tmp, "w") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+        os.rename(tmp, UPDATE_CACHE)
+        os.chmod(UPDATE_CACHE, 0o644)
+        return True
+    except Exception as e:
+        print(f"\033[93m[!] Could not write update cache: {e}\033[0m")
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return False
+
+
+def check_updates(registry=None, probe=True):
+    """Refresh both halves of update detection:
+
+      1. the *installed* version of every installed tool (registry `version_cmd`),
+      2. the tool's *official latest* version (registry `latest` source),
+
+    and persist (2) in UPDATE_CACHE so `ancli list --json` / the WebUI stay fast
+    and offline-safe. Returns the cache dict."""
+    registry = registry if registry is not None else fetch_registry()
     installed = load_installed()
-    apps = []
-    for aid, app in registry.get('apps', {}).items():
-        info = installed.get(aid, {})
-        exec_name = info.get('executable', app.get('executable', aid))
-        local_ver = info.get('installed_version', 'unknown')
-        cloud_ver = app.get('version', registry.get('version', 'unknown'))
-        update_avail = (aid in installed and _update_available(local_ver, cloud_ver))
-        apps.append({
-            "id": aid,
-            "name": app.get('name', aid),
-            "description": app.get('description', ''),
-            "native": bool(app.get('native', False)),
-            "installed": aid in installed,
-            "active": _binary_exists(exec_name) if aid in installed else False,
-            "installed_version": local_ver,
-            "cloud_version": cloud_ver,
-            "update_available": update_avail,
-            "required_env_vars": app.get('env_vars', []),
-            "optional_env_vars": app.get('optional_env_vars', []),
-            "configured_keys": list(info.get('env', {}).keys()),
-        })
-    print(json.dumps({"ancli_version": VERSION, "apps": apps}, ensure_ascii=False))
+    cache = _load_update_cache()
+    latest = dict(cache.get('latest') or {})
+    records_changed = False
+
+    if not installed:
+        print("\033[93m[i] No installed apps to check.\033[0m")
+
+    for aid in list(installed.keys()):
+        app = (registry.get('apps') or {}).get(aid)
+        if not app:
+            print(f"\033[93m[!] {aid} is installed but not in the registry; skipping.\033[0m")
+            continue
+        name = app.get('name', aid)
+
+        if probe:
+            probed = _probe_installed_version(app, registry)
+            if probed:
+                if (installed[aid].get('installed_version') != probed
+                        or not installed[aid].get('version_verified')):
+                    installed[aid]['installed_version'] = probed
+                    installed[aid]['version_verified'] = True
+                    records_changed = True
+                print(f"\033[92m[OK] {name}: installed v{probed}\033[0m")
+            else:
+                print(f"\033[93m[!] {name}: could not read the installed version "
+                      f"(no usable '{app.get('version_cmd', '') or 'version_cmd'}')\033[0m")
+
+        ver, src, err = _latest_version(app, registry)
+        latest[aid] = {"version": ver, "source": src, "error": err}
+        if err:
+            print(f"\033[93m[!] {name}: official version lookup failed ({err})\033[0m")
+        elif ver:
+            local = installed[aid].get('installed_version', 'unknown')
+            trusted = bool(installed[aid].get('version_verified')) or not app.get('version_cmd')
+            mark = "-> update available" if _update_available(local, ver, trusted) else "(up to date)"
+            print(f"\033[96m[i] {name}: official v{ver} [{src}] {mark}\033[0m")
+        else:
+            print(f"\033[90m[i] {name}: no official version source configured\033[0m")
+
+    if records_changed:
+        save_installed(installed)
+
+    cache = {"ts": int(time.time()), "latest": latest}
+    _save_update_cache(cache)
+    return cache
+
+
+def _app_record(aid, app, installed_flag, info, entry=None):
+    """One WebUI/JSON record: registry metadata + install state + update verdict."""
+    entry = entry if isinstance(entry, dict) else {}
+    exec_name = info.get('executable', app.get('executable', aid))
+    local_ver = info.get('installed_version', 'unknown')
+    # Records written before version probing hold the AnCLI framework version and
+    # must not be trusted blindly (that is what hid real updates).
+    verified = bool(info.get('version_verified'))
+    trusted = verified or not app.get('version_cmd')
+    spec = app.get('latest') if isinstance(app.get('latest'), dict) else {}
+    declared_source = spec.get('source') or 'registry'
+
+    # Prefer the official version resolved by `ancli check`; otherwise fall back to
+    # the registry's declared value and say so (source 'registry', not verified).
+    checked = False
+    if entry.get('version'):
+        cloud_ver = entry['version']
+        source = entry.get('source') or declared_source
+        checked = True
+    elif declared_source == 'none':
+        cloud_ver = None
+        source = 'none'
+    else:
+        cloud_ver = app.get('version', 'unknown')
+        source = 'registry'
+
+    update_avail = bool(
+        installed_flag
+        and source != 'none'
+        and cloud_ver not in ('unknown', '', None)
+        and _update_available(local_ver, cloud_ver, trusted)
+    )
+    return {
+        "id": aid,
+        "name": app.get('name', aid),
+        "description": app.get('description', ''),
+        "native": bool(app.get('native', False)),
+        "installed": installed_flag,
+        "active": _binary_exists(exec_name) if installed_flag else False,
+        "installed_version": local_ver,
+        "version_verified": verified,
+        "cloud_version": cloud_ver,
+        "cloud_source": source,
+        "cloud_checked": checked,
+        "cloud_error": entry.get('error'),
+        "update_available": update_avail,
+        "required_env_vars": app.get('env_vars', []),
+        "optional_env_vars": app.get('optional_env_vars', []),
+        "configured_keys": list(info.get('env', {}).keys()),
+    }
+
+
+def list_apps_json():
+    """Registry + install state + last known official versions as pure JSON.
+
+    Offline-safe by design: it reads the local registry cache and the
+    `.update_cache.json` written by `ancli check` (the WebUI triggers a check
+    when that cache is older than CHECK_TTL)."""
+    with _stdout_to_stderr():
+        registry = _load_local_registry_cache() or {}
+        installed = load_installed()
+        cache = _load_update_cache()
+        latest = cache.get('latest') or {}
+        apps = []
+        for aid, app in (registry.get('apps') or {}).items():
+            apps.append(_app_record(aid, app, aid in installed, installed.get(aid, {}), latest.get(aid)))
+    print(json.dumps({
+        "ancli_version": VERSION,
+        "apps": apps,
+        "last_check": cache.get('ts', 0),
+        "check_ttl": CHECK_TTL,
+    }, ensure_ascii=False))
+
+
+def check_updates_json():
+    """`ancli check --json`: refresh installed + official versions, emit the verdict."""
+    with _stdout_to_stderr():
+        registry = fetch_registry()
+        cache = check_updates(registry)
+        installed = load_installed()
+        latest = cache.get('latest') or {}
+        apps = []
+        for aid, app in (registry.get('apps') or {}).items():
+            if aid in installed:
+                apps.append(_app_record(aid, app, True, installed[aid], latest.get(aid)))
+    print(json.dumps({
+        "ancli_version": VERSION,
+        "checked_at": cache.get('ts', 0),
+        "updates": sum(1 for a in apps if a['update_available']),
+        "apps": apps,
+    }, ensure_ascii=False))
+
 
 
 def status_json():
     """Container/module status as pure JSON (used by the WebUI)."""
-    print(json.dumps({
-        "ancli_version": VERSION,
-        "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash"),
-        "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
-        "installed_count": len(load_installed()),
-    }, ensure_ascii=False))
+    with _stdout_to_stderr():
+        payload = {
+            "ancli_version": VERSION,
+            "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash"),
+            "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
+            "installed_count": len(load_installed()),
+        }
+    print(json.dumps(payload, ensure_ascii=False))
 
 
 def parse_set_env(argv):
@@ -1265,6 +1657,7 @@ if __name__ == "__main__":
                 sys.exit(0)
 
             # 'list' reads local state only — no network needed.
+            # 'check' refreshes both the cloud registry and the upstream versions.
             # All write-ops (install/update/config/repair) fetch the latest cloud registry.
             if action == "list":
                 if "--json" in sys.argv:
@@ -1272,6 +1665,7 @@ if __name__ == "__main__":
                     sys.exit(0)
                 registry  = _load_local_registry_cache()  # offline-safe, no network
                 installed = load_installed()
+                latest_map = (_load_update_cache().get('latest') or {})
                 if not installed:
                     print(_t("no_apps_installed_msg"))
                 else:
@@ -1285,26 +1679,40 @@ if __name__ == "__main__":
                         bin_exists = _binary_exists(exec_name)
                         status_tag = f"\033[92m{_t('app_active')}\033[0m" if bin_exists else f"\033[91m{_t('app_broken')}\033[0m"
 
-                        # Check for update available (uses local registry cache, no network)
+                        # Update hint: prefer the upstream version from `ancli check`,
+                        # else the registry's declared version (local cache, no network).
+                        app_reg = (registry or {}).get('apps', {}).get(aid, {})
+                        entry = latest_map.get(aid) or {}
+                        cloud_ver = entry.get('version') or app_reg.get('version', registry.get('version', 'unknown') if registry else 'unknown')
+                        source = entry.get('source') or 'registry'
+                        trusted = bool(info.get('version_verified')) or not app_reg.get('version_cmd')
                         update_tag = ""
-                        if registry and aid in registry['apps']:
-                            cloud_ver = registry['apps'][aid].get('version', registry.get('version', 'unknown'))
-                            if _update_available(local_ver, cloud_ver):
-                                update_tag = f" \033[93m{_t('app_update_available', cloud_ver)}\033[0m"
+                        if source != 'none' and _update_available(local_ver, cloud_ver, trusted):
+                            update_tag = f" \033[93m{_t('app_update_available', cloud_ver)}\033[0m \033[90m({source})\033[0m"
 
-                        print(f"  \033[92m{aid}\033[0m: {info.get('name', aid)} (v{local_ver}) {status_tag}{update_tag}")
+                        verified_tag = "" if info.get('version_verified') or not app_reg.get('version_cmd') else " \033[90m(unverified — run 'ancli check')\033[0m"
+                        print(f"  \033[92m{aid}\033[0m: {info.get('name', aid)} (v{local_ver}){verified_tag} {status_tag}{update_tag}")
                         print(_t("app_installed_at", date))
                         persisted_keys = list(info.get('env', {}).keys())
                         if persisted_keys:
                             print(_t("app_config_keys", ', '.join(persisted_keys)))
+            elif action == "check":
+                if "--json" in sys.argv:
+                    check_updates_json()
+                else:
+                    print(f"\033[1;36m=== AnCLI update check ===\033[0m")
+                    check_updates()
+                    print("\033[92m[OK] Update status refreshed. See 'ancli list' for the verdict.\033[0m")
+                sys.exit(0)
             else:
                 registry = fetch_registry()
+                ok = True
                 if action == "install" and app_id:
-                    install_app(app_id, registry)
+                    ok = install_app(app_id, registry)
                 elif action == "uninstall" and app_id:
-                    uninstall_app(app_id, registry)
+                    ok = uninstall_app(app_id, registry)
                 elif action == "update" and app_id:
-                    update_app(app_id, registry)
+                    ok = update_app(app_id, registry)
                 elif action == "config" and app_id:
                     set_env = parse_set_env(sys.argv[3:])
                     reconfigure_app(app_id, registry, set_env if set_env else None)
@@ -1320,6 +1728,10 @@ if __name__ == "__main__":
                     print(f"installed apps: {len(load_installed())}")
                 else:
                     print_help()
+                # Non-zero exit on a failed install/update/uninstall so the WebUI
+                # reports the failure instead of logging a bogus success.
+                if ok is False:
+                    sys.exit(1)
         else:
             show_menu()
     except (KeyboardInterrupt, EOFError):

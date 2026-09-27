@@ -63,6 +63,7 @@ ancli uninstall <app_id>       # 卸载工具
 ancli update <app_id>          # 更新已安装的工具
 ancli config <app_id>          # 重新配置环境变量 (API Key 等)
 ancli list                     # 列出已安装的工具列表
+ancli check                    # 联网检查官方最新版本与可更新项
 ancli repair                   # 检测并修复环境问题
 ancli --help                   # 显示帮助信息
 ancli --version                # 显示版本号
@@ -77,6 +78,34 @@ opencode
 mimo
 agy
 ```
+
+### 更新检测（识别官方最新版本）
+
+AnCLI 不再"猜"版本号：对每个已安装的工具，它会
+
+1. **问工具自己**（registry 里的 `version_cmd`，例如 `claude --version`）拿到本地真实版本；
+2. **问官方发布接口**（registry 里的 `latest`）拿到官方最新版本。
+
+| 工具 | 官方版本来源 |
+| :--- | :--- |
+| Aider | PyPI（`aider-chat`） |
+| MiMo Code | GitHub Releases（`XiaomiMiMo/MiMo-Code`） |
+| Antigravity CLI | 官方发布清单（`antigravity-cli-auto-updater…/manifests/linux_arm64.json`） |
+| Claude Code | GitHub Releases（`anthropics/claude-code`） |
+| OpenCode | GitHub Releases（`anomalyco/opencode`） |
+| Grok CLI | 官方通道指针（`x.ai/cli/stable`，失败时回落 GCS 镜像） |
+
+结果缓存 6 小时（`/data/local/tmp/ancli/.update_cache.json`），所以 WebUI 打开很快、离线也能看；
+WebUI 顶部有 **检查更新 (check)** 按钮可随时联网刷新，缓存过期（>6 小时）时打开页面也会自动检查。
+
+```bash
+ancli check            # 联网刷新"本地版本 + 官方最新版本"
+ancli check --json     # 同上，机器可读（WebUI 用）
+ancli list             # 检查后显示 "可更新 → vX (来源)"
+```
+
+`ancli update` 失败（断网、代理不可用、官方 404）现在会以非 0 退出码结束，
+WebUI 会明确报错而不是假装"✓ 完成"，并且不会污染已记录的版本号。
 
 ## 网络代理与 VPN 说明
 
