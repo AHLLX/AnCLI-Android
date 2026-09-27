@@ -75,7 +75,9 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 *Note: If `env_vars` is provided, `ancli-core.py` will automatically prompt the user for them and inject them into the wrapper via `export KEY="VALUE"`.*
 
 ## 7. Testing Constraints
-- The user **does not** currently have a local Android emulator attached. Do not attempt to use `adb shell` or run `install.sh` to verify your code. Rely on static analysis, linting, and your fundamental understanding of shell/Python scripts.
+- There is **no Android emulator** for this project — and an emulator could not verify this module anyway (it needs a rooted real device).
+- Only use `adb` when a device is actually attached (`adb devices` lists one). Even then, stick to read-only inspection (`ls`, `cat`, `settings get`, `logcat`) unless the user explicitly asks you to flash/test.
+- **NEVER** claim the module was flashed or verified when it was not, and never flash/uninstall on your own. Fall back to `sh -n` syntax checks, `python -m pytest tests/`, and static reasoning.
 
 ## 8. Network Proxy & VPN Constraints (CRITICAL)
 - **VPN Bypass**: Android VPNs in TUN mode (e.g. Clash, v2rayNG) bypass Root (UID 0) traffic by default. If a Python or curl script runs as root and the proxy is not explicitly set, it will ignore the VPN and fail to connect to domains like `github.com`.
@@ -87,3 +89,38 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 - **The `/sdcard` Trap**: Android's `/sdcard` is a complex chain of symlinks pointing to `/mnt/user/0/...` or `/storage/emulated/0`. 
 - **Node.js/Bun TUI Panics**: If you run Node.js-based tools (like `mimo`) inside PRoot while inside `/sdcard`, the tool will attempt to resolve its absolute physical path. If PRoot is missing `-b /mnt` or `-b /data` binds, the physical path resolution will fail, causing the Event Loop or TUI library to silently crash (you won't even see an error, the TUI simply won't launch).
 - **The Solution**: NEVER use dynamic path binding heuristics (e.g. `case "$PWD"`). Instead, ALWAYS bind the entire physical tree unconditionally when generating wrappers: `-b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig`. This ensures all underlying symlink targets exist within the container.
+
+## 10. Version & Release Checklist (CRITICAL)
+Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, so **every version number lives in three places and must move together**:
+
+| Where | Field | Must match |
+| :--- | :--- | :--- |
+| `src/module/module.prop` | `version` / `versionCode` | source of truth; `versionCode` must always increase |
+| `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
+| GitHub Release asset | `ancli-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
+
+Release procedure (copy-paste, in order):
+
+```bash
+# 1) bump version: src/module/module.prop (version=vX.Y.Z, versionCode=N+1) and update.json (same + zipUrl/changelog)
+# 2) update CHANGELOG.md (managers display it via update.json -> changelog URL)
+# 3) build the flashable zip (build.sh syncs src/* into src/module/ancli/ first)
+sh build.sh
+unzip -l ancli-vX.Y.Z.zip | head          # sanity: module.prop must be at the ZIP ROOT, not nested
+# 4) commit + tag + push
+git add -A && git commit -m "release: vX.Y.Z (versionCode N)"
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin main && git push origin vX.Y.Z
+# 5) publish the asset (name must equal update.json zipUrl basename)
+gh release create vX.Y.Z ancli-vX.Y.Z.zip --title "vX.Y.Z" --notes-file CHANGELOG.md
+# 6) confirm the manager-visible manifest is live and points to the new asset
+curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json
+```
+
+Release rules:
+
+- **Never reuse or decrease `versionCode`**: managers compare it to decide there is an update.
+- **Never ship a zip whose root is not the module root** (no extra folder around `module.prop`), and keep the module directory name equal to `id` in `module.prop`.
+- **Upgrade must not lose user data**: `uninstall.sh` preserves `/data/local/tmp/ancli/rootfs` and `installed.json` (see section 4.5). Re-check that rule before every release that touches install/uninstall logic.
+- **Pre-release checks you can actually run here**: `sh -n` on every `src/module/*.sh`, `python -m pytest tests/`, and a manual read of the diff for `/system` writes (must not exist — see section 3 dual-injection).
+- **On a real device only** (when `adb devices` shows one, and only with the user's go-ahead): flash the zip, then verify `su -c "ls -la /data/adb/modules/ancli"`, `su -c "ancli --version"` (or the tool's own `--version`), a reboot that keeps the command available, and that a manager uninstall leaves `/data/local/tmp/ancli/rootfs` intact.
