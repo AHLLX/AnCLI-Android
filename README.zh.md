@@ -44,7 +44,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 - **API 密钥**：`ancli config dsh` 填 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_BASE_URL`），或在 Web UI 的 Settings → Models 里填写。两者都会落到 `/root/.dsh`（即 `$DSH_HOME`），模块升级不会丢。
 - **代理**：DSH 读取 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY`，正是 AnCLI wrapper 已经从安卓系统代理注入的变量，因此不需要 TUN 模式也能走代理。
-- **Profile**：`web`、`headless`、`sdk`、`sdk-minimal`、`acp` 首次运行会自动初始化；`dsh tui` **不是**内置 profile，需要 `dsh plugin --profile tui add …`（依赖 `pnpm`）才能用全屏终端形态。
+- **Profile**：`web`、`headless`、`sdk`、`sdk-minimal`、`acp` 首次运行会自动初始化。**不存在 `tui` profile**：`dsh tui` 会直接报 *"profile \"tui\" does not exist; create it with `dsh plugin --profile tui add <package>`"*，上游 `packages/boot/app-boot` 的内置模板里没有终端 app bundle，npm 上也没有发布任何 TUI bundle（CLI `--help` 里的 `dsh tui` 示例是过期的）。交互界面就是 Web UI；脚本化一次性任务用 `dsh headless "…"`。（`dsh plugin … add <package>` 需要 `pnpm`，容器里没有预装。）
 
 ## 安装方法
 

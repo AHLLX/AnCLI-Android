@@ -37,6 +37,7 @@ CONFIG_FILE    = "/root/.ancli-config.json"
 # into `ancli list --json` (so the WebUI shows update badges without needing a
 # network round-trip on every page load).
 UPDATE_CACHE   = f"{ANCLI_DIR}/.update_cache.json"
+DNS_CACHE      = f"{ANCLI_DIR}/.dns_cache"   # real DNS servers, probed on the host by ancli_env.sh
 CHECK_TTL      = 6 * 3600                 # seconds; the WebUI auto-checks when older
 CHECK_TTL_FAILED = 15 * 60                # shorter retry window when a check had failures
 PROBE_TIMEOUT  = 20                       # seconds per `version_cmd` probe (a --version must be fast)
@@ -900,37 +901,73 @@ def setup_skill_dirs(verbose=True):
     return result
 
 def _get_android_dns():
-    """Read the real Android DNS servers (net.dns1/net.dns2). Returns a list of
-    valid IPv4 addresses, or [] when unavailable (e.g. not on Wi-Fi)."""
+    """Resolve the device's real DNS servers, IPv4 preferred, deduplicated.
+
+    The core runs inside the glibc container, where Android's `getprop`/`dumpsys`
+    cannot execute at all — so the host-side wrapper (`ancli_env.sh`) probes them
+    once per hour and writes `.dns_cache`. That cache is the primary source; the
+    direct probes below only ever succeed when the core runs on the host itself
+    (tests, or a future non-container path). Returns [] when nothing is usable."""
     import ipaddress
     servers = []
-    for prop in ["net.dns1", "net.dns2"]:
+
+    def add(value):
+        value = (value or "").strip().lstrip("/")
+        if not value:
+            return
         try:
-            out = subprocess.check_output(f"getprop {prop}", shell=True).decode().strip()
-        except Exception:
-            continue
-        # Deduplicate: net.dns1 and net.dns2 are often identical (single-DNS
-        # DHCP leases), and a duplicate would waste a fallback slot.
-        # 0.0.0.0 is Android's "no DNS" placeholder — reject it too.
-        try:
-            ip = ipaddress.ip_address(out)
+            ip = ipaddress.ip_address(value)
         except ValueError:
-            continue
-        if ip.version == 4 and not ip.is_unspecified and str(ip) not in servers:
-            servers.append(str(ip))
-    return servers
+            return
+        # Skip junk that would break resolution inside the container.
+        if ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast:
+            return
+        value = str(ip)
+        if value not in servers:
+            servers.append(value)
+
+    try:
+        with open(DNS_CACHE, "r") as handle:
+            cached = handle.read().split()
+        for value in cached[1:]:        # cached[0] is the capture timestamp
+            add(value)
+    except OSError:
+        pass
+
+    if not servers:
+        for prop in ["net.dns1", "net.dns2"]:
+            try:
+                add(subprocess.check_output(f"getprop {prop}", shell=True).decode().strip())
+            except Exception:
+                continue
+    if not servers:
+        try:
+            dump = subprocess.check_output("dumpsys connectivity", shell=True).decode(errors="replace")
+        except Exception:
+            dump = ""
+        for group in re.findall(r"DnsAddresses:\s*\[([^\]]*)\]", dump):
+            for token in group.split(","):
+                add(token)
+
+    # IPv4 first, and IPv6 only when the network offers nothing else: glibc reads
+    # at most three nameservers, and spending slots on IPv6 resolvers that a
+    # VPN-less container may not reach costs resilience.
+    ipv4 = [value for value in servers if ":" not in value]
+    return ipv4 or servers
 
 
 def _write_resolv_conf():
     """Write a working /etc/resolv.conf into the container.
-    Order: real Android DNS first (matches the user's network, including VPN),
-    then Google DNS, then China-friendly fallbacks."""
+    Order: the device's real DNS first (matches the current network *and* any VPN),
+    then China-friendly resolvers, then public ones. 8.8.8.8 is last on purpose:
+    it is blocked or poisoned on many networks, and a leading unresolvable
+    nameserver makes every lookup wait for its timeout."""
     resolv_path = f"{ROOTFS}/etc/resolv.conf"
     # Check if resolv.conf is a symlink, remove it if so to write actual file
     if os.path.islink(resolv_path):
         os.remove(resolv_path)
     nameservers = _get_android_dns()
-    for fallback in ["8.8.8.8", "1.1.1.1", "223.5.5.5", "119.29.29.29"]:
+    for fallback in ["223.5.5.5", "119.29.29.29", "1.1.1.1", "8.8.8.8"]:
         if len(nameservers) >= 3:  # glibc MAXNS: only the first 3 are read
             break
         if fallback not in nameservers:

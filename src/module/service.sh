@@ -8,17 +8,24 @@ ANCLI_DIR="/data/local/tmp/ancli"
 ROOTFS="${ANCLI_DIR}/rootfs"
 
 # 1. Ensure DNS is configured (resolv.conf may be reset by system on reboot).
-#    Prefer the real Android DNS servers (they follow the current network and any
-#    VPN); only fall back to public resolvers. Hardcoding 8.8.8.8 used to break
-#    name resolution entirely on networks where it is blocked/poisoned.
+#    Prefer the real DNS of the current network: getprop net.dns1/2 is empty on
+#    modern Android, so the per-network DnsAddresses from `dumpsys connectivity`
+#    (the same binder call ancli_env.sh uses for the proxy) is the real source;
+#    only then fall back to China-friendly resolvers and finally public ones.
+#    Hardcoding 8.8.8.8 first used to break name resolution on networks where it
+#    is blocked or poisoned.
 if [ -d "$ROOTFS/etc" ]; then
     # /etc/resolv.conf is a symlink in some ubuntu-base images: replace it with a
     # real file so the writes below land somewhere useful.
     [ -L "$ROOTFS/etc/resolv.conf" ] && rm -f "$ROOTFS/etc/resolv.conf"
     : > "$ROOTFS/etc/resolv.conf"
+    # Absolute paths: a service script's PATH is minimal by design.
+    _dns_net=$(/system/bin/dumpsys connectivity 2>/dev/null | grep -o 'DnsAddresses: \[[^]]*\]' | head -n 1 \
+        | sed 's/.*\[//; s/\]//' | tr ',' '\n' | sed 's#^ */##; s/ //g')
     _dns_seen=""
     _dns_count=0
-    for _dns_val in "$(getprop net.dns1 2>/dev/null)" "$(getprop net.dns2 2>/dev/null)" 223.5.5.5 1.1.1.1 8.8.8.8; do
+    for _dns_val in "$(/system/bin/getprop net.dns1 2>/dev/null)" "$(/system/bin/getprop net.dns2 2>/dev/null)" \
+                    $_dns_net 223.5.5.5 119.29.29.29 1.1.1.1 8.8.8.8; do
         case "$_dns_val" in
             ''|0.*|*[!0-9.]*) continue ;;
         esac
@@ -30,6 +37,34 @@ if [ -d "$ROOTFS/etc" ]; then
         _dns_count=$((_dns_count + 1))
         [ "$_dns_count" -ge 3 ] && break
     done
+    # late_start can run before Wi-Fi/data finishes connecting, in which case only
+    # the public fallbacks above are known. Keep watching for a few minutes in the
+    # background and rewrite the file with the real resolvers once they appear
+    # (service scripts must not block boot, hence the subshell).
+    if [ -z "$_dns_net" ]; then
+        (
+            _tries=0
+            while [ "$_tries" -lt 10 ]; do
+                sleep 30
+                _tries=$((_tries + 1))
+                _dns_retry=$(/system/bin/dumpsys connectivity 2>/dev/null \
+                    | grep -o 'DnsAddresses: \[[^]]*\]' | head -n 1 \
+                    | tr ',' '\n' | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' | head -n 3)
+                [ -z "$_dns_retry" ] && continue
+                : > "$ROOTFS/etc/resolv.conf"
+                _written=0
+                for _ip in $_dns_retry; do
+                    if [ "$_written" -lt 3 ]; then
+                        echo "nameserver $_ip" >> "$ROOTFS/etc/resolv.conf"
+                        _written=$((_written + 1))
+                    fi
+                done
+                [ "$_written" -lt 3 ] && echo "nameserver 223.5.5.5" >> "$ROOTFS/etc/resolv.conf"
+                echo "AnCLI: container DNS updated to the network resolvers: $(echo $_dns_retry)"
+                break
+            done
+        ) &
+    fi
 fi
 
 # 2. Ensure proot binary is executable (cleanup tools may reset permissions)
@@ -86,4 +121,15 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
             rm -f "$INSTANT_BIN/$shim" 2>/dev/null || true
         fi
     done
+done
+
+# 7. Remove stale host-side shims from the module's own system/bin.
+#    Older builds dropped git/bash/curl shims there; when the module overlay is
+#    active they are mounted into /system/bin and shadow those commands for the
+#    whole device (and they point at the ksu path step 6 no longer populates).
+for shim in git bash curl; do
+    mod_shim="${MODDIR:-/data/adb/modules/ancli}/system/bin/$shim"
+    if [ -f "$mod_shim" ] && grep -qE 'AnCLI proot shim|exec /data/adb/(ksu|ap)/bin/' "$mod_shim" 2>/dev/null; then
+        rm -f "$mod_shim" 2>/dev/null && echo "AnCLI: removed stale module shim $mod_shim"
+    fi
 done

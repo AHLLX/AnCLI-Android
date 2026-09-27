@@ -248,14 +248,15 @@ class TestDNS:
         core._write_resolv_conf()
         content = (tmp_path / "etc" / "resolv.conf").read_text()
         lines = content.strip().splitlines()
-        assert lines[0] == "nameserver 192.168.1.1"  # real DNS first
-        assert lines[1] == "nameserver 8.8.8.8"      # then Google fallback
+        assert lines[0] == "nameserver 192.168.1.1"  # the device's real DNS first
+        assert lines[1] == "nameserver 223.5.5.5"    # then the China-friendly fallback
         assert len(lines) == 3                        # glibc MAXNS
         assert len(lines) == len(set(lines))          # no duplicates
+        assert "8.8.8.8" not in lines                 # never leads: blocked on many networks
 
     def test_get_android_dns_rejects_garbage(self, monkeypatch):
-        # Only two getprop calls happen (net.dns1/net.dns2): a non-IP and an
-        # IPv6 must both be rejected; the IPv4 duplicate must be deduplicated.
+        # Only two getprop calls happen (net.dns1/net.dns2): a non-IP is rejected
+        # and the IPv4 duplicate is deduplicated.
         outputs = iter(["10.0.0.2", "10.0.0.2"])
         monkeypatch.setattr(
             core.subprocess, "check_output",
@@ -263,12 +264,24 @@ class TestDNS:
         )
         assert core._get_android_dns() == ["10.0.0.2"]
 
+        # Garbage first, IPv6 second: the junk is dropped, the IPv6 address is kept
+        # (it is the only resolver this network offers — dumpsys-only IPv6 networks
+        # exist on carriers that hand out no IPv4 DNS).
         outputs = iter(["not-an-ip", "2001:db8::1"])
         monkeypatch.setattr(
             core.subprocess, "check_output",
             lambda cmd, shell=True: outputs.__next__().encode(),
         )
-        assert core._get_android_dns() == []
+        assert core._get_android_dns() == ["2001:db8::1"]
+
+        # …but when an IPv4 resolver exists, only IPv4 is used: the three glibc
+        # slots are better spent on resolvers a VPN-less container can always reach.
+        outputs = iter(["2001:db8::1", "10.0.0.9"])
+        monkeypatch.setattr(
+            core.subprocess, "check_output",
+            lambda cmd, shell=True: outputs.__next__().encode(),
+        )
+        assert core._get_android_dns() == ["10.0.0.9"]
 
 
 # ---------------------------------------------------------------------------
@@ -1191,6 +1204,71 @@ def test_github_release_downloads_fail_fast_and_are_verified():
     assert github_apps >= 3, 'expected the GitHub-release apps to be covered'
     assert 'sha256sum -c' in reg['apps']['claude-code']['install_cmd'], \
         'claude-code ships SHASUMS256.txt — verify it'
+
+
+class TestAndroidDnsDiscovery:
+    """The core cannot execute Android's getprop/dumpsys from inside the glibc guest
+    (verified on device), so the host-side wrapper caches the real resolvers."""
+
+    def _fake_subprocess(self, monkeypatch, props, dump):
+        def fake_check_output(cmd, shell=True, **kwargs):
+            if cmd.startswith("getprop"):
+                return props.get(cmd.split()[-1], "").encode()
+            if cmd.startswith("dumpsys"):
+                return dump.encode()
+            raise AssertionError(f"unexpected command {cmd}")
+
+        monkeypatch.setattr(core.subprocess, "check_output", fake_check_output)
+
+    def _cache(self, tmp_path, monkeypatch, content):
+        path = tmp_path / ".dns_cache"
+        if content is not None:
+            path.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(core, "DNS_CACHE", str(path))
+        return path
+
+    def test_reads_the_host_probed_cache_first(self, tmp_path, monkeypatch):
+        self._cache(tmp_path, monkeypatch, "1790530000 192.168.1.1 2409:8080:2000:3::1\n")
+        # Subprocess probes must not even be needed.
+        monkeypatch.setattr(core.subprocess, "check_output",
+                            lambda *a, **k: (_ for _ in ()).throw(AssertionError("probed anyway")))
+        assert core._get_android_dns() == ["192.168.1.1"]   # IPv4 preferred, IPv6 dropped
+
+    def test_ipv6_only_cache_is_used_when_nothing_else(self, tmp_path, monkeypatch):
+        self._cache(tmp_path, monkeypatch, "1790530000 2409:8080:2000:3::1\n")
+        assert core._get_android_dns() == ["2409:8080:2000:3::1"]
+
+    def test_falls_back_to_props_when_no_cache(self, tmp_path, monkeypatch):
+        self._cache(tmp_path, monkeypatch, None)
+        self._fake_subprocess(monkeypatch, {"net.dns1": "10.0.0.1", "net.dns2": "10.0.0.1"},
+                              "DnsAddresses: [ /1.1.1.1 ]")
+        assert core._get_android_dns() == ["10.0.0.1"]
+
+    def test_falls_back_to_dumpsys_when_props_are_empty(self, tmp_path, monkeypatch):
+        self._cache(tmp_path, monkeypatch, None)
+        dump = ("DnsAddresses: [ /2409:8080:2000:3::1,/2409:8080:2000:3::2 ]\n"
+                "DnsAddresses: [ /192.168.1.1 ]")
+        self._fake_subprocess(monkeypatch, {"net.dns1": "", "net.dns2": ""}, dump)
+        assert core._get_android_dns() == ["192.168.1.1"]
+
+    def test_rejects_loopback_and_placeholder(self, tmp_path, monkeypatch):
+        self._cache(tmp_path, monkeypatch, None)
+        self._fake_subprocess(monkeypatch, {"net.dns1": "127.0.0.1", "net.dns2": "0.0.0.0"},
+                              "DnsAddresses: [ /192.168.1.1 ]")
+        assert core._get_android_dns() == ["192.168.1.1"]
+
+    def test_resolv_conf_keeps_public_fallbacks_last(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path))
+        os.makedirs(tmp_path / "etc", exist_ok=True)
+        self._cache(tmp_path, monkeypatch, "1790530000 192.168.1.1\n")
+
+        core._write_resolv_conf()
+
+        lines = (tmp_path / "etc" / "resolv.conf").read_text().splitlines()
+        assert lines[0] == "nameserver 192.168.1.1"     # the real network DNS leads
+        assert "nameserver 223.5.5.5" in lines
+        assert len(lines) == 3                          # glibc reads only three
+        assert "8.8.8.8" not in lines                   # not first, and slots are full
 
 
 class TestSharedSkillDirs:

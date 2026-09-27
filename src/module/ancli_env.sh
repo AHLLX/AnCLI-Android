@@ -128,6 +128,50 @@ if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
     export NO_PROXY="$no_proxy"
 fi
 
+# --- DNS inheritance for the container ---
+# The core runs inside the glibc guest, where Android's getprop/dumpsys cannot
+# execute at all, so it cannot discover the network's resolvers by itself. We are
+# on the host here: probe them and cache the result for `ancli repair` /
+# `_write_resolv_conf()` (refreshed when missing or older than an hour).
+DNS_CACHE="/data/local/tmp/ancli/.dns_cache"
+_dns_refresh=1
+if [ -f "$DNS_CACHE" ]; then
+    read -r _dns_ts _ < "$DNS_CACHE" 2>/dev/null
+    case "$_dns_ts" in
+        ''|*[!0-9]*) _dns_ts=0 ;;
+    esac
+    _dns_now=$(date +%s 2>/dev/null || echo 0)
+    if [ "$_dns_now" -gt 0 ] && [ "$_dns_ts" -gt 0 ]; then
+        _dns_age=$((_dns_now - _dns_ts))
+        [ "$_dns_age" -ge 0 ] && [ "$_dns_age" -lt 3600 ] && _dns_refresh=0
+    fi
+fi
+if [ "$_dns_refresh" -eq 1 ]; then
+    _dns_list=""
+    for _dns_prop in net.dns1 net.dns2; do
+        _dns_val=$(getprop "$_dns_prop" 2>/dev/null)
+        case "$_dns_val" in
+            ''|0.*|*[!0-9.]*) continue ;;
+        esac
+        case " $_dns_list " in
+            *" $_dns_val "*) continue ;;
+        esac
+        _dns_list="$_dns_list $_dns_val"
+    done
+    if [ -z "${_dns_list// /}" ]; then
+        # Modern Android keeps the per-network resolvers here instead.
+        _dns_list=$(dumpsys connectivity 2>/dev/null | grep -o 'DnsAddresses: \[[^]]*\]' | head -n 1 \
+            | tr ',' '\n' | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' | head -n 3 \
+            | while read -r _dns_ip; do printf ' %s' "$_dns_ip"; done)
+    fi
+    _dns_list=$(echo "$_dns_list" | tr -s ' ')
+    if [ -n "${_dns_list// /}" ]; then
+        mkdir -p /data/local/tmp/ancli 2>/dev/null || true
+        printf '%s%s\n' "$(date +%s 2>/dev/null || echo 0)" "$_dns_list" > "$DNS_CACHE" 2>/dev/null || true
+        chmod 644 "$DNS_CACHE" 2>/dev/null || true
+    fi
+fi
+
 # Auto-bind potential Clash/Tun virtual IPs to local loopback to satisfy Go socket bind traversal.
 # Only run the bind loop when none of the virtual IPs is present yet (avoids 16
 # failing `ip addr add` calls on every wrapper launch).

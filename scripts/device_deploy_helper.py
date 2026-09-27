@@ -20,6 +20,9 @@ jobs = [
     (f"{STAGE}/ancli-core.py.new", "/data/adb/modules/ancli/ancli/ancli-core.py", 0o755),
     (f"{STAGE}/ancli-registry.new", "/data/adb/modules/ancli/ancli/registry.json", 0o644),
     (f"{STAGE}/ancli-env.sh.new", "/data/adb/modules/ancli/ancli/ancli_env.sh", 0o755),
+    # Boot script: only takes effect on the next boot, but keep the module copy
+    # consistent with the repository (a flash would deploy the same file).
+    (f"{STAGE}/service.sh.new", "/data/adb/modules/ancli/service.sh", 0o755),
 ]
 
 for src, dst, mode in jobs:

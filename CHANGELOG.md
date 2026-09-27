@@ -1,3 +1,37 @@
+## Unreleased — reboot-verified boot fixes + real DNS inheritance
+
+### Boot script (verified across three real reboots)
+- **DNS now uses the network's real resolvers.** `getprop net.dns1/2` is empty on modern Android, so
+  the previous hardcoded 8.8.8.8 lead is gone: `service.sh` reads `DnsAddresses` from
+  `/system/bin/dumpsys connectivity`, writes China-friendly fallbacks immediately (at `late_start`
+  the network is usually not up yet), then **retries in a background subshell** and rewrites the file
+  with the real resolvers once they appear. Measured on device: right after boot
+  `223.5.5.5/119.29.29.29/1.1.1.1`, ~75 s later `43.239.172.1/43.239.172.2/223.5.5.5`.
+- **The container can reach the real DNS too.** The core runs in the glibc guest where Android's
+  `getprop`/`dumpsys` cannot execute at all (verified: `No such file or directory`/`not found`), so
+  the host-side `ancli_env.sh` probes the resolvers (props, then `dumpsys` → `DnsAddresses`) and
+  caches them in `.dns_cache` (hourly); `_get_android_dns()` reads that cache first and IPv4 wins.
+  `ancli repair` therefore writes `192.168.1.1`/`43.239.172.x` instead of public fallbacks.
+- **Stale host shims are removed from both injection paths.** Confirmed gone after reboot:
+  `/data/adb/ksu/bin/{git,bash,curl}` and the module's own `system/bin/bash` (a leftover that
+  `exec`'d the ksu shim this release stopped populating). The module's remaining `system/bin`
+  entries are real app wrappers.
+- **Ownership repair covers the new config dirs at boot** (`.agents`, `.dsh`, `.grok`, `.mimocode`
+  in addition to `.config`/`.gemini`/`.claude`/`.local`): all four now show `shell:shell 0700` after
+  a reboot. Wrappers stayed usable (`dsh --version`, `claude --version`, `ancli --version`), the
+  module stayed enabled and `installed.json`/`.update_cache.json`/skills links survived.
+
+### Findings documented
+- **`dsh tui` does not exist.** Device run: `dsh: profile "tui" does not exist; create it with 'dsh
+  plugin --profile tui add <package>'`. Upstream `PROFILE_TEMPLATES` ships only
+  `acp/web/headless/sdk/sdk-minimal`, no package declares a terminal app bundle, and npm publishes
+  no TUI bundle for the scope — the `dsh tui` lines in the CLI `--help` are stale. pnpm was therefore
+  **not** installed (it buys nothing without a TUI package); README documents the Web UI /
+  `dsh headless` as the real interfaces.
+- **KernelSU's `su -c` resolves only the first command** through `/data/adb/ksu/bin`, which is why a
+  chained `dsh --version; claude --version` reports the second as missing while each works alone.
+  Recorded in AGENTS.md so future device verification is not misread.
+
 ## Unreleased — app install hardening + shared agent skills
 
 ### Install / update hardening

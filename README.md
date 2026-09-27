@@ -52,8 +52,11 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 - **Proxy**: DSH reads `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY` — exactly what the AnCLI
   wrapper already exports from the Android system proxy, so it works without TUN mode.
 - **Profiles**: `web`, `headless`, `sdk`, `sdk-minimal` and `acp` auto-initialize on first use.
-  `dsh tui` is *not* a shipped profile — install it with `dsh plugin --profile tui add …` (needs
-  `pnpm`) if you want the full-screen terminal agent.
+  **There is no `tui` profile**: `dsh tui` aborts with *"profile \"tui\" does not exist; create it with
+  `dsh plugin --profile tui add <package>`"*, the shipped templates in `packages/boot/app-boot`
+  contain no terminal app bundle, and no TUI bundle is published on npm — the examples in the CLI
+  `--help` are stale. The interactive interface is the Web UI; for scripted one-shots use
+  `dsh headless "…"`. (`dsh plugin … add <package>` needs `pnpm`, which the container does not ship.)
 
 ## Installation
 
