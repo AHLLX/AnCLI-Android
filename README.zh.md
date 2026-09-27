@@ -135,6 +135,30 @@ WebUI 会明确报错而不是假装"✓ 完成"，并且不会污染已记录�
 1. **自动代理探测**：每次执行快捷命令（如敲下 `agy`）时，启动脚本会自动通过 `dumpsys connectivity` 请求 Android 系统的网络状态。如果你的 VPN 设置了全局或系统 HTTP 代理，框架会自动拾取代理的 IP 和端口，并注入到运行容器中，实现**零配置透明代理**。
 2. **强制硬编码代理（纯 VPN 模式）**：如果你的翻墙软件不支持注入系统代理，可以在终端输入 `ancli config <工具名>`（例如 `ancli config agy`），在交互提示中直接填入你的本地代理地址（如 `http://127.0.0.1:7890`）到 `HTTP_PROXY` 和 `ALL_PROXY` 项中，即可将其永久绑定到该工具。
 
+## 统一 Agent Skills
+
+每个 Agent 工具都从自己的路径读 skill，但它们都认一套 "agents" 约定，所以 AnCLI 把它们指到同一个目录：
+
+```bash
+ancli skills          # 建 ~/.agents/skills，并把各工具的 skills 目录链过去
+ancli skills --json   # 同上，机器可读
+ancli repair          # 也会执行这套设置（WebUI 的「修复环境」按钮同理）
+```
+
+把 skill 放到 `/root/.agents/skills/<名字>/SKILL.md`（frontmatter 需要 `name` 和 `description`，名字用小写 kebab-case），下面所有工具都能看到。**已有内容的工具自有 skills 目录不会被覆盖**，命令会把它们列为 `kept`。
+
+| 工具 | 全局（容器 `$HOME`） | 项目级 | 备注 |
+| :--- | :--- | :--- | :--- |
+| **Claude Code** | `~/.claude/skills/<名字>/SKILL.md` | `<仓库>/.claude/skills/` | 已链到统一目录 |
+| **OpenCode** | `~/.config/opencode/skills/`、`~/.claude/skills/`、`~/.agents/skills/` | `<仓库>/.opencode/skills/`、`.claude/skills/`、`.agents/skills/` | 只认文件夹形式，不认平铺 `.md` |
+| **MiMo Code** | `~/.mimocode/skills/`、`~/.claude/skills/`、`~/.agents/skills/` | 仓库内同名路径 | |
+| **Antigravity CLI** | `~/.agents/skills/`（另读 `~/.agents/skills.json` 索引）、`~/.gemini/config/skills/` | `<仓库>/.agents/skills/` | 原生读统一根 |
+| **Grok CLI** | `~/.grok/skills/`、`~/.claude/skills/`、`~/.agents/skills/`、内置 `~/.grok/bundled/skills/` | `<仓库>/.grok/skills/`、`.claude/skills/`、`.agents/skills/` | |
+| **DeepSeek Harness** | `~/.dsh/skills/`、`~/.agents/skills/` | `<仓库>/.dsh/skills/`、`.agents/skills/` | 也接受平铺 `<名字>.md` |
+| **Aider** | —（没有 skill 机制） | `CONVENTIONS.md`（或 `aider --read 文件`） | 用 conventions 文件替代 |
+
+skill 存在容器的 `/root` 下，模块升级不会丢；想跟着项目走就放仓库里的 `<仓库>/.agents/skills/`——除 Aider 外所有工具都认这个路径。
+
 ## 路径说明
 
 | 组件 | 物理路径 (宿主机视角) | 说明 |

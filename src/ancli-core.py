@@ -110,6 +110,7 @@ STRINGS = {
   ancli config <app_id>          重新配置应用的环境变量
   ancli list                     列出所有已安装的应用
   ancli check                    联网检查官方最新版本与可更新项
+  ancli skills                   统一各 Agent 的全局 skills 目录（~/.agents/skills）
   ancli repair                   检测并修复 DNS、权限和封装
   ancli --version                显示版本
   ancli --help                   显示此帮助信息
@@ -179,6 +180,7 @@ STRINGS = {
   ancli config <app_id>          Reconfigure env vars for an app
   ancli list                     List all installed apps
   ancli check                    Check official latest versions and available updates
+  ancli skills                   Unify the agent CLIs' global skills dir (~/.agents/skills)
   ancli repair                   Detect and repair DNS, permissions, and wrappers
   ancli --version                Show version
   ancli --help                   Show this help message
@@ -821,12 +823,81 @@ def _fix_config_permissions():
         return
     # chmod the root home dir itself so shell user can enter it
     os.system(f"chmod 755 {root_dir} 2>/dev/null")
-    for conf_dir in [".config", ".claude", ".gemini", ".local"]:
+    for conf_dir in [".config", ".claude", ".gemini", ".local", ".agents",
+                     ".dsh", ".grok", ".mimocode"]:
         full_path = f"{root_dir}/{conf_dir}"
         if os.path.exists(full_path):
             # Use numeric UID 2000 (Android shell) for reliability
             os.system(f"chown -R 2000:2000 {full_path} 2>/dev/null")
             os.system(f"chmod -R u+rwX,go-rwx {full_path} 2>/dev/null")
+
+
+# Shared skill root read by mimo, agy, grok, dsh and opencode (verified from each
+# binary's own path literals). ~/.claude/skills is the same convention for Claude
+# Code, which is the one tool that does not read .agents.
+SHARED_SKILL_DIR = "/root/.agents/skills"
+SKILL_LINK_DIRS = (
+    "/root/.claude/skills",
+    "/root/.grok/skills",
+    "/root/.mimocode/skills",
+    "/root/.config/opencode/skills",
+    "/root/.dsh/skills",
+)
+
+
+def setup_skill_dirs(verbose=True):
+    """Point every installed agent CLI at one shared global skills directory.
+
+    All agent tools except Claude Code already read `~/.agents/skills`, so that is
+    the canonical root; the per-tool directories are symlinked to it (and Claude
+    Code's `~/.claude/skills` too). Existing *non-empty* directories are left
+    untouched — a user who keeps different skills per tool keeps them. Idempotent.
+
+    Returns {'created': [...], 'linked': [...], 'kept': [...]}. Never raises."""
+    result = {"created": [], "linked": [], "kept": []}
+    try:
+        if not os.path.isdir(SHARED_SKILL_DIR):
+            os.makedirs(SHARED_SKILL_DIR, exist_ok=True)
+            os.system(f"chown -R 2000:2000 {SHARED_SKILL_DIR} 2>/dev/null")
+            os.chmod(SHARED_SKILL_DIR, 0o755)
+            result["created"].append(SHARED_SKILL_DIR)
+    except Exception as e:
+        print(f"\033[93m[!] Could not create {SHARED_SKILL_DIR}: {e}\033[0m")
+        return result
+
+    for path in SKILL_LINK_DIRS:
+        try:
+            if os.path.islink(path):
+                if os.path.realpath(path) == os.path.realpath(SHARED_SKILL_DIR):
+                    result["linked"].append(path)      # already correct
+                else:
+                    result["kept"].append(path)        # points somewhere else on purpose
+                continue
+            if os.path.isdir(path):
+                if os.listdir(path):
+                    result["kept"].append(path)        # user's own skills: do not touch
+                    continue
+                os.rmdir(path)                         # empty placeholder -> replace
+            elif os.path.exists(path):
+                result["kept"].append(path)            # a file: leave it alone
+                continue
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.symlink(SHARED_SKILL_DIR, path)
+            result["linked"].append(path)
+        except Exception as e:
+            print(f"\033[93m[!] Could not link {path}: {e}\033[0m")
+
+    if verbose:
+        print(f"\033[92m[OK] Shared skills dir: {SHARED_SKILL_DIR}\033[0m")
+        if result["linked"]:
+            print(f"\033[92m[OK] Linked to it: {', '.join(result['linked'])}\033[0m")
+        if result["kept"]:
+            print(f"\033[93m[i] Left as-is (own skills or different target): "
+                  f"{', '.join(result['kept'])}\033[0m")
+        print("\033[96m[i] Put a skill at "
+              f"{SHARED_SKILL_DIR}/<name>/SKILL.md (frontmatter: name + description) "
+              "and every agent CLI sees it; project-local <repo>/.agents/skills also works.\033[0m")
+    return result
 
 def _get_android_dns():
     """Read the real Android DNS servers (net.dns1/net.dns2). Returns a list of
@@ -910,6 +981,10 @@ def repair_env(registry):
     print("\033[96m[*] Repairing auth credential directory permissions...\033[0m")
     _fix_config_permissions()
     print("\033[92m[OK] Auth config folder permissions and ownership restored.\033[0m")
+
+    # 2.1 One shared global skills directory for every agent CLI
+    print("\033[96m[*] Setting up the shared skills directory...\033[0m")
+    setup_skill_dirs()
 
     # 3. Repair proot and ancli-core.py executable permissions
     try:
@@ -1090,9 +1165,18 @@ def _install_proot_common(app_id, app, registry=None):
     save_installed(installed)
     # Fix permissions immediately so the tool is usable without a reboot
     _fix_config_permissions()
+    setup_skill_dirs(verbose=False)
     suffix = f" v{probed}" if probed else ""
+    # Self-check: an installer whose command "succeeded" but left no runnable
+    # binary (wrong runtime, missing file, half-extracted tarball) must not be
+    # reported as a success.
+    if not probed and not _binary_exists(app['executable']):
+        print(f"\033[91m[X] {app['name']} does not seem to be installed: no executable "
+              f"'{app['executable']}' was found in the container.\033[0m")
+        return False
     print(f"\033[92m[OK] Successfully installed {app['name']}{suffix}! Type '{app['executable']}' to run.\033[0m")
     print(f"\033[93m[i] Configure API keys anytime with: ancli config {app_id}\033[0m")
+    return True
 
 def install_app(app_id, registry):
     if app_id not in registry['apps']:
@@ -1157,8 +1241,7 @@ def _install_pipe_script(app_id, app, registry=None):
         cmd = _build_pipe_script_cmd(script_path, installer_env, installer_args)
 
         if run_cmd(cmd):
-            _install_proot_common(app_id, app, registry)
-            return True
+            return _install_proot_common(app_id, app, registry)
         print(f"\033[91m[X] Installer script failed for {app_id}.\033[0m")
         return False
 
@@ -1166,8 +1249,7 @@ def _install_pipe_script(app_id, app, registry=None):
         print(f"\033[91m[X] Python downloader failed: {e}\033[0m")
         print("\033[93m[!] Falling back to registry install_cmd...\033[0m")
         if run_cmd(app.get('install_cmd', f"echo 'No install_cmd for {app_id}'" )):
-            _install_proot_common(app_id, app, registry)
-            return True
+            return _install_proot_common(app_id, app, registry)
         print(f"\033[91m[X] Installation failed.\033[0m")
         return False
     finally:
@@ -1186,10 +1268,16 @@ def _install_proot(app_id, app, registry=None):
       'cmd'         — runs install_cmd directly inside the container (default)
     Returns True only when the tool was actually installed."""
     import shutil
-    # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands
+    # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands.
+    # The rootfs ships a minimal apt keyring and a half-configured systemd, so a
+    # plain `apt-get install` fails signature checks — use the same permissive
+    # flags customize.sh uses for its bootstrap.
     if not shutil.which("curl"):
         print("\033[96m[i] Container is missing 'curl'. Auto-installing dependencies via apt...\033[0m")
-        apt_cmd = "apt-get update -qy && apt-get install -qy curl ca-certificates"
+        apt_cmd = ("apt-get update -qy -o Acquire::AllowInsecureRepositories=true && "
+                   "apt-get install -qy --allow-unauthenticated "
+                   "-o Acquire::AllowInsecureRepositories=true "
+                   "-o Acquire::AllowUnauthenticated=true curl ca-certificates")
         if not run_cmd(apt_cmd):
             print("\033[91m[X] Failed to install 'curl' inside container. Installation might fail.\033[0m")
         else:
@@ -1202,8 +1290,7 @@ def _install_proot(app_id, app, registry=None):
 
     # Generic direct command install path
     if run_cmd(app['install_cmd']):
-        _install_proot_common(app_id, app, registry)
-        return True
+        return _install_proot_common(app_id, app, registry)
     print(f"\033[91m[X] Installation failed.\033[0m")
     return False
 
@@ -2027,6 +2114,18 @@ if __name__ == "__main__":
                         persisted_keys = list(info.get('env', {}).keys())
                         if persisted_keys:
                             print(_t("app_config_keys", ', '.join(persisted_keys)))
+            elif action == "skills":
+                # One shared global skills dir + per-tool links (idempotent).
+                if "--json" in sys.argv:
+                    with _stdout_to_stderr():
+                        result = setup_skill_dirs(verbose=False)
+                    print(json.dumps({"shared": SHARED_SKILL_DIR,
+                                      "linked": result["linked"],
+                                      "kept": result["kept"],
+                                      "created": result["created"]}, ensure_ascii=False))
+                else:
+                    setup_skill_dirs()
+                sys.exit(0)
             elif action == "check":
                 if "--json" in sys.argv:
                     cache = check_updates_json()

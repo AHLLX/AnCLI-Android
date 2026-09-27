@@ -1,3 +1,34 @@
+## Unreleased — app install hardening + shared agent skills
+
+### Install / update hardening
+- **Failed installs now fail loudly.** After the installer command succeeds, AnCLI checks that the
+  tool is really there (its `version_cmd` answers *or* the binary exists in the container); if
+  neither holds it reports failure with a non-zero exit instead of "successfully installed". This is
+  exactly the check that would have caught the first `dsh` attempt, where the `||` fallback
+  installed the CLI under Node 18 and every later run crashed.
+- **GitHub-release downloads use `curl -fL --retry 3 --retry-delay 2`** (mimo, claude-code,
+  opencode): a 404/HTML error page or a flaky link now aborts the install instead of being unpacked
+  as if it were a tarball, and transient failures are retried.
+- **claude-code verifies its published checksum**: the installer downloads the asset under its real
+  name, fetches `SHASUMS256.txt` from the same release and runs
+  `sha256sum -c --ignore-missing` before extracting (verified on device: intact → rc 0, tampered →
+  rc 1). mimo/opencode publish no checksum file, so they get the fail-fast/retry treatment only.
+- Temporary archives are removed on every path, and the `curl` auto-install fallback now carries the
+  permissive apt flags the container actually needs (minimal keyring + half-configured systemd).
+
+### Shared agent skills
+- Every agent CLI reads skills from its own directory, but five of six also read `~/.agents/skills`.
+  New `ancli skills` (also run by `ancli repair` and the WebUI's 修复环境 button) creates
+  `/root/.agents/skills` and symlinks each tool's own skills path to it — `~/.claude/skills`,
+  `~/.grok/skills`, `~/.mimocode/skills`, `~/.config/opencode/skills`, `~/.dsh/skills`. A tool
+  directory that already holds your own skills is left untouched and reported as `kept`; an empty
+  placeholder is replaced. Verified on device (all five links resolve to the shared root).
+- The config-ownership repair (core `_fix_config_permissions` + `service.sh`) now covers `.agents`,
+  `.dsh`, `.grok` and `.mimocode` too, so skills and config stay readable/writable for both root and
+  the shell user across upgrades.
+- README documents the per-tool skill matrix (global and project-scoped paths, formats, and the
+  fact that Aider has no skill system and uses `CONVENTIONS.md` / `--read` instead).
+
 ## Unreleased — DeepSeek Harness app + WebUI official-version detection
 
 ### New app

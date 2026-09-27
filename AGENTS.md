@@ -60,6 +60,7 @@ When debugging paths or writing cleanup logic, refer to this exact physical mapp
 - **Pip Globals**: `/data/local/tmp/ancli/rootfs/usr/local/lib/python3.12/dist-packages/`
 - **Core Script**: `/data/local/tmp/ancli/bin/ancli-core.py`
 - **Update Cache**: `/data/local/tmp/ancli/.update_cache.json` (official latest versions from `ancli check`)
+- **Shared Skills**: `/root/.agents/skills` inside the container (i.e. `$ROOTFS/root/.agents/skills`); `ancli skills` / `ancli repair` create it and symlink each tool's own path (`~/.claude/skills`, `~/.grok/skills`, `~/.mimocode/skills`, `~/.config/opencode/skills`, `~/.dsh/skills`) to it
 - **Magisk Module**: `/data/adb/modules/ancli/`
 
 ## 6. Adding New Apps to Registry
@@ -100,6 +101,12 @@ To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a
 - Rule: **never** treat a hand-written `version` as the official latest, and never write the
   registry/AnCLI version into `installed_version` — that silently disables update detection
   (see CHANGELOG: "WebUI could not detect official versions").
+
+**Skills are a per-app property too.** Agent CLIs read `SKILL.md` bundles from their own directory
+plus the shared `~/.agents/skills` (Claude Code excepted — `~/.claude/skills` is symlinked to the
+shared root by `ancli skills`). When adding an app, survey its real paths instead of guessing:
+`scripts/survey_skill_paths.py` (piped into the container) greps the binary's own string literals and
+the bundled docs. Aider-style tools with no skill system use `CONVENTIONS.md` / `--read`.
 
 ## 7. Testing Constraints
 - There is **no Android emulator** for this project — and an emulator could not verify this module anyway (it needs a rooted real device).

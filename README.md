@@ -16,6 +16,7 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 - **Cross-Sandbox Browser Redirect (OAuth login)**: Solves the headless virtualization restriction where terminal agents (like `grok login`, `agy auth login`) fail to open a browser for device flow authentication. We map host-side wrappers and translate Golang's `statx` pathing system calls, automatically launching your host Android's default web browser when tools try to open URLs inside the guest container.
 - **Multi-language Support (zh/en)**: Features an interactive language hot-toggle directly in the `ancli` menu, saving your locale preferences persistently.
 - **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
+- **Shared Agent Skills**: one global skills directory (`~/.agents/skills` inside the container) is symlinked into every agent CLI's own skills path, so a `SKILL.md` written once is picked up by Claude Code, MiMo, Antigravity, Grok, OpenCode and DeepSeek Harness. Run `ancli skills` (or the WebUI's 修复环境) to create the layout.
 
 ## Supported Applications
 *(Fetched dynamically from the cloud registry)*
@@ -148,6 +149,36 @@ On Android, VPN applications (like Clash, v2rayNG running in TUN mode) typically
 **AnCLI provides a seamless solution:**
 1. **Auto Proxy Detection**: Every time you launch a shortcut (e.g., typing `agy`), the wrapper automatically polls Android's `dumpsys connectivity` state. If your VPN is configured with a global or system HTTP proxy, the wrapper will extract the local IP and port and inject it into the guest container, achieving **zero-config transparent proxying**.
 2. **Hardcoded Proxy Override (Pure VPN Mode)**: If your VPN app does not support system proxy injection, simply run `ancli config <app_id>` (e.g., `ancli config agy`) in your terminal. You can directly input your local proxy address (like `http://127.0.0.1:7890`) into the `HTTP_PROXY` and `ALL_PROXY` fields. This will permanently bake the proxy route into that tool's execution flow.
+
+## Shared Agent Skills
+
+Every agent CLI in AnCLI reads skills from its own path, but they all agree on one
+"agents" convention — so AnCLI points them at a single directory:
+
+```bash
+ancli skills          # create ~/.agents/skills and link each tool's skills dir to it
+ancli skills --json   # same, machine-readable
+ancli repair          # also runs the setup (the WebUI's 修复环境 button does too)
+```
+
+Put a skill at `/root/.agents/skills/<name>/SKILL.md` (frontmatter needs `name` and
+`description`; names are lower-case kebab-case) and every tool below sees it. Existing
+per-tool skill directories with your own content are never overwritten — the command
+reports them as `kept` instead.
+
+| Tool | Global (container `$HOME`) | Project-scoped | Notes |
+| :--- | :--- | :--- | :--- |
+| **Claude Code** | `~/.claude/skills/<name>/SKILL.md` | `<repo>/.claude/skills/` | linked to the shared root |
+| **OpenCode** | `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/` | `<repo>/.opencode/skills/`, `.claude/skills/`, `.agents/skills/` | bundle folders only, no flat `.md` |
+| **MiMo Code** | `~/.mimocode/skills/`, `~/.claude/skills/`, `~/.agents/skills/` | same names in the repo | |
+| **Antigravity CLI** | `~/.agents/skills/` (+ `~/.agents/skills.json`), `~/.gemini/config/skills/` | `<repo>/.agents/skills/` | reads the shared root natively |
+| **Grok CLI** | `~/.grok/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, bundled `~/.grok/bundled/skills/` | `<repo>/.grok/skills/`, `.claude/skills/`, `.agents/skills/` | |
+| **DeepSeek Harness** | `~/.dsh/skills/`, `~/.agents/skills/` | `<repo>/.dsh/skills/`, `.agents/skills/` | also accepts a flat `<name>.md` |
+| **Aider** | — (no skill system) | `CONVENTIONS.md` (or `aider --read FILE`) | use conventions files instead |
+
+Skills live inside the container's `/root`, which module upgrades preserve. To keep them
+with your projects, put them in the repo (`<repo>/.agents/skills/`) — that path works for
+every tool except Aider.
 
 ## Directory Structure
 

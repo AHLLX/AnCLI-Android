@@ -38,12 +38,14 @@ fi
 # 3. Ensure ancli-core.py is executable
 [ -f "$ANCLI_DIR/bin/ancli-core.py" ] && chmod 755 "$ANCLI_DIR/bin/ancli-core.py"
 
-# 4. Fix ownership of AI agent credential directories.
+# 4. Fix ownership of AI agent credential/config directories.
 #    agy (and other Go/Node agents) write auth tokens as root on first launch.
 #    After a terminal restart, subsequent shell-user runs fail with "Permission denied"
 #    reading those files. We hand ownership to the shell user (UID 2000) and keep the
 #    modes owner-only (u+rwX,go-rwx) — root ignores DAC, other apps cannot read tokens.
-for _conf in ".config" ".gemini" ".claude" ".local"; do
+#    .agents is where the shared skills live (all agent CLIs read it; ancli skills /
+#    ancli repair creates the per-tool links).
+for _conf in ".config" ".gemini" ".claude" ".local" ".agents" ".dsh" ".grok" ".mimocode"; do
     _full="$ROOTFS/root/$_conf"
     if [ -d "$_full" ]; then
         chown -R 2000:2000 "$_full" 2>/dev/null || true

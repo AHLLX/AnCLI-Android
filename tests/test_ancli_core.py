@@ -1175,6 +1175,108 @@ class TestStateFilePermissions:
         assert not any(m == 0o666 for _, m in modes)
 
 
+def test_github_release_downloads_fail_fast_and_are_verified():
+    """GitHub-release installers must not silently unpack an HTML error page, and
+    claude-code's published SHASUMS256.txt must actually be checked."""
+    with open(os.path.join(os.path.dirname(__file__), '..', 'src', 'registry.json'), encoding='utf-8') as f:
+        reg = json.load(f)
+    github_apps = 0
+    for aid, app in reg['apps'].items():
+        cmd = app['install_cmd']
+        if 'releases/latest/download' in cmd:
+            github_apps += 1
+            assert 'curl -fL' in cmd, f'{aid}: use `curl -fL` so a 404 fails instead of writing a body'
+            assert '--retry' in cmd, f'{aid}: retry transient network failures'
+            assert cmd.count('rm -f /tmp/') >= 1, f'{aid}: clean up the downloaded archive'
+    assert github_apps >= 3, 'expected the GitHub-release apps to be covered'
+    assert 'sha256sum -c' in reg['apps']['claude-code']['install_cmd'], \
+        'claude-code ships SHASUMS256.txt — verify it'
+
+
+class TestSharedSkillDirs:
+    """One global skills root, symlinked from every agent CLI that reads its own."""
+
+    def _home(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "SHARED_SKILL_DIR", str(tmp_path / ".agents" / "skills"))
+        monkeypatch.setattr(core, "SKILL_LINK_DIRS", (
+            str(tmp_path / ".claude" / "skills"),
+            str(tmp_path / ".grok" / "skills"),
+            str(tmp_path / ".config" / "opencode" / "skills"),
+        ))
+        return tmp_path
+
+    def test_creates_shared_root_and_links_every_tool(self, tmp_path, monkeypatch):
+        home = self._home(tmp_path, monkeypatch)
+        result = core.setup_skill_dirs(verbose=False)
+
+        assert (home / ".agents" / "skills").is_dir()
+        for rel in (".claude/skills", ".grok/skills", ".config/opencode/skills"):
+            link = home / rel
+            assert link.is_symlink(), rel
+            assert os.path.realpath(link) == os.path.realpath(home / ".agents" / "skills")
+
+    def test_is_idempotent(self, tmp_path, monkeypatch):
+        self._home(tmp_path, monkeypatch)
+        core.setup_skill_dirs(verbose=False)
+        result = core.setup_skill_dirs(verbose=False)
+        assert result["created"] == []
+        assert result["kept"] == []
+
+    def test_never_touches_a_tool_dir_with_its_own_skills(self, tmp_path, monkeypatch):
+        home = self._home(tmp_path, monkeypatch)
+        own = home / ".grok" / "skills" / "private"
+        own.mkdir(parents=True)
+        (own / "SKILL.md").write_text("---\nname: private\ndescription: x\n---\n")
+
+        result = core.setup_skill_dirs(verbose=False)
+
+        assert not (home / ".grok" / "skills").is_symlink()
+        assert (own / "SKILL.md").exists()          # user content untouched
+        assert str(home / ".grok" / "skills") in result["kept"]
+
+    def test_replaces_an_empty_placeholder_dir(self, tmp_path, monkeypatch):
+        home = self._home(tmp_path, monkeypatch)
+        (home / ".claude" / "skills").mkdir(parents=True)
+
+        core.setup_skill_dirs(verbose=False)
+
+        assert (home / ".claude" / "skills").is_symlink()
+
+    def test_keeps_a_symlink_pointing_somewhere_else(self, tmp_path, monkeypatch):
+        home = self._home(tmp_path, monkeypatch)
+        other = home / "elsewhere"
+        other.mkdir()
+        (home / ".claude").mkdir()
+        os.symlink(other, home / ".claude" / "skills")
+
+        result = core.setup_skill_dirs(verbose=False)
+
+        assert os.path.realpath(home / ".claude" / "skills") == os.path.realpath(other)
+        assert str(home / ".claude" / "skills") in result["kept"]
+
+
+class TestInstallSelfCheck:
+    """A "successful" install that left no runnable binary must fail loudly."""
+
+    def test_reports_failure_when_no_binary_and_no_version(self, tmp_path, monkeypatch, capsys):
+        _core_paths(tmp_path, monkeypatch)
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: None)
+        monkeypatch.setattr(core, '_binary_exists', lambda exe: False)
+        app = {"name": "Broken", "executable": "broken-tool", "version_cmd": "broken-tool --version"}
+
+        assert core._install_proot_common("broken-tool", app) is False
+        assert 'does not seem to be installed' in capsys.readouterr().out
+
+    def test_reports_success_when_the_binary_is_there(self, tmp_path, monkeypatch, capsys):
+        _core_paths(tmp_path, monkeypatch)
+        monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: None)
+        monkeypatch.setattr(core, '_binary_exists', lambda exe: True)
+        app = {"name": "Fine", "executable": "fine-tool", "version_cmd": "fine-tool --version"}
+
+        assert core._install_proot_common("fine-tool", app) is True
+        capsys.readouterr()
+
+
 class TestReviewRegressions:
     def test_four_segment_versions_are_not_truncated(self):
         assert core._ver_tuple('1.0.0.1') == (1, 0, 0, 1)
