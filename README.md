@@ -57,6 +57,13 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
   contain no terminal app bundle, and no TUI bundle is published on npm — the examples in the CLI
   `--help` are stale. The interactive interface is the Web UI; for scripted one-shots use
   `dsh headless "…"`. (`dsh plugin … add <package>` needs `pnpm`, which the container does not ship.)
+- **The browser opens itself.** `dsh web` prints an authenticated URL and hands it to the phone's
+  browser (AnCLI bridges it: the container cannot execute Android's `am`, so the wrapper opens it on
+  the host and echoes the URL back if that fails). The URL carries a **per-run token** — opening the
+  bare `127.0.0.1:3080` from a bookmark shows *"dsh web authentication required"*, so use the printed
+  URL (it sets a signed cookie and then redirects to the token-less one). `--no-open` keeps it in the
+  terminal; if a previous `dsh web` is still running, the port is taken and the new one exits —
+  stop the old session first (`Ctrl+C`).
 
 ## Installation
 

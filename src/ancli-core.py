@@ -546,13 +546,53 @@ if mkdir -p {ANCLI_DIR}/shm 2>/dev/null; then
     chmod 1777 {ANCLI_DIR}/shm 2>/dev/null || true
     SHM_BIND="-b {ANCLI_DIR}/shm:/dev/shm"
 fi
-# 6. Launch PRoot with unified global binds
+# 6. Open URLs for tools that ask. Android's own binaries (am, cmd) cannot execute
+#    inside the glibc container, so the container-side xdg-open appends what it was
+#    asked to open to this queue and we drain it from the host. The watcher lives
+#    only as long as this wrapper (PPID) or 30 minutes, whichever comes first, and
+#    drains once more at the end so short-lived tools are covered too.
+ANCLI_OPEN_QUEUE={ANCLI_DIR}/.open_url
+ancli_open_drain() {{
+    [ -s "$ANCLI_OPEN_QUEUE" ] || return 0
+    while IFS= read -r _ancli_url; do
+        case "$_ancli_url" in
+            http://*|https://*)
+                if /system/bin/am start -a android.intent.action.VIEW -d "$_ancli_url" >/dev/null 2>&1 \
+                   || /system/bin/am start --user 0 -a android.intent.action.VIEW -d "$_ancli_url" >/dev/null 2>&1; then
+                    echo "[AnCLI] opened in the browser: $_ancli_url" >&2
+                else
+                    # Never fail silently: the whole point of the bridge is that the
+                    # user can still reach the URL by hand.
+                    echo "[AnCLI] could not open a browser — open this yourself: $_ancli_url" >&2
+                fi
+                ;;
+        esac
+    done < "$ANCLI_OPEN_QUEUE"
+    : > "$ANCLI_OPEN_QUEUE" 2>/dev/null || true
+}}
+if [ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]; then
+    (
+        _ancli_ticks=0
+        while [ "$_ancli_ticks" -lt 1800 ]; do
+            [ -s "$ANCLI_OPEN_QUEUE" ] && ancli_open_drain
+            if [ -n "$PPID" ] && ! kill -0 "$PPID" 2>/dev/null; then break; fi
+            _ancli_ticks=$((_ancli_ticks + 1))
+            sleep 1
+        done
+        ancli_open_drain
+    ) &
+fi
+# BROWSER is exported to the tool above: the npm `open` package prefers its own
+# vendored freedesktop xdg-open over PATH, and without this it ends with
+# "xdg-open: no method available for opening 'http://…'" (rc 3) on a headless
+# container. Pointed here, it execs our hand-off shim instead.
+# 7. Launch PRoot with unified global binds
 # By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
 # we prevent Node.js fs.realpath and other symlink-following logic from breaking.
 exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
     -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
     -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
-    -w "$PROOT_CWD" /usr/bin/env {executable} "$@"
+    -w "$PROOT_CWD" /usr/bin/env BROWSER=/usr/local/bin/xdg-open {executable} "$@"
 """
     _write_wrapper_to_paths(executable, wrapper)
 
@@ -1112,36 +1152,70 @@ exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \
     print(f"\033[92m[OK] Native toolchain shims deployed (git/bash/curl) in {ANCLI_DIR}/bin\033[0m")
 
 def _deploy_xdg_open():
+    """Give the container a working `xdg-open`.
+
+    Android's own binaries (`am`, `cmd`) cannot execute inside the glibc guest —
+    `/system/bin/am` fails with "cmd: inaccessible or not found" — so a shim that
+    calls `am` there *looks* successful (exit 0) while opening nothing, which is
+    exactly what `dsh web` (via the npm `open` package) hit. The container-side
+    shim therefore only queues the URL; the generated wrapper on the host drains
+    that queue into `am start`. The host-side copy still calls `am` directly,
+    because native-mode tools (agy/grok) run on the host."""
     try:
-        xdg_path = f"{ROOTFS}/usr/local/bin/xdg-open"
-        os.makedirs(os.path.dirname(xdg_path), exist_ok=True)
-        if os.path.exists(xdg_path) or os.path.islink(xdg_path):
-            try:
-                os.remove(xdg_path)
-            except Exception:
-                pass
-        xdg_content = """#!/system/bin/sh
+        xdg_content = """#!/bin/sh
+# AnCLI: hand the URL to the host wrapper, which opens it with `am start`.
+# Android's binaries cannot run inside this glibc container, so calling `am`
+# here would silently do nothing.
+_queue="{ancli_dir}/.open_url"
+for _arg in "$@"; do
+    case "$_arg" in
+        --version|-v) echo "xdg-open (AnCLI host bridge)"; exit 0 ;;
+        -*) continue ;;
+    esac
+    case "$_arg" in
+        http://*|https://*|mailto:*|tel:*)
+            if printf '%s\\n' "$_arg" >> "$_queue" 2>/dev/null; then
+                exit 0
+            fi
+            echo "[AnCLI] could not reach the host bridge; open this yourself: $_arg" >&2
+            exit 1
+            ;;
+    esac
+    echo "[AnCLI] cannot open '$_arg' here: Android only opens URLs; use am start on the host." >&2
+    exit 1
+done
+exit 0
+""".format(ancli_dir=ANCLI_DIR)
+        for name in ("xdg-open", "sensible-browser"):
+            target = f"{ROOTFS}/usr/local/bin/{name}"
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            if os.path.exists(target) or os.path.islink(target):
+                try:
+                    os.remove(target)
+                except Exception:
+                    pass
+            with open(target, "w") as f:
+                f.write(xdg_content)
+            os.chmod(target, 0o755)
+
+            # Symlinks in /usr/bin and /bin for hardcoded lookups.
+            for link_dir in ["/usr/bin", "/bin"]:
+                link_path = f"{ROOTFS}{link_dir}/{name}"
+                try:
+                    if os.path.exists(link_path) or os.path.islink(link_path):
+                        os.remove(link_path)
+                    os.symlink(f"/usr/local/bin/{name}", link_path)
+                except Exception:
+                    pass
+
+        # Host-side opener (native-mode tools run on the host, where `am` works).
+        host_content = """#!/system/bin/sh
 PATH="/system/bin:$PATH" /system/bin/am start -a android.intent.action.VIEW -d "$1" >/dev/null 2>&1
 """
-        with open(xdg_path, "w") as f:
-            f.write(xdg_content)
-        os.chmod(xdg_path, 0o755)
-
-        # Create symlinks in /usr/bin and /bin for hardcoded lookups
-        for link_dir in ["/usr/bin", "/bin"]:
-            link_path = f"{ROOTFS}{link_dir}/xdg-open"
-            try:
-                if os.path.exists(link_path) or os.path.islink(link_path):
-                    os.remove(link_path)
-                os.symlink("/usr/local/bin/xdg-open", link_path)
-            except Exception:
-                pass
-
-        # Deploy host-side xdg-open to KSU/APatch bin paths to bypass Go's statx translation bug
         tmp_xdg = f"{ANCLI_DIR}/bin/.xdg-open.tmp"
         try:
             with open(tmp_xdg, "w") as f:
-                f.write(xdg_content)
+                f.write(host_content)
             os.chmod(tmp_xdg, 0o755)
             for instant_bin in [KSU_BIN, AP_BIN]:
                 if os.path.isdir(instant_bin):

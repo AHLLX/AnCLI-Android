@@ -1,3 +1,22 @@
+## Unreleased — browser hand-off fixed (`dsh web` now opens the phone's browser)
+
+- **`dsh web` no longer stalls in the terminal.** The container-side `xdg-open` called
+  `/system/bin/am`, which cannot execute in the glibc guest (`cmd: inaccessible or not found`), so it
+  exited 0 while opening nothing — the failure was silent because the npm `open` package treats a
+  zero exit as success. Three layers now fix it:
+  1. the container shim only appends the URL to `/data/local/tmp/ancli/.open_url`;
+  2. the generated wrapper runs a watcher that drains that queue with `am start` on the host (and
+     echoes the URL back to stderr if opening fails — no more silent failure);
+  3. the wrapper exports `BROWSER=/usr/local/bin/xdg-open`, because npm `open` prefers its own
+     vendored freedesktop `xdg-open` over PATH and otherwise dies with
+     `xdg-open: no method available for opening 'http://…'` (rc 3). Verified on device: the drain
+     fired, `am start` succeeded, and `dumpsys activity activities` shows Chrome holding
+     `Intent { act=android.intent.action.VIEW dat=http://127.0.0.1:3083/?token=… }`. A `sensible-browser`
+     shim is deployed alongside for tools that look for it.
+- Documented the two traps that made this look like a server problem: `dsh web`'s URL carries a
+  **per-run token** (a bookmarked bare `127.0.0.1:3080` answers "authentication required"), and a
+  previous `dsh web` still holding the port makes the next launch exit with `EADDRINUSE`.
+
 ## Unreleased — WebUI rebuilt (clean layout, verified by rendering)
 
 ### Fixed

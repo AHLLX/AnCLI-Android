@@ -1271,6 +1271,76 @@ class TestAndroidDnsDiscovery:
         assert "8.8.8.8" not in lines                   # not first, and slots are full
 
 
+class TestBrowserHandoff:
+    """`dsh web` (npm `open` → xdg-open) must reach the phone's browser.
+
+    Android's `am`/`cmd` cannot execute inside the glibc guest, so the container
+    shim only queues the URL and the host-side wrapper drains it into `am start`."""
+
+    def _paths(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+        os.makedirs(tmp_path / "rootfs" / "usr" / "local" / "bin", exist_ok=True)
+
+    def test_container_shim_queues_the_url_instead_of_calling_am(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        core._deploy_xdg_open()
+
+        shim = tmp_path / "rootfs" / "usr" / "local" / "bin" / "xdg-open"
+        text = shim.read_text()
+        # Compare separator-insensitively: the shim is a POSIX script, but the test
+        # runs on Windows too, where ANCLI_DIR carries backslashes.
+        queue = str(tmp_path / "ancli" / ".open_url").replace("\\", "/")
+        assert queue in text.replace("\\", "/")                    # hands off to the host
+        assert "/system/bin/am" not in text                        # cannot exec there
+        assert os.access(shim, os.X_OK)
+        # lookups that hardcode /usr/bin or /bin still resolve (symlinks need
+        # privileges on Windows, so only check them where the module actually runs)
+        if os.name == "posix":
+            assert (tmp_path / "rootfs" / "usr" / "bin" / "xdg-open").is_symlink()
+            assert (tmp_path / "rootfs" / "bin" / "sensible-browser").is_symlink()
+
+    @pytest.mark.skipif(os.name != "posix", reason="the host copy is installed with `cp`")
+    def test_host_copy_still_uses_am(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        os.makedirs(tmp_path / "ksu", exist_ok=True)
+        core._deploy_xdg_open()
+
+        host = (tmp_path / "ksu" / "xdg-open").read_text()
+        assert "/system/bin/am start" in host
+
+    def test_generated_wrapper_drains_the_queue_with_am(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("dsh", {}, [])
+
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        assert ".open_url" in wrapper
+        assert "ancli_open_drain" in wrapper
+        assert "/system/bin/am start -a android.intent.action.VIEW" in wrapper
+        assert "kill -0 \"$PPID\"" in wrapper      # watcher dies with the wrapper
+        assert wrapper.rstrip().endswith('"$@"')   # still execs the tool last
+
+    def test_wrapper_watcher_only_starts_when_the_queue_is_writable(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("dsh", {}, [])
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        assert '[ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]' in wrapper
+
+    def test_wrapper_points_browser_at_the_handoff_shim(self, tmp_path, monkeypatch):
+        """The npm `open` package prefers its vendored xdg-open, which finds no
+        method on a headless container (rc 3) unless BROWSER points at our shim."""
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("dsh", {}, [])
+
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        assert "/usr/bin/env BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
+
+
 class TestSharedSkillDirs:
     """One global skills root, symlinked from every agent CLI that reads its own."""
 
