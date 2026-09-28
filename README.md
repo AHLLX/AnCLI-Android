@@ -196,6 +196,27 @@ Skills live inside the container's `/root`, which module upgrades preserve. To k
 with your projects, put them in the repo (`<repo>/.agents/skills/`) — that path works for
 every tool except Aider.
 
+## Workspaces and the phone's real files
+
+The container is not a sandbox: host directories are **bind-mounted** into it, so a container path *is*
+the phone path. Edits take effect immediately (any file manager or editor sees them) — nothing to sync.
+
+| Container path | What it actually is |
+| :--- | :--- |
+| `/sdcard`, `/storage/emulated/0` | **The phone's internal storage** (what file managers show) |
+| `/data` | The phone's `/data` (app-private dirs included, visible to root) |
+| `/mnt`, `/storage` | The phone's matching mount points |
+| `/root` | The container's private HOME: tool config, credentials, skills. **Not** in the phone's file manager |
+
+In `dsh web`'s "choose workspace directory" dialog:
+
+- It starts in the container HOME `/root`, which holds only dotfiles (`.claude`, `.dsh`, …) — that is
+  why it looks empty until "show hidden files" is ticked, and those are **tool config**, not your files.
+- To work on phone files, type `/sdcard` or a project path such as `/sdcard/projects/demo` in the path box.
+- Easier: **start dsh from the directory you want** — `cd /sdcard/projects/demo && dsh web` — the
+  workspace then defaults there and the agent's working directory is already your project.
+- Note: Android 11+ restricts `/sdcard/Android/data` and similar; quote paths that contain spaces.
+
 ## Directory Structure
 
 | Component | Path | Description |
