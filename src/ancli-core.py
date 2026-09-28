@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import glob
 import json
 import shlex
 import time
@@ -1117,6 +1118,9 @@ def repair_env(registry):
     _deploy_xdg_open()
     print("\033[92m[OK] Browser redirect wrapper deployed (/usr/local/bin/xdg-open).\033[0m")
 
+    # 3.2 Re-apply the dsh WebUI cookie patch (npm overwrites it on every update)
+    patch_dsh_web_cookie()
+
     # 4. Repair missing application wrappers
     installed = load_installed()
     if installed:
@@ -1171,6 +1175,58 @@ exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \
         except Exception:
             pass
     print(f"\033[92m[OK] Native toolchain shims deployed (git/bash/curl) in {ANCLI_DIR}/bin\033[0m")
+
+def patch_dsh_web_cookie(verbose=True):
+    """Let `dsh web`'s auth cookie survive an Android app-initiated navigation.
+
+    The WebUI authenticates by setting an HttpOnly `SameSite=Strict` cookie on the
+    token URL and redirecting to `/`. Chrome treats a navigation started by an
+    external app — exactly what our `am start` hand-off does — as cross-site, so
+    the Strict cookie is dropped on the redirect and the UI answers
+    "authentication required". Typing the URL or opening it from a desktop browser
+    works, which is why upstream never sees this. `Lax` still withholds the cookie
+    from cross-site POSTs, so the protection that matters is kept.
+
+    npm overwrites this file on every dsh install/update, so call this from repair
+    and after installing/updating dsh. Idempotent. Returns the patched paths."""
+    patched = []
+    candidates = [
+        f"{ROOTFS}/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/"
+        "@deepseek-ai/dsh-client-connection/lib",
+        f"{ROOTFS}/usr/local/lib/node_modules/@deepseek-ai/dsh-client-connection/lib",
+    ]
+    files = []
+    for directory in candidates:
+        if os.path.isdir(directory):
+            files.extend(sorted(glob.glob(f"{directory}/*.js")))
+    if not files:
+        files = glob.glob(
+            f"{ROOTFS}/usr/local/lib/node_modules/@deepseek-ai/**/dsh-client-connection/lib/*.js",
+            recursive=True)
+
+    for path in files:
+        try:
+            with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
+                content = f.read()
+            if "SameSite=Strict" not in content:
+                continue
+            updated = content.replace("SameSite=Strict", "SameSite=Lax")
+            mode = os.stat(path).st_mode
+            with open(path, "w", encoding="utf-8", errors="surrogateescape") as f:
+                f.write(updated)
+            os.chmod(path, mode)
+            patched.append(path)
+        except Exception as e:
+            if verbose:
+                print(f"\033[93m[!] Could not patch {path}: {e}\033[0m")
+    if verbose:
+        if patched:
+            print(f"\033[92m[OK] dsh WebUI auth cookie relaxed for Android "
+                  f"(SameSite=Lax): {len(patched)} file(s)\033[0m")
+        else:
+            print("\033[96m[i] dsh WebUI cookie already patched (or dsh is not installed).\033[0m")
+    return patched
+
 
 def _deploy_xdg_open():
     """Give the container a working `xdg-open`.
@@ -1298,6 +1354,9 @@ def _install_proot_common(app_id, app, registry=None):
     # Fix permissions immediately so the tool is usable without a reboot
     _fix_config_permissions()
     setup_skill_dirs(verbose=False)
+    if app.get('executable') == 'dsh':
+        # A fresh dsh install ships the unpatched cookie attribute again.
+        patch_dsh_web_cookie(verbose=False)
     suffix = f" v{probed}" if probed else ""
     # Self-check: an installer whose command "succeeded" but left no runnable
     # binary (wrong runtime, missing file, half-extracted tarball) must not be
@@ -1484,6 +1543,9 @@ def update_app(app_id, registry):
     installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
     save_installed(installed)
     _fix_config_permissions()
+    if app.get('executable') == 'dsh':
+        # npm just replaced the packaged files: re-apply the Android cookie patch.
+        patch_dsh_web_cookie(verbose=False)
 
     # The update command always pulls the vendor's latest channel, so immediately
     # re-resolve the official version: the badge/status is correct without waiting

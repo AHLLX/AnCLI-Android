@@ -1355,6 +1355,41 @@ class TestBrowserHandoff:
         assert "ancli_open_browser" in wrapper
 
 
+class TestDshCookiePatch:
+    """Android hands the `dsh web` URL to Chrome through an Intent, which Chrome
+    treats as cross-site, so a SameSite=Strict auth cookie is dropped on the token
+    redirect and the UI answers "authentication required". Lax fixes that hop."""
+
+    def _install_file(self, tmp_path, monkeypatch, body="SameSite=Strict"):
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path))
+        directory = (tmp_path / "usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules"
+                                 "/@deepseek-ai/dsh-client-connection/lib")
+        directory.mkdir(parents=True)
+        target = directory / "index.js"
+        target.write_text(f'const c = `a=b; Path=/; HttpOnly; {body}`\n', encoding="utf-8")
+        return target
+
+    def test_relaxes_strict_to_lax(self, tmp_path, monkeypatch):
+        target = self._install_file(tmp_path, monkeypatch)
+
+        patched = core.patch_dsh_web_cookie(verbose=False)
+
+        assert [os.path.normpath(p) for p in patched] == [os.path.normpath(str(target))]
+        assert "SameSite=Lax" in target.read_text(encoding="utf-8")
+        assert "SameSite=Strict" not in target.read_text(encoding="utf-8")
+
+    def test_is_idempotent(self, tmp_path, monkeypatch):
+        target = self._install_file(tmp_path, monkeypatch)
+        core.patch_dsh_web_cookie(verbose=False)
+
+        assert core.patch_dsh_web_cookie(verbose=False) == []
+        assert target.read_text(encoding="utf-8").count("SameSite=Lax") == 1
+
+    def test_reports_nothing_when_dsh_is_absent(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path))
+        assert core.patch_dsh_web_cookie(verbose=False) == []
+
+
 class TestSharedSkillDirs:
     """One global skills root, symlinked from every agent CLI that reads its own."""
 

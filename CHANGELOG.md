@@ -1,3 +1,23 @@
+## Unreleased — `dsh web` opens and authenticates on Android
+
+- **The WebUI now loads instead of answering "authentication required".** `dsh web` authenticates by
+  setting an HttpOnly `SameSite=Strict` cookie on the token URL and redirecting to `/`. Chrome treats
+  a navigation started by an external app — exactly what an Android Intent is — as cross-site, so the
+  Strict cookie is dropped on that redirect: the address bar shows `/` and the page says
+  *"dsh web authentication required"*. Typing the URL, or launching from a desktop browser (where the
+  URL arrives as a command-line argument), works — which is why upstream never sees it. AnCLI patches
+  the single packaged file carrying that attribute to `SameSite=Lax`
+  (`patch_dsh_web_cookie()`), which still withholds the cookie from cross-site POSTs. `ancli repair`
+  re-applies it, and so does installing or updating dsh, because npm overwrites the file. Verified on
+  device: the file went from `SameSite=Strict`×1 to `SameSite=Lax`×1.
+- **The hand-off no longer raises the "Open with" chooser** and no longer lands in a WebView-based
+  browser that drops the cookie: it targets a known browser by package (`am start -p …`, Chrome,
+  Chrome beta, Edge, Firefox, Brave, Samsung Internet, Vivaldi, Opera), then falls back to the generic
+  intent and `--user 0`. The device that reported this has no default browser set, so every hand-off
+  used to show a chooser; Chrome and Via are both installed there and Via does not carry the cookie.
+- **The URL watcher exits with its tool**, including when the parent is a zombie: a stuck proot
+  previously left the watcher and the wrapper shell alive long after `dsh web` had died.
+
 ## Unreleased — browser hand-off fixed (`dsh web` now opens the phone's browser)
 
 - **`dsh web` no longer stalls in the terminal.** The container-side `xdg-open` called
