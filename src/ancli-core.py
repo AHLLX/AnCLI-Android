@@ -552,13 +552,26 @@ fi
 #    only as long as this wrapper (PPID) or 30 minutes, whichever comes first, and
 #    drains once more at the end so short-lived tools are covered too.
 ANCLI_OPEN_QUEUE={ANCLI_DIR}/.open_url
+# Prefer a full browser over the system chooser: with no default browser set,
+# `am start` raises "Open with", and a WebView-based pick (Via and friends) can
+# drop the auth cookie `dsh web` sets on the token URL, leaving the page on
+# "authentication required". Chrome first, then the other common engines.
+ANCLI_BROWSERS="com.android.chrome com.chrome.beta com.microsoft.emmx org.mozilla.firefox com.brave.browser com.sec.android.app.sbrowser com.vivaldi.browser com.opera.browser"
+ancli_open_browser() {{
+    for _ancli_pkg in $ANCLI_BROWSERS; do
+        if /system/bin/pm list packages "$_ancli_pkg" 2>/dev/null | grep -q "^package:$_ancli_pkg$"; then
+            /system/bin/am start -a android.intent.action.VIEW -d "$1" -p "$_ancli_pkg" >/dev/null 2>&1 && return 0
+        fi
+    done
+    /system/bin/am start -a android.intent.action.VIEW -d "$1" >/dev/null 2>&1 && return 0
+    /system/bin/am start --user 0 -a android.intent.action.VIEW -d "$1" >/dev/null 2>&1
+}}
 ancli_open_drain() {{
     [ -s "$ANCLI_OPEN_QUEUE" ] || return 0
     while IFS= read -r _ancli_url; do
         case "$_ancli_url" in
             http://*|https://*)
-                if /system/bin/am start -a android.intent.action.VIEW -d "$_ancli_url" >/dev/null 2>&1 \
-                   || /system/bin/am start --user 0 -a android.intent.action.VIEW -d "$_ancli_url" >/dev/null 2>&1; then
+                if ancli_open_browser "$_ancli_url"; then
                     echo "[AnCLI] opened in the browser: $_ancli_url" >&2
                 else
                     # Never fail silently: the whole point of the bridge is that the
@@ -576,7 +589,14 @@ if [ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]; then
         _ancli_ticks=0
         while [ "$_ancli_ticks" -lt 1800 ]; do
             [ -s "$ANCLI_OPEN_QUEUE" ] && ancli_open_drain
-            if [ -n "$PPID" ] && ! kill -0 "$PPID" 2>/dev/null; then break; fi
+            if [ -n "$PPID" ]; then
+                # Exit with the tool (and do not linger on a hung/zombie parent: a
+                # stuck proot once left this watcher behind for half an hour).
+                if ! kill -0 "$PPID" 2>/dev/null; then break; fi
+                case "$(sed 's/.*) //' /proc/$PPID/stat 2>/dev/null | cut -d' ' -f1)" in
+                    Z) break ;;
+                esac
+            fi
             _ancli_ticks=$((_ancli_ticks + 1))
             sleep 1
         done

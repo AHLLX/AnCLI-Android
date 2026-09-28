@@ -1340,6 +1340,20 @@ class TestBrowserHandoff:
         wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
         assert "/usr/bin/env BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
 
+    def test_wrapper_prefers_a_full_browser_over_the_chooser(self, tmp_path, monkeypatch):
+        """No default browser => `am start` raises "Open with"; a WebView-based pick
+        can drop the auth cookie, so a known browser is targeted explicitly."""
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("dsh", {}, [])
+
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        assert "com.android.chrome" in wrapper
+        assert 'pm list packages "$_ancli_pkg"' in wrapper
+        assert '-p "$_ancli_pkg"' in wrapper
+        # the generic intent stays as the fallback for devices without those browsers
+        assert '/system/bin/am start -a android.intent.action.VIEW -d "$1"' in wrapper
+        assert "ancli_open_browser" in wrapper
+
 
 class TestSharedSkillDirs:
     """One global skills root, symlinked from every agent CLI that reads its own."""
