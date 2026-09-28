@@ -564,6 +564,7 @@ ancli_open_drain() {{
                     # Never fail silently: the whole point of the bridge is that the
                     # user can still reach the URL by hand.
                     echo "[AnCLI] could not open a browser — open this yourself: $_ancli_url" >&2
+                    echo "[AnCLI] (use this URL, not the bare 127.0.0.1 address: the token is per run)" >&2
                 fi
                 ;;
         esac

@@ -46,6 +46,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 - **代理**：DSH 读取 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY`，正是 AnCLI wrapper 已经从安卓系统代理注入的变量，因此不需要 TUN 模式也能走代理。
 - **Profile**：`web`、`headless`、`sdk`、`sdk-minimal`、`acp` 首次运行会自动初始化。**不存在 `tui` profile**：`dsh tui` 会直接报 *"profile \"tui\" does not exist; create it with `dsh plugin --profile tui add <package>`"*，上游 `packages/boot/app-boot` 的内置模板里没有终端 app bundle，npm 上也没有发布任何 TUI bundle（CLI `--help` 里的 `dsh tui` 示例是过期的）。交互界面就是 Web UI；脚本化一次性任务用 `dsh headless "…"`。（`dsh plugin … add <package>` 需要 `pnpm`，容器里没有预装。）
 - **浏览器会自动打开**：`dsh web` 打印带鉴权的 URL 后交给手机浏览器（AnCLI 在宿主侧代开：容器里跑不了 Android 的 `am`，失败时会把 URL 回显到终端）。这个 URL 带**每次运行的 token**——直接打开收藏夹里的 `127.0.0.1:3080` 会显示 *"dsh web authentication required"*，请用打印出来的完整 URL（它会写入签名 cookie 再跳到不带 token 的地址）。`--no-open` 可只在终端保留 URL；如果上一次 `dsh web` 还在跑，端口被占用，新的会直接退出——先 `Ctrl+C` 停掉旧的。
+- **看到 "authentication required" 怎么排查**：那句话只表示"这次请求没带上有效 cookie"。① 确认端口上跑的是**当前**这个实例（旧的 `dsh web` 没停掉时，浏览器打开新实例的 token 也会被旧实例拒绝）——先 `Ctrl+C` 停掉所有旧会话再重开；② 用**完整打印的 URL 新开一个标签页**（不要刷新那个已经跳成 `/` 的地址，也不要开无痕模式）；③ 浏览器若禁用了该站点 cookie，请放行 `127.0.0.1` 或换个浏览器——服务端流程本身可用（可用 `scripts/probe_dsh_auth.py` 在容器里验证）。
 
 ## 安装方法
 

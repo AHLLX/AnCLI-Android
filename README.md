@@ -64,6 +64,12 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
   URL (it sets a signed cookie and then redirects to the token-less one). `--no-open` keeps it in the
   terminal; if a previous `dsh web` is still running, the port is taken and the new one exits —
   stop the old session first (`Ctrl+C`).
+- **When the page says "authentication required"**: that text only means the request arrived without a
+  valid cookie. (1) Make sure the server on that port is the instance you just started — a leftover
+  `dsh web` rejects the new instance's token, so stop old sessions first; (2) open the printed URL in a
+  *fresh* tab (a reload of the `/` address it redirected to, or a private window, will not have the
+  cookie); (3) if the browser blocks cookies for the site, allow `127.0.0.1` or use another browser —
+  the server side works, as `scripts/probe_dsh_auth.py` verifies against a live instance.
 
 ## Installation
 
