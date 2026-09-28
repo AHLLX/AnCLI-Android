@@ -6,6 +6,7 @@ reads config files that don't exist on a dev machine.
 """
 import json
 import os
+import re
 import ssl
 import sys
 import urllib.error
@@ -1188,6 +1189,25 @@ class TestStateFilePermissions:
 
         assert ('.update_cache.json', 0o644) in modes
         assert not any(m == 0o666 for _, m in modes)
+
+
+def test_release_version_strings_move_together():
+    """module.prop, update.json and the core's VERSION are one release: the manager
+    reads the first two while `ancli --version` and the WebUI read the third, so a
+    half-bumped release shows two different versions."""
+    root = os.path.join(os.path.dirname(__file__), '..')
+
+    with open(os.path.join(root, 'src', 'module', 'module.prop'), encoding='utf-8') as f:
+        prop = f.read()
+    with open(os.path.join(root, 'update.json'), encoding='utf-8') as f:
+        manifest = json.load(f)
+
+    prop_version = re.search(r'^version=(.+)$', prop, re.M).group(1).strip()
+    prop_code = int(re.search(r'^versionCode=(\d+)$', prop, re.M).group(1))
+
+    assert prop_version == manifest['version'] == 'v' + core.VERSION
+    assert prop_code == manifest['versionCode']
+    assert manifest['zipUrl'].endswith(f"ancli-{prop_version}.zip")
 
 
 def test_github_release_downloads_fail_fast_and_are_verified():
