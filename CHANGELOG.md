@@ -1,4 +1,6 @@
-## Unreleased — `dsh web` opens and authenticates on Android
+## v1.2.4
+
+### `dsh web` opens and authenticates on Android
 
 - **The WebUI now loads instead of answering "authentication required".** `dsh web` authenticates by
   setting an HttpOnly `SameSite=Strict` cookie on the token URL and redirecting to `/`. Chrome treats
@@ -18,7 +20,7 @@
 - **The URL watcher exits with its tool**, including when the parent is a zombie: a stuck proot
   previously left the watcher and the wrapper shell alive long after `dsh web` had died.
 
-## Unreleased — browser hand-off fixed (`dsh web` now opens the phone's browser)
+### browser hand-off fixed (`dsh web` now opens the phone's browser)
 
 - **`dsh web` no longer stalls in the terminal.** The container-side `xdg-open` called
   `/system/bin/am`, which cannot execute in the glibc guest (`cmd: inaccessible or not found`), so it
@@ -37,7 +39,7 @@
   **per-run token** (a bookmarked bare `127.0.0.1:3080` answers "authentication required"), and a
   previous `dsh web` still holding the port makes the next launch exit with `EADDRINUSE`.
 
-## Unreleased — WebUI rebuilt (clean layout, verified by rendering)
+### WebUI rebuilt (clean layout, verified by rendering)
 
 ### Fixed
 - **`ancli status --json` could return unparseable JSON.** The action fell through to the branch that
@@ -77,7 +79,7 @@
   duplicated hint text were caught. Deployed to the device (module `webroot/index.html`, 0644, no BOM,
   LF) and the page loads against the live bridge.
 
-## Unreleased — reboot-verified boot fixes + real DNS inheritance
+### reboot-verified boot fixes + real DNS inheritance
 
 ### Boot script (verified across three real reboots)
 - **DNS now uses the network's real resolvers.** `getprop net.dns1/2` is empty on modern Android, so
@@ -111,7 +113,7 @@
   chained `dsh --version; claude --version` reports the second as missing while each works alone.
   Recorded in AGENTS.md so future device verification is not misread.
 
-## Unreleased — app install hardening + shared agent skills
+### app install hardening + shared agent skills
 
 ### Install / update hardening
 - **Failed installs now fail loudly.** After the installer command succeeds, AnCLI checks that the
@@ -142,7 +144,7 @@
 - README documents the per-tool skill matrix (global and project-scoped paths, formats, and the
   fact that Aider has no skill system and uses `CONVENTIONS.md` / `--read` instead).
 
-## Unreleased — DeepSeek Harness app + WebUI official-version detection
+### DeepSeek Harness app + WebUI official-version detection
 
 ### New app
 - **DeepSeek Harness (`dsh`)** joins the registry: installed from the official npm package
@@ -177,7 +179,7 @@
   so the WebUI page *can* be updated without a reflash as long as the write goes through the
   container.
 
-## Unreleased — WebUI could not detect official versions
+### WebUI could not detect official versions
 
 ### Bug Fixes
 **The WebUI never knew a tool's real version (root cause)**

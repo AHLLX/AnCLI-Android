@@ -1696,17 +1696,6 @@ def _ver_key(v):
     return tuple(core) + (0,) + tuple(nums)
 
 
-def _ver_tuple(v):
-    """Parse 'v1.2.3' / '1.2.3' / '1.2.3.4' / 'grok-dev@1.1.7' into an int tuple;
-    None if unparsable. Four segments are kept — truncating at three made
-    '1.0.0.1' compare equal to '1.0.0' and hid updates."""
-    m = re.search(r'(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?', str(v))
-    if not m:
-        return None
-    parts = [int(x) for x in m.groups() if x is not None]
-    return tuple(parts) or None
-
-
 def _update_available(local_ver, cloud_ver, local_trusted=True):
     """True when the upstream version is newer than the installed one.
 

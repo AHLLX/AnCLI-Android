@@ -800,8 +800,6 @@ function renderApps(apps) {
 }
 
 // ---------- 动作 ----------
-function updateTooltip(id) { return id; }
-
 async function doInstall(id) {
   const app = currentApps.find(a => a.id === id) || { name: id };
   if (!confirm('安装 ' + app.name + '？\n首次安装需要下载依赖，耗时较长（后台执行，可继续浏览）。')) return;

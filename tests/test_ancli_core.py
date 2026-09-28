@@ -496,13 +496,15 @@ def shlex_split(s):
 # ---------------------------------------------------------------------------
 
 class TestVersionCompare:
-    def test_ver_tuple_formats(self):
-        assert core._ver_tuple('v1.2.3') == (1, 2, 3)
-        assert core._ver_tuple('1.2.3') == (1, 2, 3)
-        assert core._ver_tuple('grok-dev@1.1.7') == (1, 1, 7)
-        assert core._ver_tuple('2.1.226') == (2, 1, 226)
-        assert core._ver_tuple('abc') is None
-        assert core._ver_tuple('') is None
+    def test_ver_key_parses_the_same_formats(self):
+        # The prerelease-aware _ver_key replaced the older numeric-only parser;
+        # its first four slots are still the version core.
+        assert core._ver_key('v1.2.3')[:4] == (1, 2, 3, 0)
+        assert core._ver_key('1.2.3')[:4] == (1, 2, 3, 0)
+        assert core._ver_key('grok-dev@1.1.7')[:4] == (1, 1, 7, 0)
+        assert core._ver_key('2.1.226')[:4] == (2, 1, 226, 0)
+        assert core._ver_key('abc') is None
+        assert core._ver_key('') is None
 
     def test_update_available_basic(self):
         assert core._update_available('1.0.0', '1.0.1') is True
@@ -1476,7 +1478,7 @@ class TestInstallSelfCheck:
 
 class TestReviewRegressions:
     def test_four_segment_versions_are_not_truncated(self):
-        assert core._ver_tuple('1.0.0.1') == (1, 0, 0, 1)
+        assert core._ver_key('1.0.0.1')[:4] == (1, 0, 0, 1)
         assert core._update_available('1.0.0', '1.0.0.1') is True
 
     def test_prerelease_versions_are_compared_not_truncated(self):
