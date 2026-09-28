@@ -1209,6 +1209,14 @@ def test_release_version_strings_move_together():
     assert prop_code == manifest['versionCode']
     assert manifest['zipUrl'].endswith(f"ancli-{prop_version}.zip")
 
+    # customize.sh announces the version in the flash log: it must read module.prop,
+    # not carry a literal that goes stale (the v1.2.4 log said v1.2.3).
+    with open(os.path.join(root, 'src', 'module', 'customize.sh'), encoding='utf-8') as f:
+        customize = f.read()
+    assert not re.search(r'Installer v?\d+\.\d+', customize), \
+        'customize.sh must interpolate MODULE_VERSION instead of hardcoding it'
+    assert 'MODULE_VERSION' in customize
+
 
 def test_github_release_downloads_fail_fast_and_are_verified():
     """GitHub-release installers must not silently unpack an HTML error page, and

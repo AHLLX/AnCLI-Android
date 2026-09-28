@@ -12,8 +12,14 @@ UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 
 UBUNTU_PATH="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
+# Read the version from module.prop instead of hardcoding it here: a literal in
+# this banner is one more place to forget when cutting a release (the v1.2.4 flash
+# log announced v1.2.3).
+MODULE_VERSION="$(grep '^version=' "${MODPATH:-$(dirname "$0")}/module.prop" 2>/dev/null | cut -d= -f2)"
+[ -n "$MODULE_VERSION" ] || MODULE_VERSION="unknown"
+
 ui_print "============================================"
-ui_print "  AnCLI Bootstrap Installer v1.2.3"
+ui_print "  AnCLI Bootstrap Installer ${MODULE_VERSION}"
 ui_print "============================================"
 ui_print ""
 

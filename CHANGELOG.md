@@ -1,5 +1,17 @@
 ## v1.2.4
 
+### Release checks (found while cutting and flashing this build)
+
+- The core's `VERSION` string still said `1.2.3` while `module.prop`/`update.json` said `v1.2.4`, so
+  the manager would have shown v1.2.4 and `ancli --version` / the WebUI 1.2.3. Bumped, and a test now
+  asserts that `module.prop`, `update.json` and the core `VERSION` move together.
+- `customize.sh` announced a hardcoded version — the v1.2.4 flash log printed "Installer v1.2.3". It
+  now reads `version=` from `module.prop`, and the same test rejects a literal in that banner.
+- Installed and rebooted on a real device: module `v1.2.4`/`10`, `ancli --version` → 1.2.4, tool
+  wrappers intact in the KernelSU path, `resolv.conf` written with the network's real resolvers, no
+  `git`/`bash`/`curl` shims, config dirs owned by the shell user, and `.update_cache.json`,
+  `installed.json`, `secrets/`, the skills links and the dsh cookie patch all survived the upgrade.
+
 ### `dsh web` opens and authenticates on Android
 
 - **The WebUI now loads instead of answering "authentication required".** `dsh web` authenticates by
