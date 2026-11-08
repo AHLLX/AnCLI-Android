@@ -1370,7 +1370,7 @@ class TestBrowserHandoff:
         assert "ancli_open_drain" in wrapper
         assert "/system/bin/am start -a android.intent.action.VIEW" in wrapper
         assert "kill -0 \"$PPID\"" in wrapper      # watcher dies with the wrapper
-        assert wrapper.rstrip().endswith('"$@"')   # still execs the tool last
+        assert '"$@"' in wrapper                   # the tool still gets its arguments
 
     def test_wrapper_watcher_only_starts_when_the_queue_is_writable(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
@@ -1400,6 +1400,43 @@ class TestBrowserHandoff:
         # the generic intent stays as the fallback for devices without those browsers
         assert '/system/bin/am start -a android.intent.action.VIEW -d "$1"' in wrapper
         assert "ancli_open_browser" in wrapper
+
+
+class TestTerminalRestore:
+    """A full-screen TUI (mimo, agy, opencode) leaves the tty in raw mode when it
+    dies without restoring it: the caller's shell then looks dead — no echo, Enter
+    only moves the cursor, no command runs — and only a new terminal recovers it.
+    The guest process is gone by then, so the wrapper is the last chance to put
+    termios back; `exec` must not be used because it replaces that wrapper."""
+
+    def _paths(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+
+    def test_proot_wrapper_saves_and_restores_the_tty(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("mimo", {}, [])
+        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text()
+
+        assert "stty -g" in wrapper
+        assert 'stty "$_ancli_saved_tty"' in wrapper
+        assert "trap 'ancli_restore_tty' EXIT" in wrapper
+        assert "ancli_restore_tty" in wrapper.split("proot -r", 1)[1]
+        assert not re.search(r"^exec ", wrapper, re.M), \
+            "the wrapper must survive the tool so it can restore the terminal"
+
+    def test_native_wrapper_saves_and_restores_the_tty(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("agy", {}, [], native=True)
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+
+        assert "stty -g" in wrapper
+        assert "trap 'ancli_restore_tty' EXIT" in wrapper
+        assert not re.search(r"^exec ", wrapper, re.M)
 
 
 class TestDshCookiePatch:

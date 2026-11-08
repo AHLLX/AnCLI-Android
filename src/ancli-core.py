@@ -487,7 +487,19 @@ if [ -x {KSU_BIN}/xdg-open ]; then
     export BROWSER={KSU_BIN}/xdg-open
 fi
 
-# 5. Run the static binary straight from the container filesystem.
+# 5. Terminal state: a full-screen TUI puts the tty in raw mode, and when it dies
+#    without restoring that, the caller's shell looks dead — no echo, Enter only
+#    moves the cursor. The guest cannot repair it once its process is gone, so the
+#    settings are saved here and put back on every exit path of this wrapper.
+_ancli_saved_tty=""
+if [ -t 0 ]; then _ancli_saved_tty=$(stty -g 2>/dev/null) || _ancli_saved_tty=""; fi
+ancli_restore_tty() {{
+    [ -n "$_ancli_saved_tty" ] && stty "$_ancli_saved_tty" 2>/dev/null
+    return 0
+}}
+trap 'ancli_restore_tty' EXIT
+
+# 6. Run the static binary straight from the container filesystem.
 #    The binary is statically linked, so it needs no glibc or proot.
 #    Search the candidate install locations: some installer versions place
 #    the binary under /root/.local/bin instead of /usr/local/bin.
@@ -496,7 +508,10 @@ for _cand in \
     {ROOTFS}/usr/bin/{executable} \
     {ROOTFS}/root/.local/bin/{executable}; do
     if [ -x "$_cand" ]; then
-        exec "$_cand" "$@"
+        "$_cand" "$@"
+        _ancli_rc=$?
+        ancli_restore_tty
+        exit $_ancli_rc
     fi
 done
 echo "[AnCLI] {executable} binary not found inside the container." >&2
@@ -608,13 +623,30 @@ fi
 # vendored freedesktop xdg-open over PATH, and without this it ends with
 # "xdg-open: no method available for opening 'http://…'" (rc 3) on a headless
 # container. Pointed here, it execs our hand-off shim instead.
-# 7. Launch PRoot with unified global binds
+# 7. Terminal state: a full-screen TUI (mimo, agy, opencode) puts the tty in raw
+#    mode, and when it dies without restoring that the caller's shell looks dead —
+#    no echo, Enter only moves the cursor, no command runs. The guest cannot fix
+#    it once its process is gone, so this wrapper saves the settings first and
+#    puts them back on every exit path. `exec` is deliberately not used anymore:
+#    it would replace this shell, leaving nobody to restore the terminal.
+_ancli_saved_tty=""
+if [ -t 0 ]; then _ancli_saved_tty=$(stty -g 2>/dev/null) || _ancli_saved_tty=""; fi
+ancli_restore_tty() {{
+    [ -n "$_ancli_saved_tty" ] && stty "$_ancli_saved_tty" 2>/dev/null
+    return 0
+}}
+trap 'ancli_restore_tty' EXIT
+
+# 8. Launch PRoot with unified global binds
 # By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
 # we prevent Node.js fs.realpath and other symlink-following logic from breaking.
-exec {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
+{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
     -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
     -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
     -w "$PROOT_CWD" /usr/bin/env BROWSER=/usr/local/bin/xdg-open {executable} "$@"
+_ancli_rc=$?
+ancli_restore_tty
+exit $_ancli_rc
 """
     _write_wrapper_to_paths(executable, wrapper)
 

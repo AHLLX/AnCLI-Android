@@ -20,6 +20,20 @@
 - **The WebUI preview harness stubbed `ancli_version: '1.2.3'`**, so local screenshots showed a
   version the device never reports. `.webui-preview/build.js` now reads `module.prop`.
 
+### A full-screen TUI no longer leaves the terminal dead
+
+- Exiting `mimo` or `agy` left the caller's shell unusable: typed characters stopped echoing, Enter
+  only moved the cursor and no command ran until a fresh terminal was opened. Both are full-screen
+  TUIs that put the tty in raw mode, and the wrapper used to `exec` proot — so once the tool died
+  there was no process left to put termios back, and the parent shell inherited a raw tty.
+- Both generated wrapper templates (proot and native) now save `stty -g` before launching the tool,
+  restore it from the shell's `EXIT` trap, and run the tool as a child instead of `exec`ing it. The
+  wrapper has to outlive the tool for the terminal to be repairable.
+- Verified against the generated wrapper on a real device: a guest that leaves the tty raw
+  (`tty.setraw(0)`) no longer changes the host termios — `stty -a` digests are identical before and
+  after, while the old `exec` template left the tty raw. `dsh --version` still exits 0 through the
+  new wrapper, and `sh -n` passes for every regenerated wrapper.
+
 ## v1.2.4
 
 ### Release checks (found while cutting and flashing this build)
