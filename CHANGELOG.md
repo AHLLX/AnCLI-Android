@@ -1,3 +1,25 @@
+## v1.2.5
+
+### Hazard cleanup
+
+- **`scripts/prepare_release.py` was the hole that shipped v1.2.4 with the wrong core version.**
+  It pinned `VERSION = "v1.2.4"` and rewrote only three of the five places a version lives
+  (`module.prop`, `update.json`, `CHANGELOG.md`) — never `src/ancli-core.py`'s `VERSION` nor
+  `registry.json`'s top-level field. It now takes `vX.Y.Z` from argv (default: re-sync the current
+  version), derives `versionCode` from the current one and refuses a non-increasing value, writes
+  all five from that single source, and resolves paths from the repo root so it no longer depends
+  on the caller's working directory.
+- **`registry.json`'s top-level `version` had silently drifted to `1.2.3`.** Nothing reads it, which
+  is precisely why it rotted unnoticed; it is now written by the release script and asserted by a
+  test, alongside a new assertion that `prepare_release.py` carries no version literal of its own.
+- **Docs pointed at files that do not exist.** `README.zh.md` told users to download
+  `ancli-module.zip` (that is the *temp* name `src/install.sh` writes to `/data/local/tmp`, not a
+  release asset); `README.md` pinned `ancli-v1.2.3.zip`; `ARCHITECTURE.md` announced v1.2.2 and
+  `COMPATIBILITY.md` v1.2.3. They now use `ancli-v<version>.zip` or a version-agnostic title, so a
+  release no longer has to remember to edit prose.
+- **The WebUI preview harness stubbed `ancli_version: '1.2.3'`**, so local screenshots showed a
+  version the device never reports. `.webui-preview/build.js` now reads `module.prop`.
+
 ## v1.2.4
 
 ### Release checks (found while cutting and flashing this build)

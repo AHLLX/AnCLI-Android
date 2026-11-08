@@ -1,4 +1,4 @@
-# AnCLI Compatibility Dossier (v1.2.3)
+# AnCLI Compatibility Dossier (v1.2.x)
 
 This document records the architectural boundaries, compatibility tests, and validation results of **AnCLI** on Android 15/16.
 

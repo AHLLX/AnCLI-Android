@@ -1,6 +1,6 @@
 # AnCLI Technical Architecture & Deep Dive
 
-This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI v1.2.2**.
+This document outlines the internal design, lifecycle, security model, and execution flows of **AnCLI** (v1.2.x line).
 
 ---
 

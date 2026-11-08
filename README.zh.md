@@ -52,7 +52,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-module.zip` 模块包。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.5.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。

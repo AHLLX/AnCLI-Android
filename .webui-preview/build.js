@@ -14,8 +14,13 @@ const root = path.join(__dirname, '..');
 const src = path.join(root, 'src', 'module', 'webroot', 'index.html');
 const listJson = fs.readFileSync(path.join(__dirname, 'list.json'), 'utf8');
 
+const propText = fs.readFileSync(path.join(root, 'src', 'module', 'module.prop'), 'utf8');
+// Read the version instead of pinning one: the preview would otherwise show a
+// version the device never reports (it said 1.2.3 long after v1.2.4 shipped).
+const ancliVersion = (propText.match(/^version=(.+)$/m) || [, 'unknown'])[1].trim().replace(/^v/, '');
+
 const status = {
-  ancli_version: '1.2.3',
+  ancli_version: ancliVersion,
   rootfs_ready: true,
   proot_deployed: true,
   installed_count: 5,

@@ -1217,6 +1217,23 @@ def test_release_version_strings_move_together():
         'customize.sh must interpolate MODULE_VERSION instead of hardcoding it'
     assert 'MODULE_VERSION' in customize
 
+    # registry.json carries a top-level version purely as bookkeeping (no code reads
+    # it), which is exactly how it silently lagged a release behind. Keep it synced.
+    with open(os.path.join(root, 'src', 'registry.json'), encoding='utf-8') as f:
+        registry = json.load(f)
+    assert registry.get('version') == core.VERSION, \
+        'registry.json top-level version drifts from the core VERSION'
+
+    # The release tool must not pin a version of its own: it edits five files from
+    # one source, and the v1.2.4 cut shipped because it only knew about three.
+    with open(os.path.join(root, 'scripts', 'prepare_release.py'), encoding='utf-8') as f:
+        prepare = f.read()
+    assert not re.search(r'^VERSION\s*=\s*[\'"]v?\d', prepare, re.M), \
+        'prepare_release.py must take the version from argv/module.prop, not a literal'
+    for target in ('module.prop', 'update.json', 'ancli-core.py', 'registry.json',
+                   'CHANGELOG.md'):
+        assert target in prepare, f'prepare_release.py must update {target}'
+
 
 def test_github_release_downloads_fail_fast_and_are_verified():
     """GitHub-release installers must not silently unpack an HTML error page, and
