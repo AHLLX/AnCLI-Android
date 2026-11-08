@@ -62,6 +62,16 @@ When debugging paths or writing cleanup logic, refer to this exact physical mapp
 - **Update Cache**: `/data/local/tmp/ancli/.update_cache.json` (official latest versions from `ancli check`)
 - **Shared Skills**: `/root/.agents/skills` inside the container (i.e. `$ROOTFS/root/.agents/skills`); `ancli skills` / `ancli repair` create it and symlink each tool's own path (`~/.claude/skills`, `~/.grok/skills`, `~/.mimocode/skills`, `~/.config/opencode/skills`, `~/.dsh/skills`) to it
 - **Magisk Module**: `/data/adb/modules/ancli/`
+- **App-data channel**: `/mnt/ancli-data` (host bind of the real `/data`, visible in the container as `/mnt/ancli-data/data/<pkg>`)
+
+**Why `/data/data` can look empty.** An `su` started from an app (Termius, an SSH-server app) runs in
+that app's mount namespace, where Android masks `/data/data` with a tmpfs (`mode 751`, only the app's
+own dirs). This is **not** a proot limitation — the same shell from `adb shell` / a global `su` sees
+all ~752 packages, and `test -x` works there too. Do not "fix" it by adding proot binds: the mask
+lives in the parent namespace. Every wrapper (proot and native) instead does an idempotent,
+non-recursive `mount --bind /data /mnt/ancli-data` before launching — a non-recursive bind does not
+inherit submounts, so the mask is left behind, and `/mnt` is already bound into the container.
+`ensure_android_data()` (called by `ancli repair`) re-checks it; `status --json` reports `android_data`.
 
 ## 6. Adding New Apps to Registry
 To add support for a new CLI tool, do not modify `ancli-core.py`. Instead, add a new JSON object to `registry.json`.

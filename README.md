@@ -217,6 +217,29 @@ In `dsh web`'s "choose workspace directory" dialog:
   workspace then defaults there and the agent's working directory is already your project.
 - Note: Android 11+ restricts `/sdcard/Android/data` and similar; quote paths that contain spaces.
 
+## Other apps' data (`/data/data` can look empty)
+
+Android gives every app its own mount namespace and masks `/data/data` inside it with a tmpfs — only
+that app's own directories remain (`mode 751`). A root shell started from Termius or an SSH-server
+app inherits that shrunken view, which is why `/data/data` sometimes shows a handful of packages
+instead of hundreds. This is not a proot limitation: the same shell started from `adb shell` (or a
+system-level terminal) sees the full tree.
+
+AnCLI works around it by **binding the real `/data` non-recursively onto `/mnt/ancli-data`** every
+time a tool starts. A non-recursive bind does not inherit submounts, so the tmpfs mask is left behind;
+`/mnt` is already bound into the container, so the path is directly visible:
+
+```bash
+ls /mnt/ancli-data/data                 # every app's private dir, the real view
+ls /mnt/ancli-data/data/com.tencent.mm  # one app's data
+```
+
+- Requires root; when `/mnt` is not writable the step is skipped and the tool still starts.
+- Idempotent: it checks `/proc/mounts` first and never stacks a second mount.
+- `ancli repair` checks and mounts it too; `ancli status` / `status --json` expose `android_data`.
+- The mount belongs to the current mount namespace: it goes away with the app, while one made from a
+  global `su` lasts until the next reboot.
+
 ## Directory Structure
 
 | Component | Path | Description |

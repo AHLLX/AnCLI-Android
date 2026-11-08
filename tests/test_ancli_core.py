@@ -1439,6 +1439,50 @@ class TestTerminalRestore:
         assert not re.search(r"^exec ", wrapper, re.M)
 
 
+class TestAndroidDataChannel:
+    """An `su` from inside an app inherits that app's mount namespace, where
+    Android hides other apps' /data/data behind a tmpfs. A non-recursive bind of
+    /data does not inherit that submount, so every wrapper mounts it at
+    /mnt/ancli-data and the container sees it (because /mnt is bound)."""
+
+    def _paths(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+
+    def test_proot_wrapper_mounts_the_channel(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("mimo", {}, [])
+        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text()
+        assert f"ANCLI_DATA_MNT={core.ANDROID_DATA_MNT}" in wrapper
+        assert 'mount --bind /data "$ANCLI_DATA_MNT"' in wrapper
+        assert "/proc/mounts" in wrapper          # idempotent: never stack mounts
+        assert 'id -u' in wrapper                 # best effort: root only
+
+    def test_native_wrapper_mounts_the_channel(self, tmp_path, monkeypatch):
+        self._paths(tmp_path, monkeypatch)
+        core.generate_proot_wrapper("agy", {}, [], native=True)
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+        assert f"ANCLI_DATA_MNT={core.ANDROID_DATA_MNT}" in wrapper
+        assert 'mount --bind /data "$ANCLI_DATA_MNT"' in wrapper
+
+    def test_ensure_android_data_is_idempotent(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(core, "_android_data_mounted", lambda: True)
+        monkeypatch.setattr(core.os, "system", lambda cmd: calls.append(cmd) or 0)
+        assert core.ensure_android_data(verbose=False) is True
+        assert calls == [], "must not mount again when the channel already exists"
+
+    def test_ensure_android_data_reports_failure_without_raising(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(core, "_android_data_mounted", lambda: False)
+        monkeypatch.setattr(core, "ANDROID_DATA_MNT", str(tmp_path / "mnt" / "ancli-data"))
+        monkeypatch.setattr(core.os, "system", lambda cmd: 1)
+        assert core.ensure_android_data(verbose=False) is False
+
+
 class TestDshCookiePatch:
     """Android hands the `dsh web` URL to Chrome through an Intent, which Chrome
     treats as cross-site, so a SameSite=Strict auth cookie is dropped on the token

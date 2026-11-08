@@ -499,7 +499,18 @@ ancli_restore_tty() {{
 }}
 trap 'ancli_restore_tty' EXIT
 
-# 6. Run the static binary straight from the container filesystem.
+# 6. Android app-data channel (see the proot template): expose the real /data at
+#    {ANDROID_DATA_MNT} so other apps' private dirs are readable from inside the
+#    container even when this shell inherited an app's mount namespace.
+ANCLI_DATA_MNT={ANDROID_DATA_MNT}
+if [ "$(id -u 2>/dev/null)" = "0" ]; then
+    if ! grep -qs " $ANCLI_DATA_MNT " /proc/mounts; then
+        mkdir -p "$ANCLI_DATA_MNT" 2>/dev/null
+        mount --bind /data "$ANCLI_DATA_MNT" 2>/dev/null
+    fi
+fi
+
+# 7. Run the static binary straight from the container filesystem.
 #    The binary is statically linked, so it needs no glibc or proot.
 #    Search the candidate install locations: some installer versions place
 #    the binary under /root/.local/bin instead of /usr/local/bin.
@@ -637,7 +648,20 @@ ancli_restore_tty() {{
 }}
 trap 'ancli_restore_tty' EXIT
 
-# 8. Launch PRoot with unified global binds
+# 8. Android app-data channel: an app-launched shell lives in that app's mount
+#    namespace, where Android hides other apps' /data/data behind a tmpfs. A
+#    non-recursive bind of /data does not inherit that submount, so the real
+#    tree becomes reachable at {ANDROID_DATA_MNT}/data/<pkg> — visible inside the
+#    container because /mnt is bound. Best effort: needs root and a writable /mnt.
+ANCLI_DATA_MNT={ANDROID_DATA_MNT}
+if [ "$(id -u 2>/dev/null)" = "0" ]; then
+    if ! grep -qs " $ANCLI_DATA_MNT " /proc/mounts; then
+        mkdir -p "$ANCLI_DATA_MNT" 2>/dev/null
+        mount --bind /data "$ANCLI_DATA_MNT" 2>/dev/null
+    fi
+fi
+
+# 9. Launch PRoot with unified global binds
 # By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
 # we prevent Node.js fs.realpath and other symlink-following logic from breaking.
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
@@ -1072,6 +1096,60 @@ def _write_resolv_conf():
     print(f"\033[92m[OK] Container DNS configured: {', '.join(nameservers[:3])}\033[0m")
 
 
+# ---------------------------------------------------------------------------
+# Android app-data channel
+# ---------------------------------------------------------------------------
+# An `su` started from an app (Termius, an SSH server app, ...) inherits that
+# app's mount namespace, where Android hides *other* apps' data behind a tmpfs
+# mounted over /data/data (mode 751, only the app's own dirs visible). A plain
+# bind of /data does not inherit submounts, so binding it elsewhere exposes the
+# real tree again. The wrapper mounts it on the host at ANDROID_DATA_MNT, which
+# the container sees at the same path because /mnt is bound into the rootfs.
+ANDROID_DATA_MNT = "/mnt/ancli-data"
+
+
+def _android_data_mounted():
+    """True when ANDROID_DATA_MNT is a mount point right now."""
+    try:
+        with open("/proc/mounts", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == ANDROID_DATA_MNT:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def ensure_android_data(verbose=True):
+    """Expose the real /data at ANDROID_DATA_MNT (idempotent, best effort).
+
+    Runs inside the container, but `mount` is not virtualised by proot: the bind
+    lands in the caller's mount namespace, exactly like the manual
+    `mount --bind /data /mnt/dtest` that proved the trick on device. Never
+    raises — a non-root shell or a read-only /mnt just leaves the channel
+    unavailable and the caller carries on."""
+    if _android_data_mounted():
+        if verbose:
+            print(f"\033[92m[OK] App-data channel ready: {ANDROID_DATA_MNT}\033[0m")
+        return True
+    try:
+        os.makedirs(ANDROID_DATA_MNT, exist_ok=True)
+        # util-linux mount lives in /usr/bin; do not depend on the caller's PATH.
+        for mount_bin in ("/usr/bin/mount", "/bin/mount", "mount"):
+            rc = os.system(f"{mount_bin} --bind /data {ANDROID_DATA_MNT} >/dev/null 2>&1")
+            if rc == 0 and _android_data_mounted():
+                if verbose:
+                    print(f"\033[92m[OK] App-data channel mounted: {ANDROID_DATA_MNT}\033[0m")
+                return True
+    except Exception:
+        pass
+    if verbose:
+        print(f"\033[93m[!] Could not mount {ANDROID_DATA_MNT} (needs root); other apps' "
+              f"/data/data stays hidden in this mount namespace.\033[0m")
+    return False
+
+
 def repair_env(registry):
     """Diagnose and fix container environment, resolv.conf, permissions, and wrappers."""
     print("\033[96m[*] Starting environment diagnostics and repair...\033[0m")
@@ -1116,6 +1194,14 @@ def repair_env(registry):
     # 2.1 One shared global skills directory for every agent CLI
     print("\033[96m[*] Setting up the shared skills directory...\033[0m")
     setup_skill_dirs()
+
+    # 2.2 Android app-data channel: the real /data without the app namespace's
+    #     /data/data mask (no-op when it is already mounted or we lack root).
+    print("\033[96m[*] Checking the Android app-data channel...\033[0m")
+    try:
+        ensure_android_data()
+    except Exception as e:
+        print(f"\033[93m[!] App-data channel check failed: {e}\033[0m")
 
     # 3. Repair proot and ancli-core.py executable permissions
     try:
@@ -2117,6 +2203,7 @@ def status_json():
             "rootfs_ready": os.path.exists(f"{ROOTFS}/bin/bash"),
             "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
             "installed_count": len(load_installed()),
+            "android_data": _android_data_mounted(),
         }
     print(json.dumps(payload, ensure_ascii=False))
 
@@ -2351,6 +2438,8 @@ if __name__ == "__main__":
                 print(f"rootfs ready: {os.path.exists(f'{ROOTFS}/bin/bash')}")
                 print(f"proot deployed: {os.path.exists(f'{ANCLI_DIR}/bin/proot')}")
                 print(f"installed apps: {len(load_installed())}")
+                print(f"app-data channel: "
+                      f"{'ready at ' + ANDROID_DATA_MNT if _android_data_mounted() else 'not mounted'}")
                 sys.exit(0)
             elif action == "check":
                 if "--json" in sys.argv:

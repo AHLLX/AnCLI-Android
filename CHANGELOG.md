@@ -34,6 +34,20 @@
   after, while the old `exec` template left the tty raw. `dsh --version` still exits 0 through the
   new wrapper, and `sh -n` passes for every regenerated wrapper.
 
+### A stable path to other apps' data (`/mnt/ancli-data`)
+
+- A root shell started from Termius (or any app) inherits that app's mount namespace, where Android
+  masks `/data/data` with a tmpfs (`mode 751`, only the app's own dirs) — which is why agents there
+  reported "3 packages" while the same shell from `adb shell` saw 752 and `test -x` worked. This is
+  the parent namespace, not proot, so no amount of extra `-b` binds fixes it.
+- Every generated wrapper (proot and native) now runs an idempotent, root-only
+  `mount --bind /data /mnt/ancli-data` before launching. A non-recursive bind does not inherit
+  submounts, so the mask is left behind; `/mnt` is already bound into the container, so
+  `/mnt/ancli-data/data/<pkg>` is the real tree. `ensure_android_data()` re-checks it from
+  `ancli repair`, and `ancli status` / `status --json` report it as `android_data`.
+- Verified on device: the bind lists 752 packages, `umount`/cleanup leaves no mount behind, and the
+  wrappers only mount when `/proc/mounts` has no entry for the path.
+
 ## v1.2.4
 
 ### Release checks (found while cutting and flashing this build)

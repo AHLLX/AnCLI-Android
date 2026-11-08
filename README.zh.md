@@ -179,6 +179,22 @@ skill 存在容器的 `/root` 下，模块升级不会丢；想跟着项目走�
 - 更省事的办法：**先 cd 到项目目录再启动**——`cd /sdcard/projects/demo && dsh web`，工作区会默认落在那里，AI 的当前目录直接就是你的工程。
 - 注意：Android 11+ 对 `/sdcard/Android/data` 等目录有访问限制；带空格的路径记得加引号。
 
+## 跨 App 数据（为什么有时看不到 `/data/data`）
+
+Android 给每个 App 的进程一个独立的 mount namespace，并把它**不该看到的** `/data/data` 用 tmpfs 遮住（只留自己的几个目录，`mode 751`）。所以从 Termius 这类 App 里 `su` 出来的 root shell，会继承这个"缩水"的视图——这不是 proot 的限制，从 ADB 或系统级终端 `su` 进去就能看到完整的 752 个包。
+
+AnCLI 的处理方式是：**每次启动工具时，在宿主侧把真实的 `/data` 非递归 bind 到 `/mnt/ancli-data`**。非递归 bind 不会继承子挂载，正好绕过那层 tmpfs 遮蔽；容器里 `/mnt` 本来就是绑进来的，所以路径直接可见：
+
+```bash
+ls /mnt/ancli-data/data                 # 所有 App 的私有目录（真实视图）
+ls /mnt/ancli-data/data/com.tencent.mm  # 某个 App 的私有数据
+```
+
+- 需要 root；`/mnt` 不可写时自动跳过，不影响工具启动。
+- 幂等：已经在挂载表里就不会重复挂（`grep /proc/mounts` 判断）。
+- `ancli repair` 会顺带检查并挂载；`ancli status` / `status --json` 的 `android_data` 字段显示是否就绪。
+- 挂载只在当前 mount namespace 内有效：App 内的会话随 App 结束；从 ADB 全局 `su` 挂的那次会留到重启（重启自然清空）。
+
 ## 路径说明
 
 | 组件 | 物理路径 (宿主机视角) | 说明 |
