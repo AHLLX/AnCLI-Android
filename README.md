@@ -217,6 +217,26 @@ In `dsh web`'s "choose workspace directory" dialog:
   workspace then defaults there and the agent's working directory is already your project.
 - Note: Android 11+ restricts `/sdcard/Android/data` and similar; quote paths that contain spaces.
 
+### Default working directory (launches from `/`)
+
+A fresh Termius session, or `su` followed by `mimo`, leaves the cwd at `/`. A full-screen TUI walks
+its cwd at startup, so `/` means scanning the whole container plus the `/data` and `/sdcard` bindings
+(hundreds of thousands of files) — slow, and often a hang. AnCLI starts such launches in a small
+directory instead: `/root` by default, or whatever you configure:
+
+```bash
+ancli config                                     # show the current setting
+ancli config --set default_cwd=/sdcard/projects  # where launches from / land
+ancli config --set default_cwd=                  # empty = back to /root
+```
+
+The WebUI's **Settings** button edits the same value (stored in the container at
+`/root/.ancli-config.json`).
+
+This only affects launches from `/`: if you `cd` into a project first, your cwd is used verbatim.
+The directory must be an absolute path that exists inside the container — otherwise `ancli config`
+rejects it with a hint.
+
 ## Other apps' data (`/data/data` can look empty)
 
 Android gives every app its own mount namespace and masks `/data/data` inside it with a tmpfs — only

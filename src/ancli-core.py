@@ -34,6 +34,17 @@ LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 SECRETS_DIR    = f"{ANCLI_DIR}/secrets"   # Per-tool API key files (mode 0600)
 CONFIG_FILE    = "/root/.ancli-config.json"
+
+# Where a tool starts when the caller launched it from "/" (Termius, `su` after a
+# fresh shell, ...). "/" makes every TUI walk the whole container plus the /data
+# and /sdcard bindings at startup, so launches are redirected to a small, known
+# directory. Users can point this at a project tree with
+# `ancli config --set default_cwd=/sdcard/projects` (also editable in the WebUI).
+DEFAULT_CWD    = "/root"
+# Directories that are bind-mounted into the rootfs at run time (they do not
+# exist under $ROOTFS on disk), so an existence check must skip them.
+BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
+                    "/data", "/apex", "/system", "/linkerconfig")
 # Upstream "official latest version" cache written by `ancli check` and merged
 # into `ancli list --json` (so the WebUI shows update badges without needing a
 # network round-trip on every page load).
@@ -66,6 +77,87 @@ def save_config(config):
             json.dump(config, f, indent=2)
     except Exception:
         pass
+
+
+def get_default_cwd():
+    """Configured default working directory; "" means the built-in DEFAULT_CWD."""
+    return (load_config().get("default_cwd") or "").strip()
+
+
+def _cwd_visible_in_container(path):
+    """True when `path` exists from inside the container.
+
+    Bind-mounted roots do not exist under $ROOTFS on disk, so they are accepted
+    without an existence check (the wrapper binds them at run time)."""
+    if any(path == root or path.startswith(root + "/") for root in BIND_MOUNT_ROOTS):
+        return True
+    try:
+        return os.path.isdir(ROOTFS + path)
+    except OSError:
+        return False
+
+
+def set_default_cwd(value):
+    """Persist the default working directory. Returns (ok, error)."""
+    value = (value or "").strip()
+    if value:
+        if not value.startswith("/"):
+            return False, "默认目录必须是绝对路径（例如 /sdcard 或 /sdcard/projects）"
+        parts = [p for p in value.split("/") if p]
+        if any(p in (".", "..") for p in parts):
+            return False, "默认目录不能包含 . 或 .."
+        if "\n" in value or "\x00" in value:
+            return False, "默认目录包含非法字符"
+        if not _cwd_visible_in_container(value):
+            return False, f"容器里看不到这个目录：{value}（先创建它，或检查拼写）"
+    cfg = load_config()
+    cfg["default_cwd"] = value
+    save_config(cfg)
+    return True, ""
+
+
+def set_lang(value):
+    """Persist the menu language. Returns (ok, error)."""
+    value = (value or "").strip().lower()
+    if value not in STRINGS:
+        return False, f"不支持的语言：{value}（可选：{', '.join(STRINGS)}）"
+    cfg = load_config()
+    cfg["lang"] = value
+    save_config(cfg)
+    return True, ""
+
+
+def settings_command(argv):
+    """`ancli config` with no app id: global settings (default cwd, language)."""
+    errors = []
+    for key, value in parse_set_env(argv).items():
+        if key == "default_cwd":
+            ok, err = set_default_cwd(value)
+        elif key == "lang":
+            ok, err = set_lang(value)
+        else:
+            ok, err = False, f"未知配置项：{key}（支持 default_cwd、lang）"
+        if not ok:
+            errors.append(err)
+
+    cfg = load_config()
+    if "--json" in argv:
+        print(json.dumps({
+            "lang": cfg.get("lang", "zh"),
+            "default_cwd": cfg.get("default_cwd", ""),
+            "effective_cwd": cfg.get("default_cwd") or DEFAULT_CWD,
+        }, ensure_ascii=False))
+    else:
+        configured = cfg.get("default_cwd", "")
+        print(f"默认工作目录: {configured or DEFAULT_CWD}"
+              f"{'' if configured else '（内置默认）'}")
+        print("  从 / 启动工具时使用；设置示例："
+              "ancli config --set default_cwd=/sdcard/projects")
+        print(f"语言: {cfg.get('lang', 'zh')}")
+    for err in errors:
+        print(f"\033[91m[X] {err}\033[0m")
+    if errors:
+        raise SystemExit(1)
 
 CURRENT_CONFIG = load_config()
 LANG = CURRENT_CONFIG.get("lang", "zh")
@@ -110,6 +202,9 @@ STRINGS = {
   ancli uninstall <app_id>       卸载指定的应用
   ancli update <app_id>          更新指定的应用
   ancli config <app_id>          重新配置应用的环境变量
+  ancli config                   查看全局设置（默认工作目录、语言）
+  ancli config --set default_cwd=/sdcard/projects
+                                 设置从 / 启动工具时的默认目录
   ancli list                     列出所有已安装的应用
   ancli check                    联网检查官方最新版本与可更新项
   ancli skills                   统一各 Agent 的全局 skills 目录（~/.agents/skills）
@@ -180,6 +275,9 @@ STRINGS = {
   ancli uninstall <app_id>       Uninstall an installed app
   ancli update <app_id>          Update an installed app
   ancli config <app_id>          Reconfigure env vars for an app
+  ancli config                   Show global settings (default dir, language)
+  ancli config --set default_cwd=/sdcard/projects
+                                 Where tools start when launched from /
   ancli list                     List all installed apps
   ancli check                    Check official latest versions and available updates
   ancli skills                   Unify the agent CLIs' global skills dir (~/.agents/skills)
@@ -428,7 +526,7 @@ def _write_secrets_file(executable, env_dict):
     try:
         if os.path.exists(secrets_path):
             os.remove(secrets_path)
-        with open(secrets_path, "w") as f:
+        with open(secrets_path, "w", encoding="utf-8") as f:
             for k, v in env_dict.items():
                 # shlex.quote safely handles values containing quotes or special shell chars
                 f.write(f"export {k}={shlex.quote(v)}\n")
@@ -541,6 +639,22 @@ exit 127
 
 # 3. Inject static runtime env vars (from registry)
 {static_exports}
+# 3.1 Configured default working directory (`ancli config --set default_cwd=...`,
+#     also editable in the WebUI). Read at run time from the config file, so a
+#     change takes effect without regenerating wrappers. Empty = built-in /root.
+_ancli_default_cwd=""
+_ancli_cfg={ROOTFS}/root/.ancli-config.json
+if [ -f "$_ancli_cfg" ]; then
+    _ancli_default_cwd=$(sed -n 's/^[[:space:]]*"default_cwd"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$_ancli_cfg" 2>/dev/null | head -n 1)
+fi
+# Accept it only when the container can really use it: bind roots always exist at
+# run time, everything else has to exist under the rootfs.
+case "$_ancli_default_cwd" in
+    "") ;;
+    /dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*) ;;
+    *) [ -d "{ROOTFS}$_ancli_default_cwd" ] || _ancli_default_cwd="" ;;
+esac
+
 # 4. Resolve PRoot working directory: fall back to the container HOME when
 #    PWD is not visible inside the rootfs (e.g. an unbound host path like
 #    /cache), which would otherwise make proot exit with 'unable to change
@@ -551,18 +665,28 @@ case "$PROOT_CWD" in
         ;;
     *)
         if [ ! -d "{ROOTFS}$PROOT_CWD" ]; then
-            PROOT_CWD=/root
+            if [ -n "$_ancli_default_cwd" ]; then
+                PROOT_CWD="$_ancli_default_cwd"
+            else
+                PROOT_CWD=/root
+            fi
         fi
         ;;
 esac
 # Launching from / (or an unmapped path) means TUI tools (mimo/claude/opencode/...)
 # scan the whole container filesystem at startup — rootfs plus the /data and
 # /sdcard bindings (hundreds of thousands of files) — which hangs the TUI.
-# Redirect to the container HOME so startup stays fast.
+# Start in the configured default directory when there is one, else container HOME.
 if [ "$PROOT_CWD" = "/" ]; then
-    PROOT_CWD=/root
-    echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
-    echo "        cd to a project dir (e.g. /sdcard/...) to work there." >&2
+    if [ -n "$_ancli_default_cwd" ]; then
+        PROOT_CWD="$_ancli_default_cwd"
+        echo "[AnCLI] Launched from /; using the configured default directory: $PROOT_CWD" >&2
+    else
+        PROOT_CWD=/root
+        echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
+        echo "        cd to a project dir (e.g. /sdcard/...) to work there, or set one:" >&2
+        echo "        ancli config --set default_cwd=/sdcard/projects" >&2
+    fi
 fi
 : "${{PROOT_CWD:=/root}}"
 # 5. Provide /dev/shm: Android's /dev has no shm, and Node/Bun workers plus
@@ -682,7 +806,7 @@ def _write_wrapper_to_paths(executable, wrapper):
     try:
         if os.path.exists(ancli_bin_path):
             os.remove(ancli_bin_path)
-        with open(ancli_bin_path, "w") as f:
+        with open(ancli_bin_path, "w", encoding="utf-8") as f:
             f.write(wrapper)
         os.chmod(ancli_bin_path, 0o755)
         print(f"\033[92m[OK] Written: {ancli_bin_path}\033[0m")
@@ -696,7 +820,7 @@ def _write_wrapper_to_paths(executable, wrapper):
         os.makedirs(sys_bin, exist_ok=True)
         if os.path.exists(sys_path):
             os.remove(sys_path)
-        with open(sys_path, "w") as f:
+        with open(sys_path, "w", encoding="utf-8") as f:
             f.write(wrapper)
         os.chmod(sys_path, 0o755)
     except Exception as e:
@@ -708,7 +832,7 @@ def _write_wrapper_to_paths(executable, wrapper):
     # use os.system('cp') which forks a host-side root shell that can write to /data/adb.
     tmp_wrapper = f"{ANCLI_DIR}/bin/.{executable}.tmp"
     try:
-        with open(tmp_wrapper, "w") as f:
+        with open(tmp_wrapper, "w", encoding="utf-8") as f:
             f.write(wrapper)
         os.chmod(tmp_wrapper, 0o755)
         for instant_bin in [KSU_BIN, AP_BIN]:
@@ -2440,6 +2564,11 @@ if __name__ == "__main__":
                 print(f"installed apps: {len(load_installed())}")
                 print(f"app-data channel: "
                       f"{'ready at ' + ANDROID_DATA_MNT if _android_data_mounted() else 'not mounted'}")
+                sys.exit(0)
+            elif action == "config" and (not app_id or app_id.startswith("-")):
+                # Global settings, not a per-app env dialog: no registry needed,
+                # so it is dispatched before the (network) registry fetch.
+                settings_command(sys.argv[2:])
                 sys.exit(0)
             elif action == "check":
                 if "--json" in sys.argv:

@@ -55,6 +55,20 @@ try:
 except Exception as e:
     print(f"MODULE-DIR  read-only ({e})")
 
+# Static launcher: carries the same default-cwd logic as the generated wrappers.
+launcher = f"{STAGE}/ancli-launcher.new"
+if os.path.exists(launcher):
+    for dst in ("/data/adb/modules/ancli/system/bin/ancli",
+                "/data/adb/ksu/bin/ancli",
+                "/data/adb/ap/bin/ancli"):
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(launcher, dst)
+            os.chmod(dst, 0o755)
+            print(f"OK    {dst} ({os.path.getsize(dst)} bytes)")
+        except Exception as e:
+            print(f"SKIP  {dst}: {e}")
+
 # Can the WebUI page be replaced from here?
 webui_src = f"{STAGE}/ancli-webui.html.new"
 webui_dst = "/data/adb/modules/ancli/webroot/index.html"

@@ -1,5 +1,17 @@
 #!/system/bin/sh
 . /data/local/tmp/ancli/bin/ancli_env.sh 2>/dev/null || true
+# Default working directory configured with `ancli config --set default_cwd=...`
+# (also editable in the WebUI). Empty = built-in /root.
+_ancli_default_cwd=""
+_ancli_cfg=/data/local/tmp/ancli/rootfs/root/.ancli-config.json
+if [ -f "$_ancli_cfg" ]; then
+    _ancli_default_cwd=$(sed -n 's/^[[:space:]]*"default_cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ancli_cfg" 2>/dev/null | head -n 1)
+fi
+case "$_ancli_default_cwd" in
+    "") ;;
+    /dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*) ;;
+    *) [ -d "/data/local/tmp/ancli/rootfs$_ancli_default_cwd" ] || _ancli_default_cwd="" ;;
+esac
 # Resolve PRoot working directory: fall back to the container HOME when PWD
 # is not visible inside the rootfs (e.g. an unbound host path like /cache).
 PROOT_CWD="$PWD"
@@ -13,10 +25,15 @@ case "$PROOT_CWD" in
         ;;
 esac
 # Launching from / means scanning the whole container filesystem at startup
-# (rootfs plus /data and /sdcard bindings), which hangs TUI tools; use HOME.
+# (rootfs plus /data and /sdcard bindings), which hangs TUI tools; use the
+# configured default directory when there is one, else the container HOME.
 if [ "$PROOT_CWD" = "/" ]; then
-    PROOT_CWD=/root
-    echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
+    if [ -n "$_ancli_default_cwd" ]; then
+        PROOT_CWD="$_ancli_default_cwd"
+    else
+        PROOT_CWD=/root
+        echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
+    fi
 fi
 : "${PROOT_CWD:=/root}"
 # Provide /dev/shm: Android's /dev has no shm, and Node/Bun workers plus some

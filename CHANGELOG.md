@@ -48,6 +48,24 @@
 - Verified on device: the bind lists 752 packages, `umount`/cleanup leaves no mount behind, and the
   wrappers only mount when `/proc/mounts` has no entry for the path.
 
+### Configurable default working directory
+
+- Tools launched from `/` (a fresh Termius session, `su` then `mimo`) are redirected to a small
+  directory, because a TUI that walks `/` scans the whole rootfs plus the `/data` and `/sdcard`
+  bindings and hangs. That directory was hard-wired to `/root`; it is now configurable:
+  `ancli config --set default_cwd=/sdcard/projects` (empty resets to `/root`).
+- `ancli config` with no app id shows the global settings (`--json` for the WebUI); the value is
+  validated as an absolute path that the container can actually reach — bind roots such as
+  `/sdcard` pass without a disk check because they only exist at run time.
+- The WebUI gained a **设置** button/dialog for the same value. It reads it with `config --json` and
+  writes it with `config --set`.
+- Wrappers read `default_cwd` from `/root/.ancli-config.json` at launch (sed, no JSON parser in sh)
+  and fall back to `/root` when it is unset or unusable, so changing the setting does not require
+  regenerating wrappers or running `ancli repair`.
+- Verified on device: `config --json` reports the value, `/nope/missing` is rejected with exit 1,
+  and `cd / && dsh --version` prints "using the configured default directory: /sdcard". The WebUI
+  was rendered headless to confirm the dialog.
+
 ## v1.2.4
 
 ### Release checks (found while cutting and flashing this build)

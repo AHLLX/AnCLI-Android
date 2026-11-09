@@ -53,6 +53,7 @@ const mock = `
     [/find \\/data\\/local\\/tmp\\/ancli -maxdepth/, ''],
     [/tail -c/, ''],
     [/\\[ -f .* \\] && cat/, 'echo -n'],
+    [/config --json/, JSON.stringify({ lang: 'zh', default_cwd: '/sdcard', effective_cwd: '/sdcard' })],
   ];
   function respond(cmd) {
     for (const [re, out] of routes) if (re.test(cmd)) return out;
@@ -68,7 +69,7 @@ const mock = `
 </script>
 `;
 
-const trailer = (scenario, theme, dialog) => `
+const trailer = (scenario, theme, dialog, settings) => `
 <style>
 /* Screenshot harness only: headless virtual-time does not advance CSS
    transitions, so shots would otherwise catch the mid-transition state. */
@@ -79,6 +80,7 @@ const trailer = (scenario, theme, dialog) => `
   applyTheme(${JSON.stringify(theme)});
   ${scenarios[scenario].join('\n  ')}
   ${dialog ? `setTimeout(function () { openConfig(${JSON.stringify(dialog)}); }, 400);` : ''}
+  ${settings ? `setTimeout(function () { openSettings(); }, 400);` : ''}
   ${scenario === 'busy' ? `setTimeout(function () { document.getElementById('log').closest('section').scrollIntoView({ block: 'center' }); }, 700);` : ''}
 })();
 </script>
@@ -94,9 +96,10 @@ const targets = [
   { file: 'preview-dark.html', scenario: 'default', theme: 'dark', dialog: null },
   { file: 'preview-log.html', scenario: 'busy', theme: 'light', dialog: null },
   { file: 'preview-dialog.html', scenario: 'default', theme: 'dark', dialog: 'claude-code' },
+  { file: 'preview-settings.html', scenario: 'default', theme: 'light', dialog: null, settings: true },
 ];
 
 for (const t of targets) {
-  fs.writeFileSync(path.join(__dirname, t.file), html + trailer(t.scenario, t.theme, t.dialog), 'utf8');
+  fs.writeFileSync(path.join(__dirname, t.file), html + trailer(t.scenario, t.theme, t.dialog, t.settings), 'utf8');
 }
 console.log('built: ' + targets.map(t => t.file).join(', '));

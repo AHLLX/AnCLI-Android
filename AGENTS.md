@@ -63,6 +63,7 @@ When debugging paths or writing cleanup logic, refer to this exact physical mapp
 - **Shared Skills**: `/root/.agents/skills` inside the container (i.e. `$ROOTFS/root/.agents/skills`); `ancli skills` / `ancli repair` create it and symlink each tool's own path (`~/.claude/skills`, `~/.grok/skills`, `~/.mimocode/skills`, `~/.config/opencode/skills`, `~/.dsh/skills`) to it
 - **Magisk Module**: `/data/adb/modules/ancli/`
 - **App-data channel**: `/mnt/ancli-data` (host bind of the real `/data`, visible in the container as `/mnt/ancli-data/data/<pkg>`)
+- **Global settings**: `/root/.ancli-config.json` (`lang`, `default_cwd`); `ancli config` with no app id prints/updates them. Wrappers read `default_cwd` at launch (sed, when the caller's cwd is `/`) and fall back to `/root`, so changing it needs no wrapper regeneration. The WebUI's 设置 dialog writes the same file.
 
 **Why `/data/data` can look empty.** An `su` started from an app (Termius, an SSH-server app) runs in
 that app's mount namespace, where Android masks `/data/data` with a tmpfs (`mode 751`, only the app's

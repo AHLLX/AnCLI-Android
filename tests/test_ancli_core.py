@@ -122,7 +122,7 @@ class TestWriteSecretsFile:
 
         secrets = tmp_path / "my-tool.env"
         assert secrets.exists()
-        content = secrets.read_text()
+        content = secrets.read_text(encoding="utf-8")
         assert "export API_KEY='sk-a b'\"'\"'c'\n" in content  # shlex.quote escaping
         assert "export BASE_URL=https://x\n" in content  # plain value stays unquoted
         # Directory 0700, secrets file 0600 (POSIX modes; asserted via chmod calls
@@ -137,7 +137,7 @@ class TestWriteSecretsFile:
         monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path))
         (tmp_path / "tool.env").write_text("export OLD=1\n")
         core._write_secrets_file("tool", {"NEW": "2"})
-        content = (tmp_path / "tool.env").read_text()
+        content = (tmp_path / "tool.env").read_text(encoding="utf-8")
         assert "OLD" not in content
         assert "NEW" in content
 
@@ -247,7 +247,7 @@ class TestDNS:
             lambda cmd, shell=True: b"192.168.1.1",
         )
         core._write_resolv_conf()
-        content = (tmp_path / "etc" / "resolv.conf").read_text()
+        content = (tmp_path / "etc" / "resolv.conf").read_text(encoding="utf-8")
         lines = content.strip().splitlines()
         assert lines[0] == "nameserver 192.168.1.1"  # the device's real DNS first
         assert lines[1] == "nameserver 223.5.5.5"    # then the China-friendly fallback
@@ -300,7 +300,7 @@ class TestWrapperGeneration:
 
         core.generate_proot_wrapper("mimo", {"OPENAI_API_KEY": "sk-x"}, ["HOME=/root"])
 
-        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text(encoding="utf-8")
         # cwd fallback for unbound host paths -> container HOME
         assert "PROOT_CWD=\"$PWD\"" in wrapper
         assert "case \"$PROOT_CWD\"" in wrapper
@@ -330,7 +330,7 @@ class TestWrapperGeneration:
 
         core.generate_proot_wrapper("agy", {"GEMINI_API_KEY": "sk-x"}, [], native=True)
 
-        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
         assert "(native" in wrapper
         assert "ancli_env.sh host" in wrapper          # host-mode env bootstrap
         assert "/bin/proot" not in wrapper             # no proot invocation at all
@@ -360,7 +360,7 @@ class TestWrapperGeneration:
             assert shim.exists()
             # 0755 exec bit (asserted via chmod calls; Windows ignores mode bits)
             assert (os.path.normpath(str(shim)), 0o755) in chmods
-            content = shim.read_text()
+            content = shim.read_text(encoding="utf-8")
             assert 'TOOL=$(basename "$0")' in content
             assert f"{core.ROOTFS}" in content          # container rootfs
             assert "/usr/bin/env \"$TOOL\"" in content  # runs container tool
@@ -444,9 +444,9 @@ class TestWebUIJsonAPI:
         installed = core.load_installed()
         assert installed["agy"]["env"] == {"GEMINI_API_KEY": "new"}
         # wrapper regenerated with the new secret
-        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
         assert "secrets/agy.env" in wrapper
-        secrets = (tmp_path / "secrets" / "agy.env").read_text()
+        secrets = (tmp_path / "secrets" / "agy.env").read_text(encoding="utf-8")
         assert "GEMINI_API_KEY" in secrets and "new" in secrets
 
 
@@ -787,7 +787,7 @@ class TestUpdateCheckFlow:
         assert cache['latest']['claude-code']['version'] == '2.1.283'
         assert cache['latest']['claude-code']['source'] == 'github:anthropics/claude-code'
         assert cache['ts'] > 0
-        assert json.loads((tmp_path / "ancli" / ".update_cache.json").read_text())['latest']['claude-code']['version'] == '2.1.283'
+        assert json.loads((tmp_path / "ancli" / ".update_cache.json").read_text(encoding="utf-8"))['latest']['claude-code']['version'] == '2.1.283'
 
     def test_check_updates_json_emits_pure_json(self, tmp_path, monkeypatch, capsys):
         registry = self._env(tmp_path, monkeypatch)
@@ -1001,7 +1001,7 @@ class TestConfigEncoding:
             "ANTHROPIC_API_KEY": "sk-plain"}}
         stored = core.load_installed()["claude-code"]["env"]
         assert stored["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
-        secrets = (tmp_path / "secrets" / "claude.env").read_text()
+        secrets = (tmp_path / "secrets" / "claude.env").read_text(encoding="utf-8")
         assert "https://api.deepseek.com/anthropic" in secrets
         assert "%3A" not in secrets
         capsys.readouterr()
@@ -1029,8 +1029,8 @@ class TestReinstallKeepsConfig:
         record = core.load_installed()["claude-code"]
         assert record["env"] == {"ANTHROPIC_API_KEY": "sk-keep"}   # not wiped by a re-install
         assert record["installed_version"] == "2.1.283"
-        assert "secrets/claude.env" in (tmp_path / "ancli" / "bin" / "claude").read_text()
-        assert "sk-keep" in (tmp_path / "secrets" / "claude.env").read_text()
+        assert "secrets/claude.env" in (tmp_path / "ancli" / "bin" / "claude").read_text(encoding="utf-8")
+        assert "sk-keep" in (tmp_path / "secrets" / "claude.env").read_text(encoding="utf-8")
         capsys.readouterr()
 
 
@@ -1311,7 +1311,7 @@ class TestAndroidDnsDiscovery:
 
         core._write_resolv_conf()
 
-        lines = (tmp_path / "etc" / "resolv.conf").read_text().splitlines()
+        lines = (tmp_path / "etc" / "resolv.conf").read_text(encoding="utf-8").splitlines()
         assert lines[0] == "nameserver 192.168.1.1"     # the real network DNS leads
         assert "nameserver 223.5.5.5" in lines
         assert len(lines) == 3                          # glibc reads only three
@@ -1339,7 +1339,7 @@ class TestBrowserHandoff:
         core._deploy_xdg_open()
 
         shim = tmp_path / "rootfs" / "usr" / "local" / "bin" / "xdg-open"
-        text = shim.read_text()
+        text = shim.read_text(encoding="utf-8")
         # Compare separator-insensitively: the shim is a POSIX script, but the test
         # runs on Windows too, where ANCLI_DIR carries backslashes.
         queue = str(tmp_path / "ancli" / ".open_url").replace("\\", "/")
@@ -1358,14 +1358,14 @@ class TestBrowserHandoff:
         os.makedirs(tmp_path / "ksu", exist_ok=True)
         core._deploy_xdg_open()
 
-        host = (tmp_path / "ksu" / "xdg-open").read_text()
+        host = (tmp_path / "ksu" / "xdg-open").read_text(encoding="utf-8")
         assert "/system/bin/am start" in host
 
     def test_generated_wrapper_drains_the_queue_with_am(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("dsh", {}, [])
 
-        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
         assert ".open_url" in wrapper
         assert "ancli_open_drain" in wrapper
         assert "/system/bin/am start -a android.intent.action.VIEW" in wrapper
@@ -1375,7 +1375,7 @@ class TestBrowserHandoff:
     def test_wrapper_watcher_only_starts_when_the_queue_is_writable(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("dsh", {}, [])
-        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
         assert '[ -w "$(dirname "$ANCLI_OPEN_QUEUE")" ]' in wrapper
 
     def test_wrapper_points_browser_at_the_handoff_shim(self, tmp_path, monkeypatch):
@@ -1384,7 +1384,7 @@ class TestBrowserHandoff:
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("dsh", {}, [])
 
-        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
         assert "/usr/bin/env BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
 
     def test_wrapper_prefers_a_full_browser_over_the_chooser(self, tmp_path, monkeypatch):
@@ -1393,7 +1393,7 @@ class TestBrowserHandoff:
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("dsh", {}, [])
 
-        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
         assert "com.android.chrome" in wrapper
         assert 'pm list packages "$_ancli_pkg"' in wrapper
         assert '-p "$_ancli_pkg"' in wrapper
@@ -1420,7 +1420,7 @@ class TestTerminalRestore:
     def test_proot_wrapper_saves_and_restores_the_tty(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("mimo", {}, [])
-        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text(encoding="utf-8")
 
         assert "stty -g" in wrapper
         assert 'stty "$_ancli_saved_tty"' in wrapper
@@ -1432,7 +1432,7 @@ class TestTerminalRestore:
     def test_native_wrapper_saves_and_restores_the_tty(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("agy", {}, [], native=True)
-        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
 
         assert "stty -g" in wrapper
         assert "trap 'ancli_restore_tty' EXIT" in wrapper
@@ -1456,7 +1456,7 @@ class TestAndroidDataChannel:
     def test_proot_wrapper_mounts_the_channel(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("mimo", {}, [])
-        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text(encoding="utf-8")
         assert f"ANCLI_DATA_MNT={core.ANDROID_DATA_MNT}" in wrapper
         assert 'mount --bind /data "$ANCLI_DATA_MNT"' in wrapper
         assert "/proc/mounts" in wrapper          # idempotent: never stack mounts
@@ -1465,7 +1465,7 @@ class TestAndroidDataChannel:
     def test_native_wrapper_mounts_the_channel(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("agy", {}, [], native=True)
-        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text()
+        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
         assert f"ANCLI_DATA_MNT={core.ANDROID_DATA_MNT}" in wrapper
         assert 'mount --bind /data "$ANCLI_DATA_MNT"' in wrapper
 
@@ -1481,6 +1481,72 @@ class TestAndroidDataChannel:
         monkeypatch.setattr(core, "ANDROID_DATA_MNT", str(tmp_path / "mnt" / "ancli-data"))
         monkeypatch.setattr(core.os, "system", lambda cmd: 1)
         assert core.ensure_android_data(verbose=False) is False
+
+
+class TestDefaultWorkingDirectory:
+    """A tool launched from `/` starts in a small directory instead of scanning
+    the whole container; users can point that at a project tree with
+    `ancli config --set default_cwd=...` (also editable in the WebUI)."""
+
+    def _cfg(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "CONFIG_FILE", str(tmp_path / "cfg.json"))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+
+    def test_bind_root_is_accepted_without_a_disk_entry(self, tmp_path, monkeypatch):
+        # /sdcard only exists once the wrapper binds it, never under $ROOTFS.
+        self._cfg(tmp_path, monkeypatch)
+        ok, err = core.set_default_cwd("/sdcard/projects")
+        assert ok and err == ""
+        assert core.get_default_cwd() == "/sdcard/projects"
+
+    def test_relative_and_traversal_paths_are_rejected(self, tmp_path, monkeypatch):
+        self._cfg(tmp_path, monkeypatch)
+        for bad in ("sdcard", "../etc", "/sdcard/../../etc", ""):
+            if bad == "":
+                continue
+            ok, err = core.set_default_cwd(bad)
+            assert ok is False and err
+
+    def test_missing_container_directory_is_rejected(self, tmp_path, monkeypatch):
+        self._cfg(tmp_path, monkeypatch)
+        ok, err = core.set_default_cwd("/nope/definitely-missing")
+        assert ok is False and "看不到" in err
+        assert core.get_default_cwd() == ""
+
+    def test_existing_container_directory_is_accepted(self, tmp_path, monkeypatch):
+        self._cfg(tmp_path, monkeypatch)
+        os.makedirs(tmp_path / "rootfs" / "srv" / "project")
+        ok, err = core.set_default_cwd("/srv/project")
+        assert ok and err == ""
+
+    def test_empty_value_resets_to_the_builtin(self, tmp_path, monkeypatch):
+        self._cfg(tmp_path, monkeypatch)
+        core.set_default_cwd("/sdcard")
+        ok, _ = core.set_default_cwd("")
+        assert ok
+        assert core.get_default_cwd() == ""
+
+    def test_settings_json_reports_the_effective_directory(self, tmp_path, monkeypatch, capsys):
+        self._cfg(tmp_path, monkeypatch)
+        core.settings_command(["--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["effective_cwd"] == core.DEFAULT_CWD
+        assert payload["default_cwd"] == ""
+
+    def test_proot_wrapper_uses_the_configured_directory(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
+        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
+        core.generate_proot_wrapper("mimo", {}, [])
+
+        wrapper = (tmp_path / "ancli" / "bin" / "mimo").read_text(encoding="utf-8")
+        assert ".ancli-config.json" in wrapper
+        assert "default_cwd" in wrapper
+        assert "configured default directory" in wrapper
+        assert "ancli config --set default_cwd=" in wrapper   # discoverable hint
 
 
 class TestDshCookiePatch:

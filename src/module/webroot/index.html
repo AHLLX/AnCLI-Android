@@ -362,6 +362,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 21H3l1.3-9.7a4 4 0 0 0 5-5z"/></svg>
       修复环境
     </button>
+    <button class="btn" id="btnSettings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      设置
+    </button>
   </section>
 
   <div class="sec-head">
@@ -410,6 +414,30 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     <div class="dlg-foot">
       <button class="btn" id="cfgCancel">取消</button>
       <button class="btn primary" id="cfgSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="setOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="dlg-head">
+      <h3 id="setTitle">设置</h3>
+      <button class="icon-btn" id="setClose" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dlg-body">
+      <div class="fields">
+        <div class="field">
+          <label>默认工作目录</label>
+          <input id="setCwd" autocomplete="off" spellcheck="false" placeholder="/sdcard/projects（留空 = /root）">
+          <div class="hint">从 <code>/</code> 启动工具（Termius 新会话、<code>su</code> 后直接敲 <code>mimo</code>）时使用。<br>必须是容器里存在的绝对路径；留空恢复内置默认 <code>/root</code>。</div>
+        </div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" id="setCancel">取消</button>
+      <button class="btn primary" id="setSave">保存</button>
     </div>
   </div>
 </div>
@@ -1024,6 +1052,43 @@ async function saveConfig() {
   finally { setBusy(false); await loadApps(); }
 }
 
+/* ================= 全局设置 ================= */
+async function openSettings() {
+  const ov = document.getElementById('setOverlay');
+  document.getElementById('setCwd').value = '';
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  try {
+    const cfg = JSON.parse(await ancli('config --json', true));
+    document.getElementById('setCwd').value = cfg.default_cwd || '';
+  } catch (e) {
+    // 读不到就留空，保存时仍可设置
+  }
+}
+
+function closeSettings() {
+  const ov = document.getElementById('setOverlay');
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+
+async function saveSettings() {
+  const v = document.getElementById('setCwd').value.trim();
+  closeSettings();
+  setBusy(true, '保存设置…');
+  try {
+    // 空值 = 恢复内置默认 /root；core 侧会校验绝对路径与目录是否存在
+    await ancli('config --set default_cwd=' + encodeURIComponent(v));
+    toast(v ? ('默认目录已设为 ' + v) : '已恢复内置默认目录 /root');
+  } catch (e) {
+    toast('保存失败，见输出', 'err');
+  } finally {
+    setBusy(false);
+  }
+}
+
 /* ================= 事件绑定 ================= */
 document.getElementById('apps').addEventListener('click', e => {
   const btn = e.target.closest('button[data-act]');
@@ -1049,11 +1114,20 @@ document.getElementById('btnRepair').onclick = doRepair;
 document.getElementById('cfgCancel').onclick = closeConfig;
 document.getElementById('cfgClose').onclick = closeConfig;
 document.getElementById('cfgSave').onclick = saveConfig;
+document.getElementById('btnSettings').onclick = openSettings;
+document.getElementById('setCancel').onclick = closeSettings;
+document.getElementById('setClose').onclick = closeSettings;
+document.getElementById('setSave').onclick = saveSettings;
+document.getElementById('setOverlay').addEventListener('click', e => {
+  if (e.target.id === 'setOverlay') closeSettings();
+});
 document.getElementById('cfgOverlay').addEventListener('click', e => {
   if (e.target.id === 'cfgOverlay') closeConfig();
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
+  else if (document.getElementById('setOverlay').classList.contains('show')) closeSettings();
 });
 
 document.getElementById('btnLogClear').onclick = () => {

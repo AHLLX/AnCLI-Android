@@ -179,6 +179,20 @@ skill 存在容器的 `/root` 下，模块升级不会丢；想跟着项目走�
 - 更省事的办法：**先 cd 到项目目录再启动**——`cd /sdcard/projects/demo && dsh web`，工作区会默认落在那里，AI 的当前目录直接就是你的工程。
 - 注意：Android 11+ 对 `/sdcard/Android/data` 等目录有访问限制；带空格的路径记得加引号。
 
+### 默认工作目录（从 `/` 启动时）
+
+Termius 新会话、或 `su` 之后直接敲 `mimo`，宿主 cwd 是 `/`。全屏 TUI 启动时会遍历 cwd，等于扫描整个容器 + 绑进来的 `/data`、`/sdcard`（几十万文件），会卡很久甚至起不来。AnCLI 把这种启动转到一个小目录——默认 `/root`，也可以自己指定：
+
+```bash
+ancli config                                     # 查看当前设置
+ancli config --set default_cwd=/sdcard/projects  # 从 / 启动时落到这里
+ancli config --set default_cwd=                  # 留空 = 恢复内置默认 /root
+```
+
+WebUI 里点「设置」也能改（同一份配置，存在容器 `/root/.ancli-config.json`）。
+
+只影响“从 `/` 启动”这一种情况：先 `cd` 到项目目录再启动时，用的永远是你的 cwd。目录必须是容器里存在的绝对路径，否则 `ancli config` 会直接拒绝并提示。
+
 ## 跨 App 数据（为什么有时看不到 `/data/data`）
 
 Android 给每个 App 的进程一个独立的 mount namespace，并把它**不该看到的** `/data/data` 用 tmpfs 遮住（只留自己的几个目录，`mode 751`）。所以从 Termius 这类 App 里 `su` 出来的 root shell，会继承这个"缩水"的视图——这不是 proot 的限制，从 ADB 或系统级终端 `su` 进去就能看到完整的 752 个包。
