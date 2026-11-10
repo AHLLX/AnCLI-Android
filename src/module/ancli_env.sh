@@ -10,19 +10,9 @@
 # any other command in this script runs.
 unset LD_LIBRARY_PATH LD_PRELOAD
 
-# Mode switch: "host" = native tools running directly on Android (no proot).
-# In host mode the Android PATH is kept and TMPDIR points to a writable host
-# dir; otherwise the container PATH/TMPDIR are used as before.
-# ANCLI_DIR/bin hosts proot shims (git/bash/curl) for native tools; it is
-# appended LAST so host binaries (e.g. Android's own curl) win when present.
-PRE_ANCLI_PATH="$PATH"
-if [ "${1:-}" = "host" ]; then
-    export PATH="$PRE_ANCLI_PATH:/data/adb/ksu/bin:/data/adb/ap/bin:/data/local/tmp/ancli/bin"
-    export TMPDIR=/data/local/tmp
-else
-    export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
-    export TMPDIR=/tmp
-fi
+# All supported tools run inside the Ubuntu PRoot guest.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+export TMPDIR=/tmp
 export HOME=/root
 export GODEBUG=netdns=go
 export UV_USE_IO_URING=0

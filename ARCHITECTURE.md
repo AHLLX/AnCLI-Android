@@ -13,7 +13,7 @@ Host Shell
     → Wrapper (/data/adb/ksu/bin/<tool>)
         → proot v5.4.0 (official static build, user-space chroot)
             → Ubuntu 24.04 glibc rootfs (/data/local/tmp/ancli/rootfs/)
-                → Standalone Python/Go/JS Native Binary
+                → Installed tool (Python package, standalone binary, or dsh Node/npm package)
 ```
 
 ### 1.1 Why PRoot / Ubuntu Base?
@@ -21,18 +21,18 @@ Host Shell
 Android's Linux kernel is paired with the Bionic C library instead of the standard GNU glibc. This creates compatibility issues for standard Linux tools built for glibc. 
 
 - `customize.sh` downloads the official `ubuntu-base-arm64` tarball (~30 MB) and extracts it to `/data/local/tmp/ancli/rootfs/`.
-- PRoot bind-mounts `/dev`, `/proc`, `/sys`, `/sdcard`, and `/data/local/tmp/ancli` so the container has access to host resources.
+- PRoot bind-mounts `/dev`, `/proc`, `/sys`, `/data/local/tmp/ancli`, `/sdcard`, `/storage`, `/mnt`, `/data`, `/apex`, `/linkerconfig`, `/system`, and `/data/adb` so symlink resolution and host resources remain available. The wrapper also exposes a non-recursive `/data` bind at `/mnt/ancli-data` when it has root access.
 - Glibc binaries run inside this isolated sandbox natively.
 
 ### 1.2 Resolving Node.js Incompatibility via Standalone Binaries
 
-In older configurations, running Node.js (`npm`) inside PRoot on Android 15 failed due to a `libuv` thread-interception ptrace bug (asynchronous `mkdir` returned `ENOENT` during npm initialization).
+In older configurations, running Node.js (`npm`) inside PRoot on affected Android kernels failed due to a `libuv` thread-interception ptrace bug (asynchronous `mkdir` returned `ENOENT` during npm initialization).
 
-Instead of running npm or trying to bind to a Termux host Node.js runtime (which fails due to SELinux blocking `exec` calls across application domains), **AnCLI installs Node.js/JS-based tools directly as precompiled native Linux binaries**.
+For tools that publish standalone arm64 binaries, **AnCLI installs the release tarball directly inside the container** instead of binding a Termux Node.js runtime across Android application domains. Claude Code, OpenCode and MiMo use this path. DeepSeek Harness (`dsh`) is the explicit exception: it needs a package graph, so its registry installer bootstraps a current Node.js `.tar.gz` and then installs the npm package inside the same container.
 
 1. Tools like **Claude Code**, **OpenCode**, and **MiMo Code** publish native standalone executables to their GitHub Releases.
 2. AnCLI downloads these standalone `.tar.gz` packages directly inside the container using `curl` or native Python bypass downloads and extracts the executable to `/usr/local/bin`.
-3. The generated wrapper calls this native binary directly via PRoot, completely bypassing `npm` and Node.js compilation.
+3. The generated wrapper calls the installed executable through PRoot. Standalone tools bypass npm; `dsh` keeps its private Node/npm runtime inside the rootfs.
 
 ### 1.3 Eliminating Nested PRoot Conflicts
 
@@ -50,7 +50,7 @@ AnCLI is packaged as a standard Magisk/KernelSU/APatch module.
 | :--- | :--- | :--- |
 | **`customize.sh`** | Flashed in manager | Bootstraps PRoot and Ubuntu rootfs, installs APT dependencies. |
 | **`service.sh`** | Late start boot hook | Restores container DNS (`resolv.conf`) and permissions. |
-| **`uninstall.sh`** | Module uninstalled | Cleans rootfs directories, kills PRoot processes, removes dynamic wrappers. |
+| **`uninstall.sh`** | Module uninstalled | Kills AnCLI PRoot processes and removes dynamic wrappers; preserves the container and user state by default, with `/data/local/tmp/ancli_force_purge` as the explicit full-purge flag. |
 
 ---
 
@@ -124,10 +124,11 @@ that older WebUI builds stored percent-encoded.
 
 ## 4. The "Dual-Injection" Systemless Wrapper Trick
 
-To expose a newly installed tool globally to the user's `$PATH` without modifying the read-only `/system` partition, AnCLI writes wrappers to two locations:
+To expose a newly installed tool globally to the user's `$PATH` without modifying the read-only `/system` partition, AnCLI writes wrappers to the systemless and immediate-access locations, plus a direct debug path:
 
 1. **`/data/adb/modules/ancli/system/bin/<tool>`** — Active after device reboot (Magisk/KSU module overlay).
 2. **`/data/adb/ksu/bin/<tool>` (or `/data/adb/ap/bin/<tool>`)** — Active immediately without reboot.
+3. **`/data/local/tmp/ancli/bin/<tool>`** — Direct invocation path used by placeholders and diagnostics.
 
 ### Wrapper Template
 
@@ -144,15 +145,27 @@ To expose a newly installed tool globally to the user's `$PATH` without modifyin
 # 3. Inject static runtime env vars (from registry)
 # export SOME_VAR='value'
 
-# 4. Launch PRoot with unified global binds
+# 4. Save the caller's TTY state.  The wrapper must outlive the tool so a
+#    full-screen TUI cannot leave the parent shell in raw mode.
+_ancli_saved_tty=""
+if [ -t 0 ]; then _ancli_saved_tty=$(stty -g 2>/dev/null) || _ancli_saved_tty=""; fi
+trap '[ -n "$_ancli_saved_tty" ] && stty "$_ancli_saved_tty" 2>/dev/null' EXIT
+
+# 5. Launch PRoot with unified global binds (run as a child, never `exec`)
 # All common Android root directories are bound unconditionally so that
 # Node.js fs.realpath and other symlink-following logic never breaks.
-exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs \
+/data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs \
     -b /dev -b /proc -b /sys -b /data/local/tmp/ancli \
     -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \
     -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb \
     -w "$PWD" /usr/bin/env <tool> "$@"
+_ancli_rc=$?
+exit $_ancli_rc
 ```
+
+### 4.1 Default Agent memory
+
+`ancli agent-init` renders the bundled `runtime-context/AGENTS.md` template into the guest-wide `/root/.agents/AGENTS.md`. The generated `AGENTS.md` records current AnCLI paths, proxy/DNS and browser hand-off, installed tool names, configured variable *names* and Android-specific operating rules. It is a runtime context file, separate from project `AGENTS.md` instructions. `ancli repair`, `ancli skills`, and a successful app install call the same idempotent initializer.
 
 ---
 
@@ -160,3 +173,6 @@ exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs \
 
 - **Command Whitelist**: Restricts execution inside the container to trusted prefixes (`pip`, `npm`, `apt-get`, `apt`, `curl`, `rm`, `agy`, `bash`, `sh`, `env`) and blocks shell operators (`;`, `>`, `<`, `&`, newline, `$()`, backticks).
 - **File Overwrite Protection**: Inodes and database paths like `installed.json` are forcefully deleted before recreating, preventing local permission lock errors (`[Errno 13] Permission denied`) from conflicting host users.
+- **Credential Separation**: API keys stay in per-tool `secrets/<tool>.env` files with mode 0600; generated 755 wrappers contain only the source command, not secret values.
+- **Machine-readable Output**: JSON commands redirect Python and child-process diagnostics to stderr so stdout remains parseable by the WebUI.
+- **Data-preserving Uninstall**: `uninstall.sh` keeps the rootfs, install database, secrets and caches by default; create `/data/local/tmp/ancli_force_purge` before removal only when a full purge is intended.

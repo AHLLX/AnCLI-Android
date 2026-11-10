@@ -14,8 +14,12 @@ pkill -f "proot.*${ANCLI_DIR}/rootfs" 2>/dev/null || \
 # Determine if we should preserve the container and config files
 # Default to KEEP (KEEP_DATA=1) unless the user explicitly requested a force purge
 KEEP_DATA=1
-if [ -f "/data/local/tmp/ancli_force_purge" ]; then
+PURGE_MARKER="/data/local/tmp/ancli_force_purge"
+if [ -f "$PURGE_MARKER" ]; then
     KEEP_DATA=0
+    # The marker is a one-shot request. Do not let a later upgrade or removal
+    # unexpectedly purge a newly created container.
+    rm -f "$PURGE_MARKER"
 fi
 
 if [ "$KEEP_DATA" -eq 1 ]; then

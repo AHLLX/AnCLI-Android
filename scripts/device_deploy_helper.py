@@ -15,11 +15,17 @@ jobs = [
     (f"{STAGE}/ancli-registry.new", f"{ANCLI}/registry.json", 0o644),
     (f"{STAGE}/ancli-registry.new", f"{ANCLI}/bin/registry.json", 0o644),
     (f"{STAGE}/ancli-env.sh.new", f"{ANCLI}/bin/ancli_env.sh", 0o755),
+    (f"{STAGE}/ancli-runtime-context.md.new", f"{ANCLI}/runtime-context/AGENTS.md", 0o644),
     # Module copies: what a reflash would deploy, so the on-device module stays
     # consistent with the running core (overwritten by the next flash anyway).
     (f"{STAGE}/ancli-core.py.new", "/data/adb/modules/ancli/ancli/ancli-core.py", 0o755),
     (f"{STAGE}/ancli-registry.new", "/data/adb/modules/ancli/ancli/registry.json", 0o644),
     (f"{STAGE}/ancli-env.sh.new", "/data/adb/modules/ancli/ancli/ancli_env.sh", 0o755),
+    (f"{STAGE}/ancli-runtime-context.md.new", "/data/adb/modules/ancli/ancli/runtime-context/AGENTS.md", 0o644),
+    (f"{STAGE}/ancli-module.prop.new", "/data/adb/modules/ancli/module.prop", 0o644),
+    # Optional, explicitly staged migration of the user's existing default-cwd
+    # memory. It is never created by the normal build/deploy path.
+    (f"{STAGE}/ancli-sdcard-agents.md.new", "/sdcard/AGENTS.md", 0o660),
     # Boot script: only takes effect on the next boot, but keep the module copy
     # consistent with the repository (a flash would deploy the same file).
     (f"{STAGE}/service.sh.new", "/data/adb/modules/ancli/service.sh", 0o755),
@@ -30,6 +36,7 @@ for src, dst, mode in jobs:
         print(f"SKIP  {dst}: {src} not staged")
         continue
     try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
         os.chmod(dst, mode)
         print(f"OK    {dst} ({os.path.getsize(dst)} bytes)")

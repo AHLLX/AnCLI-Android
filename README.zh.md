@@ -4,8 +4,8 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 
 ## 功能特性
 
-- **无需 Node.js 与 NPM 环境**：基于 Node.js 的工具（如 Claude Code、OpenCode 和 MiMo Code）直接以官方发布的预编译 Linux-arm64 原生二进制文件安装，避免了复杂的 npm 依赖和 JS 编译。
-- **模块化系统级集成**：支持作为 Magisk、KernelSU 或 APatch 模块安装。系统启动时自动挂载工具到 `/system/bin`，并即时注入快捷方式到 KSU/AP 动态路径，安装后无需重启手机即可全局调用。
+- **独立二进制工具无需宿主 Node.js**：Claude Code、OpenCode 和 MiMo Code 直接安装官方预编译 Linux-arm64 二进制；DeepSeek Harness（`dsh`）是明确的 npm 例外，会在容器内引导自己的 Node LTS。
+- **模块化系统级集成**：支持作为 Magisk、KernelSU 或 APatch 模块安装。模块 overlay 在启动后通过 `/system/bin` 暴露 wrapper，同时即时注入 KSU/AP 动态路径，安装后无需重启手机即可全局调用。
 - **OTA 自动更新**：支持 root 管理器的 `updateJson` 更新规范，可直接在管理器 App 内检测并一键升级模块。
 - **开机自动维护**：内置引导服务，每次开机时自动修复容器 DNS 配置与关键文件权限，保证环境稳定性。
 - **交互式变量注入**：在安装工具时自动提示输入所需的环境变量（如 API 密钥、自定义中转端），并安全地注入到运行包装器中。
@@ -24,7 +24,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 | :--- | :--- | :--- |
 | **Aider** | Python | pip 模块包安装（PRoot 容器） |
 | **MiMo Code** | Node.js/JS | 预编译原生二进制文件（PRoot 容器） |
-| **Antigravity CLI (agy)** | Go (静态链接) | 独立发布二进制文件（PRoot 容器） |
+| **Antigravity CLI (agy)** | Go (动态链接) | 独立发布二进制文件（PRoot 容器） |
 | **Claude Code** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
 | **OpenCode** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
 | **Grok** | Rust (静态链接) | 独立发布二进制文件（PRoot 容器） |
@@ -83,6 +83,8 @@ ancli update <app_id>          # 更新已安装的工具
 ancli config <app_id>          # 重新配置环境变量 (API Key 等)
 ancli list                     # 列出已安装的工具列表
 ancli check                    # 联网检查官方最新版本与可更新项
+ancli doctor --json            # 输出只读路径、挂载和工具诊断
+ancli agent-init               # 在默认工作目录生成 Agent 记忆和环境指导
 ancli repair                   # 检测并修复环境问题
 ancli --help                   # 显示帮助信息
 ancli --version                # 显示版本号
@@ -191,7 +193,29 @@ ancli config --set default_cwd=                  # 留空 = 恢复内置默认 /
 
 WebUI 里点「设置」也能改（同一份配置，存在容器 `/root/.ancli-config.json`）。
 
+修改 `default_cwd` 不会移动运行时上下文。AnCLI 统一维护容器全局的
+`/root/.agents/AGENTS.md`，需要重建时运行 `ancli agent-init`。
+
 只影响“从 `/` 启动”这一种情况：先 `cd` 到项目目录再启动时，用的永远是你的 cwd。目录必须是容器里存在的绝对路径，否则 `ancli config` 会直接拒绝并提示。
+
+### 默认 Agent 记忆与环境指导
+
+AnCLI 会在容器全局目录 `/root/.agents/AGENTS.md` 维护一份简短的运行时 `AGENTS.md`。运行
+`ancli agent-init` 可以显式生成；`ancli repair`、`ancli skills` 和成功安装工具时也会幂等补齐。
+默认工作目录只影响工具启动位置；执行
+`ancli config --set default_cwd=/sdcard/projects` 后，文件位置就是
+运行时上下文仍然位于 `/root/.agents/AGENTS.md`。
+
+文件包含当前 AnCLI 版本、容器与 Android 数据路径、代理/DNS 和浏览器接力约定、已安装工具、
+已配置的环境变量名（绝不写入变量值）、共享 skills 路径以及 Agent 操作边界。它不是密钥存储，
+不要把 API key、cookie 或 token 写进去。已有的项目 `AGENTS.md` 会保留，`AGENTS.md`
+是可以由 AnCLI 刷新的设备运行时上下文文件。
+
+```bash
+ancli agent-init
+ancli agent-init --json
+ancli agent-init --refresh
+```
 
 ## 跨 App 数据（为什么有时看不到 `/data/data`）
 
@@ -230,12 +254,12 @@ export ANCLI_MIRROR="mirrors.ustc.edu.cn"
 ## 卸载方法
 
 - **普通卸载（安全且默认）**：在 Magisk/KernelSU/APatch 管理器中删除模块时，系统只会清理模块的挂载入口，而**安全保留**你的完整 Ubuntu 容器系统、已安装的 Python 依赖包和 API 密钥配置。这样你在以后升级重装时能够瞬间恢复环境。
-- **彻底清除（完全卸载）**：如果你想彻底从手机上抹除框架、容器和所有产生的大文件，请在 `ancli` 主菜单中按 `u` 键，然后选择 `[3] Completely uninstall AnCLI` 获取清理指令；或者直接在 root 终端执行以下命令进行物理删除：
+- **彻底清除（完全卸载）**：如果你想彻底删除容器、已安装工具、密钥和配置，请在 `ancli` 主菜单中按 `u` 键，然后选择 `[3] Completely uninstall AnCLI` 获取受支持的清理流程。在 root Android shell 中先创建一次性清除标记，再从 Magisk、KernelSU 或 APatch 管理器卸载模块：
   ```bash
-  rm -rf /data/local/tmp/ancli
+  touch /data/local/tmp/ancli_force_purge
   ```
-  执行完后，再前往管理器中卸载 AnCLI 模块即可。
+  卸载脚本会消费并删除这个标记，清理 AnCLI 数据目录和动态 wrapper。升级时不要保留这个标记。
 
 ## 技术架构
 
-关于双重注入免重启原理、PRoot 挂载细节及云端配置协议，请参阅 [技术架构详细文档](ARCHITECTURE.md)。关于 Android 15 下 Node.js 和 Bun 的兼容性技术边界，请参阅 [兼容性 white paper](COMPATIBILITY.md)。
+关于双重注入免重启原理、PRoot 挂载细节及云端配置协议，请参阅 [技术架构详细文档](ARCHITECTURE.md)。关于 Android 15/16 下 Node.js 和 Bun 的兼容性技术边界，请参阅 [兼容性 white paper](COMPATIBILITY.md)。

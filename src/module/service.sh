@@ -99,7 +99,7 @@ chmod 644 "$ANCLI_DIR/hosts" 2>/dev/null || true
 #    This ensures tools installed via 'ancli install' are globally reachable without
 #    a module reinstall, and that wrapper updates take effect after reboot.
 #    NOTE: git/bash/curl are host-side *shims* deployed by 'ancli repair' for
-#    native-mode tools; they must NOT be copied into the root PATH, where they would
+#    container tools; they must NOT be copied into the root PATH, where they would
 #    hijack those commands for every module and root script on the device.
 for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
     [ -d "$INSTANT_BIN" ] || continue

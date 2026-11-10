@@ -320,52 +320,6 @@ class TestWrapperGeneration:
         # systemless + KSU/AP dual injection paths were attempted
         assert (tmp_path / "mod" / "system" / "bin" / "mimo").exists()
 
-    def test_native_wrapper_runs_without_proot(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
-        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
-        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
-        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
-        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
-        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
-
-        core.generate_proot_wrapper("agy", {"GEMINI_API_KEY": "sk-x"}, [], native=True)
-
-        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
-        assert "(native" in wrapper
-        assert "ancli_env.sh host" in wrapper          # host-mode env bootstrap
-        assert "/bin/proot" not in wrapper             # no proot invocation at all
-        assert "proot -r" not in wrapper
-        assert "BROWSER=" in wrapper                   # OAuth browser redirect
-        assert "xdg-open" in wrapper
-        # candidate-path search (agy may live under /root/.local/bin)
-        assert "for _cand in" in wrapper
-        assert f"{core.ROOTFS}/usr/local/bin/agy" in wrapper
-        assert f"{core.ROOTFS}/root/.local/bin/agy" in wrapper
-        assert "binary not found" in wrapper          # graceful failure message
-        # secrets still sourced
-        assert "secrets/agy.env" in wrapper
-
-    def test_native_shims_bridge_to_container(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
-        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
-        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
-        chmods = []
-        monkeypatch.setattr(core.os, "chmod",
-                            lambda p, m: chmods.append((os.path.normpath(str(p)), m)))
-
-        core._deploy_native_shims()
-
-        for tool in ("git", "bash", "curl"):
-            shim = tmp_path / "ancli" / "bin" / tool
-            assert shim.exists()
-            # 0755 exec bit (asserted via chmod calls; Windows ignores mode bits)
-            assert (os.path.normpath(str(shim)), 0o755) in chmods
-            content = shim.read_text(encoding="utf-8")
-            assert 'TOOL=$(basename "$0")' in content
-            assert f"{core.ROOTFS}" in content          # container rootfs
-            assert "/usr/bin/env \"$TOOL\"" in content  # runs container tool
-            assert "proot" in content
-
     def test_wrapper_rejects_path_traversal_executable(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
         core.generate_proot_wrapper("../evil", {})
@@ -390,7 +344,7 @@ class TestWebUIJsonAPI:
             "version": "1.0",
             "apps": {
                 "mimo": {"name": "MiMo Code", "executable": "mimo", "native": False},
-                "agy": {"name": "Antigravity", "executable": "agy", "native": True,
+                "agy": {"name": "Antigravity", "executable": "agy", "native": False,
                         "version": "2.0", "env_vars": ["GEMINI_API_KEY"],
                         "optional_env_vars": ["HTTP_PROXY"]},
             },
@@ -412,7 +366,7 @@ class TestWebUIJsonAPI:
         apps = {a["id"]: a for a in data["apps"]}
         assert apps["mimo"]["installed"] is True and apps["mimo"]["active"] is True
         assert apps["mimo"]["configured_keys"] == ["OPENAI_API_KEY"]
-        assert apps["agy"]["installed"] is False and apps["agy"]["native"] is True
+        assert apps["agy"]["installed"] is False and apps["agy"]["native"] is False
         assert apps["agy"]["update_available"] is False  # not installed
         assert "GEMINI_API_KEY" in apps["agy"]["required_env_vars"]
         assert "HTTP_PROXY" in apps["agy"]["optional_env_vars"]
@@ -442,7 +396,7 @@ class TestWebUIJsonAPI:
         core.reconfigure_app("agy", registry, set_env={"GEMINI_API_KEY": "new"})
 
         installed = core.load_installed()
-        assert installed["agy"]["env"] == {"GEMINI_API_KEY": "new"}
+        assert installed["agy"]["configured_env"] == ["GEMINI_API_KEY"]
         # wrapper regenerated with the new secret
         wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
         assert "secrets/agy.env" in wrapper
@@ -990,17 +944,18 @@ class TestConfigEncoding:
 
     def test_migrate_decodes_stored_values_and_rewrites_secrets(self, tmp_path, monkeypatch, capsys):
         _core_paths(tmp_path, monkeypatch)
-        core.save_installed({"claude-code": {"executable": "claude", "env": {
-            "ANTHROPIC_BASE_URL": "https%3A%2F%2Fapi.deepseek.com%2Fanthropic",
-            "ANTHROPIC_API_KEY": "sk-plain"}}})
+        (tmp_path / "ancli" / "installed.json").write_text(json.dumps({
+            "claude-code": {"executable": "claude", "env": {
+                "ANTHROPIC_BASE_URL": "https%3A%2F%2Fapi.deepseek.com%2Fanthropic",
+                "ANTHROPIC_API_KEY": "sk-plain"}}}), encoding="utf-8")
 
         changed = core.migrate_encoded_env()
 
         assert changed == {"claude-code": {
             "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
             "ANTHROPIC_API_KEY": "sk-plain"}}
-        stored = core.load_installed()["claude-code"]["env"]
-        assert stored["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
+        stored = core.load_installed()["claude-code"]
+        assert stored["configured_env"] == ["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"]
         secrets = (tmp_path / "secrets" / "claude.env").read_text(encoding="utf-8")
         assert "https://api.deepseek.com/anthropic" in secrets
         assert "%3A" not in secrets
@@ -1018,16 +973,17 @@ class TestConfigEncoding:
 class TestReinstallKeepsConfig:
     def test_install_common_carries_env_and_secrets_over(self, tmp_path, monkeypatch, capsys):
         _core_paths(tmp_path, monkeypatch)
-        core.save_installed({"claude-code": {"executable": "claude", "installed_version": "2.1.226",
-                                             "version_verified": True,
-                                             "env": {"ANTHROPIC_API_KEY": "sk-keep"}}})
+        (tmp_path / "ancli" / "installed.json").write_text(json.dumps({
+            "claude-code": {"executable": "claude", "installed_version": "2.1.226",
+                             "version_verified": True,
+                             "env": {"ANTHROPIC_API_KEY": "sk-keep"}}}), encoding="utf-8")
         monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.283')
         app = {"name": "Claude Code", "executable": "claude", "version_cmd": "claude --version"}
 
         core._install_proot_common("claude-code", app)
 
         record = core.load_installed()["claude-code"]
-        assert record["env"] == {"ANTHROPIC_API_KEY": "sk-keep"}   # not wiped by a re-install
+        assert record["configured_env"] == ["ANTHROPIC_API_KEY"]   # not wiped by a re-install
         assert record["installed_version"] == "2.1.283"
         assert "secrets/claude.env" in (tmp_path / "ancli" / "bin" / "claude").read_text(encoding="utf-8")
         assert "sk-keep" in (tmp_path / "secrets" / "claude.env").read_text(encoding="utf-8")
@@ -1090,7 +1046,7 @@ class TestConcurrentWrites:
         data = core.load_installed()
         assert data["a"]["installed_version"] == "1.0"     # this run is authoritative for it
         assert data["a"]["version_verified"] is True
-        assert data["a"]["env"] == {"K": "v"}              # untouched fields survive
+        assert data["a"]["configured_env"] == ["K"]          # untouched fields survive
         assert data["a"]["installed_at"] == "t1"
         assert data["b"]["installed_version"] == "9.9"     # app installed mid-run survives
         assert "ghost" not in data                         # uninstalled app is not resurrected
@@ -1251,6 +1207,17 @@ def test_github_release_downloads_fail_fast_and_are_verified():
     assert github_apps >= 3, 'expected the GitHub-release apps to be covered'
     assert 'sha256sum -c' in reg['apps']['claude-code']['install_cmd'], \
         'claude-code ships SHASUMS256.txt — verify it'
+
+
+def test_full_purge_uses_one_shot_marker():
+    root = os.path.join(os.path.dirname(__file__), '..')
+    with open(os.path.join(root, 'src', 'module', 'uninstall.sh'), encoding='utf-8') as f:
+        uninstall = f.read()
+
+    assert 'PURGE_MARKER="/data/local/tmp/ancli_force_purge"' in uninstall
+    assert 'rm -f "$PURGE_MARKER"' in uninstall
+    assert 'rm -rf "$ANCLI_DIR"' in uninstall
+    assert 'rm -rf /data/local/tmp/ancli' not in uninstall
 
 
 class TestAndroidDnsDiscovery:
@@ -1429,30 +1396,6 @@ class TestTerminalRestore:
         assert not re.search(r"^exec ", wrapper, re.M), \
             "the wrapper must survive the tool so it can restore the terminal"
 
-    def test_native_wrapper_saves_and_restores_the_tty(self, tmp_path, monkeypatch):
-        self._paths(tmp_path, monkeypatch)
-        core.generate_proot_wrapper("agy", {}, [], native=True)
-        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
-
-        assert "stty -g" in wrapper
-        assert "trap 'ancli_restore_tty' EXIT" in wrapper
-        assert not re.search(r"^exec ", wrapper, re.M)
-
-
-class TestAndroidDataChannel:
-    """An `su` from inside an app inherits that app's mount namespace, where
-    Android hides other apps' /data/data behind a tmpfs. A non-recursive bind of
-    /data does not inherit that submount, so every wrapper mounts it at
-    /mnt/ancli-data and the container sees it (because /mnt is bound)."""
-
-    def _paths(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
-        monkeypatch.setattr(core, "MOD_DIR", str(tmp_path / "mod"))
-        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
-        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
-        monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
-        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
-
     def test_proot_wrapper_mounts_the_channel(self, tmp_path, monkeypatch):
         self._paths(tmp_path, monkeypatch)
         core.generate_proot_wrapper("mimo", {}, [])
@@ -1461,13 +1404,6 @@ class TestAndroidDataChannel:
         assert 'mount --bind /data "$ANCLI_DATA_MNT"' in wrapper
         assert "/proc/mounts" in wrapper          # idempotent: never stack mounts
         assert 'id -u' in wrapper                 # best effort: root only
-
-    def test_native_wrapper_mounts_the_channel(self, tmp_path, monkeypatch):
-        self._paths(tmp_path, monkeypatch)
-        core.generate_proot_wrapper("agy", {}, [], native=True)
-        wrapper = (tmp_path / "ancli" / "bin" / "agy").read_text(encoding="utf-8")
-        assert f"ANCLI_DATA_MNT={core.ANDROID_DATA_MNT}" in wrapper
-        assert 'mount --bind /data "$ANCLI_DATA_MNT"' in wrapper
 
     def test_ensure_android_data_is_idempotent(self, monkeypatch):
         calls = []
@@ -1547,6 +1483,82 @@ class TestDefaultWorkingDirectory:
         assert "default_cwd" in wrapper
         assert "configured default directory" in wrapper
         assert "ancli config --set default_cwd=" in wrapper   # discoverable hint
+
+
+class TestAgentMemory:
+    """The generated default-cwd memory file is informative and non-destructive."""
+
+    def _target(self, tmp_path, monkeypatch):
+        target = tmp_path / "default-cwd"
+        target.mkdir()
+        memory = target / "AGENTS.md"
+        monkeypatch.setattr(core, "_effective_default_cwd", lambda: str(target))
+        monkeypatch.setattr(core, "_runtime_context_target",
+                            lambda: (str(target), str(memory)))
+        return target, memory
+
+    def test_creates_rendered_memory_with_environment_and_guidance(self, tmp_path, monkeypatch):
+        _, memory = self._target(tmp_path, monkeypatch)
+        monkeypatch.setattr(core, "load_installed", lambda: {
+            "dsh": {"name": "DeepSeek Harness", "executable": "dsh",
+                    "env": {"DEEPSEEK_API_KEY": "secret"}},
+        })
+
+        result = core.setup_runtime_context(verbose=False)
+
+        assert result["status"] == "created"
+        text = memory.read_text(encoding="utf-8")
+        assert core.RUNTIME_CONTEXT_MARKER in text
+        assert str(core.VERSION) in text
+        assert str(memory.parent) in text
+        assert "DeepSeek Harness (`dsh`)" in text
+        assert "DEEPSEEK_API_KEY" in text
+        assert "secret" not in text
+        assert "ancli status --json" in text
+        assert "sdcardfs" in text
+        assert "/data/local/tmp/build_cache" in text
+        assert "faccessat2" in text
+        assert "os.access(..., os.X_OK)" in text
+        assert "dsh web --no-open" in text
+
+    def test_keeps_existing_user_memory_by_default(self, tmp_path, monkeypatch):
+        _, memory = self._target(tmp_path, monkeypatch)
+        memory.write_text("# User instructions\nkeep me\n", encoding="utf-8")
+
+        result = core.setup_runtime_context(verbose=False)
+
+        assert result["status"] == "kept"
+        assert memory.read_text(encoding="utf-8") == "# User instructions\nkeep me\n"
+
+    def test_refresh_only_replaces_ancli_generated_memory(self, tmp_path, monkeypatch):
+        _, memory = self._target(tmp_path, monkeypatch)
+        memory.write_text(core.RUNTIME_CONTEXT_MARKER + "\nold\n", encoding="utf-8")
+
+        result = core.setup_runtime_context(verbose=False, refresh=True)
+
+        assert result["status"] == "refreshed"
+        assert "old" not in memory.read_text(encoding="utf-8")
+        assert core.RUNTIME_CONTEXT_MARKER in memory.read_text(encoding="utf-8")
+
+        memory.write_text("# User instructions\n", encoding="utf-8")
+        result = core.setup_runtime_context(verbose=False, refresh=True)
+        assert result["status"] == "kept"
+        assert memory.read_text(encoding="utf-8") == "# User instructions\n"
+
+    def test_changing_default_cwd_reports_memory_initialization(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(core, "CONFIG_FILE", str(tmp_path / "cfg.json"))
+        monkeypatch.setattr(core, "ROOTFS", str(tmp_path / "rootfs"))
+        (tmp_path / "rootfs" / "srv" / "project").mkdir(parents=True)
+        monkeypatch.setattr(core, "setup_runtime_context", lambda verbose=True: {
+            "path": "/srv/project/AGENTS.md", "default_cwd": "/srv/project",
+            "status": "created", "reason": None,
+        })
+
+        core.settings_command(["--set", "default_cwd=/srv/project", "--json"])
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["effective_cwd"] == "/srv/project"
+        assert payload["runtime_context"]["status"] == "created"
 
 
 class TestDshCookiePatch:

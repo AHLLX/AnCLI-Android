@@ -12,9 +12,7 @@ UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 
 UBUNTU_PATH="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
-# Read the version from module.prop instead of hardcoding it here: a literal in
-# this banner is one more place to forget when cutting a release (the v1.2.4 flash
-# log announced v1.2.3).
+# Read the version from module.prop so the flash banner follows the release metadata.
 MODULE_VERSION="$(grep '^version=' "${MODPATH:-$(dirname "$0")}/module.prop" 2>/dev/null | cut -d= -f2)"
 [ -n "$MODULE_VERSION" ] || MODULE_VERSION="unknown"
 
@@ -194,6 +192,16 @@ ui_print ">> Deploying AnCLI Core..."
 cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
+
+# Default runtime context template. The live AGENTS.md is generated in the
+# guest-global /root/.agents directory by `ancli agent-init` / `ancli repair`;
+# this copy is only the immutable release template and is never written over a
+# user's existing memory file.
+if [ -f "$MODPATH/ancli/runtime-context/AGENTS.md" ]; then
+    mkdir -p "$ANCLI_DIR/runtime-context"
+    cp "$MODPATH/ancli/runtime-context/AGENTS.md" "$ANCLI_DIR/runtime-context/AGENTS.md"
+    chmod 644 "$ANCLI_DIR/runtime-context/AGENTS.md"
+fi
 
 # Deploy bundled fallback registry to BOTH locations: the core reads
 # $BIN_DIR/registry.json (newest mtime wins), while older core builds looked for

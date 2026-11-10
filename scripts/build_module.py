@@ -1,9 +1,8 @@
 """Build the flashable module ZIP without requiring `zip` (Windows-friendly).
 
-Equivalent to build.sh: sync the three generated sources into src/module/ancli/,
-then archive src/module/ with the module root at the ZIP root. Entries carry mode
-0755, matching every previous release (verified against the published v1.2.3
-asset, whose entries are all 0755).
+Equivalent to build.sh: sync the generated sources into src/module/ancli/,
+then archive src/module/ with the module root at the ZIP root. Entries use the
+executable mode expected by Android root managers.
 
 Usage: python scripts/build_module.py [output-name.zip]
 """
@@ -17,6 +16,7 @@ SYNC = [
     ("src/ancli-core.py", "ancli/ancli-core.py"),
     ("src/registry.json", "ancli/registry.json"),
     ("src/module/ancli_env.sh", "ancli/ancli_env.sh"),
+    ("src/runtime-context/AGENTS.md", "ancli/runtime-context/AGENTS.md"),
 ]
 SKIP_DIRS = {".git", "__MACOSX", "__pycache__"}
 SKIP_FILES = {".DS_Store"}
@@ -57,7 +57,7 @@ def main():
                 full = os.path.join(base, name)
                 rel = os.path.relpath(full, MODULE_DIR).replace(os.sep, "/")
                 info = zipfile.ZipInfo(rel)
-                # 0755 for every entry, exactly like the published releases.
+                # Root managers unpack module entries with executable mode.
                 info.external_attr = (0o100755 << 16)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 with open(full, "rb") as fh:

@@ -1,3 +1,38 @@
+## Unreleased (reviewed 2026-11-09)
+
+### Default Agent memory and documentation cleanup
+
+- Added a bundled `src/runtime-context/AGENTS.md` template and `ancli agent-init`. It renders the
+  current default working directory, AnCLI paths, Android data channel, installed tools, configured
+  variable names, shared skills location, proxy/DNS/browser behavior, and operating boundaries into
+  the effective default directory (`/root` or configured `default_cwd`). It never writes secret
+  values and preserves an existing user-authored `AGENTS.md`; `--refresh` only updates files carrying
+  AnCLI's generation marker.
+- `ancli repair`, `ancli skills`, and successful app installs now ensure the default memory file exists.
+  The module build and device deploy helper carry the template with the core payload.
+- Integrated the stable Android 16/aarch64, sdcardfs/ext4, APK-toolchain, PRoot `test -x`,
+  and `dsh web` guidance recovered from the phone's existing memory files. The existing
+  `/sdcard/AGENTS.md` was preserved and received an explicitly marked supplement; secrets,
+  proxy addresses, tokens, account details, and transient audit measurements were excluded.
+- Refreshed the WebUI preview fixtures from the current device and made the harness read its
+  captured status instead of carrying an installed-count literal. Simplified the live update
+  smoke script so it no longer replays a dated device snapshot.
+- Replaced the direct `rm -rf` full-purge instructions with the one-shot
+  `/data/local/tmp/ancli_force_purge` marker consumed by `uninstall.sh`, and made the live module
+  manifest follow v1.2.5/versionCode 11 during device consistency repair.
+- Removed the unused native execution backend and its host-mode environment and toolchain shims.
+  Official registry entries now share one PRoot wrapper path. Legacy `native` fields remain readable
+  in records and are reported as the single supported backend.
+- Added `ancli doctor --json` for read-only path, mount, backend, command, and configured-variable
+  diagnostics. Installation metadata now persists configured variable names while keeping values in
+  per-tool secrets files. Existing legacy records are accepted and are rewritten without env values
+  on the next state save.
+- Corrected the architecture document's stale uninstall description and stale `exec` wrapper example;
+  the current implementation preserves user data by default and keeps the wrapper alive to restore
+  TTY state.
+- Replaced the obsolete v1.0.x `SUMMARY.md` with a current v1.2.5 handoff index so old TTY,
+  uninstall, ownership and dynamic-CWD claims are no longer presented as active behavior.
+
 ## v1.2.5
 
 ### Hazard cleanup
@@ -517,9 +552,11 @@ this diff; every finding below was reproduced, then fixed and covered by a test:
 ### What's New
 
 **Container & Python Packages Preservation during Uninstall**
-- **Dynamic TTY Detection**: Added automatic interactive terminal detection to `uninstall.sh`.
+- **Historical note**: v1.0.1 briefly added interactive TTY detection to `uninstall.sh`; this was
+  later removed because manager uninstalls are non-interactive and must have one deterministic policy.
 - **Non-Interactive Mode Protection (Magisk/KSU tap)**: When uninstalling the module from KernelSU/Magisk/APatch managers, the script now **safely preserves** the Ubuntu container, precompiled binaries, downloaded Python packages (like `gitpython`), and configurations (`installed.json`) by default.
-- **Interactive Mode Flexibility**: When run manually in terminal, the uninstaller presents a menu option, giving the user a choice between a soft uninstall (keeping container data) or a full database & filesystem purge.
+- **Historical note**: the v1.0.1 interactive menu was later removed; the current script always keeps
+  data unless `/data/local/tmp/ancli_force_purge` exists.
 - **Forced Purge override**: Users can force a complete silent purge in manager uninstall by creating a file flag at `/data/local/tmp/ancli_force_purge`.
 
 **Dynamic Host CWD Propagation**

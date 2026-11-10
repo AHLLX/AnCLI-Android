@@ -13,18 +13,13 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const src = path.join(root, 'src', 'module', 'webroot', 'index.html');
 const listJson = fs.readFileSync(path.join(__dirname, 'list.json'), 'utf8');
+const statusJson = fs.readFileSync(path.join(__dirname, 'status.json'), 'utf8');
 
 const propText = fs.readFileSync(path.join(root, 'src', 'module', 'module.prop'), 'utf8');
-// Read the version instead of pinning one: the preview would otherwise show a
-// version the device never reports (it said 1.2.3 long after v1.2.4 shipped).
+// Read the version from module.prop so the preview follows the source release.
 const ancliVersion = (propText.match(/^version=(.+)$/m) || [, 'unknown'])[1].trim().replace(/^v/, '');
-
-const status = {
-  ancli_version: ancliVersion,
-  rootfs_ready: true,
-  proot_deployed: true,
-  installed_count: 5,
-};
+const capturedStatus = JSON.parse(statusJson);
+const status = { ...capturedStatus, ancli_version: ancliVersion };
 
 // A couple of scenarios so the console can be judged with real-looking output.
 const scenarios = {

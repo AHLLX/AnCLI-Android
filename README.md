@@ -4,8 +4,8 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 
 ## Features
 
-- **No Node.js or NPM Required**: Node.js-based tools (like Claude Code, OpenCode, and MiMo Code) are installed as standalone, precompiled Linux-arm64 binaries. No npm or complex JS compilation required.
-- **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. Wrappers are mounted to `/system/bin` on boot, with instant-access wrappers injected into dynamic root paths (reboot-free).
+- **No host Node.js Required for Standalone Tools**: Claude Code, OpenCode, and MiMo Code are installed as standalone, precompiled Linux-arm64 binaries. DeepSeek Harness (`dsh`) is the explicit npm exception and bootstraps its own Node LTS inside the container.
+- **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. The module overlay exposes wrappers through `/system/bin` on boot, while dynamic root paths receive instant-access wrappers without a reboot.
 - **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
 - **Dynamic Configuration Injection**: Configure API keys and custom endpoints anytime via `ancli config <app_id>`. Credentials are stored in per-tool secrets files (mode 0600) and sourced by the wrapper at runtime — never embedded in world-readable wrapper scripts.
@@ -105,6 +105,8 @@ ancli update <app_id>          # Update an installed application
 ancli config <app_id>          # Reconfigure environment variables
 ancli list                     # List installed applications
 ancli check                    # Check official latest versions / available updates
+ancli doctor --json            # Print read-only path, mount, and tool diagnostics
+ancli agent-init               # Create the default-cwd Agent memory and environment guide
 ancli repair                   # Detect and repair environment issues
 ancli --help                   # Show help message
 ancli --version                # Show version info
@@ -233,9 +235,32 @@ ancli config --set default_cwd=                  # empty = back to /root
 The WebUI's **Settings** button edits the same value (stored in the container at
 `/root/.ancli-config.json`).
 
+Changing `default_cwd` no longer moves the runtime context. AnCLI keeps the generated global
+context at `/root/.agents/AGENTS.md`; use `ancli agent-init` to regenerate it explicitly.
+
 This only affects launches from `/`: if you `cd` into a project first, your cwd is used verbatim.
 The directory must be an absolute path that exists inside the container — otherwise `ancli config`
 rejects it with a hint.
+
+### Default Agent memory and environment guide
+
+AnCLI keeps a concise global runtime `AGENTS.md` at `/root/.agents/AGENTS.md`. It is created by
+`ancli agent-init`, and is also ensured by `ancli repair`, `ancli skills`, and a successful tool
+installation. With the built-in setting this is `/root/AGENTS.md`; after
+`ancli config --set default_cwd=/sdcard/projects`, the runtime context remains global and the
+working directory only affects tool launches.
+
+The generated file records the current AnCLI version, container and Android data paths, proxy/DNS
+and browser hand-off contract, installed tool names, configured environment-variable names (never
+their values), the shared skills path, and safe operating guidance for agents. It is deliberately
+not a secret store. An existing project `AGENTS.md` is kept. `AGENTS.md` is the generated
+device context file and can be refreshed with `ancli agent-init --refresh`.
+
+```bash
+ancli agent-init
+ancli agent-init --json
+ancli agent-init --refresh
+```
 
 ## Other apps' data (`/data/data` can look empty)
 
@@ -281,18 +306,15 @@ export ANCLI_MIRROR="archive.ubuntu.com"
 ## Uninstallation
 
 - **Soft Uninstall (Safe & Default)**: Removing the module from your KernelSU/Magisk/APatch manager only cleans up the module's hooks. It **safely preserves** your entire Ubuntu container, downloaded Python packages, and API configurations so you can upgrade easily.
-- **Full Purge (Complete Removal)**: If you wish to permanently destroy all data, containers, and configurations, use the `ancli` menu and press `u`, then select `[3] Completely uninstall AnCLI`. Alternatively, run this in a root terminal:
+- **Full Purge (Complete Removal)**: If you wish to permanently destroy the container, installed tools, credentials, and configuration, use the `ancli` menu and press `u`, then select `[3] Completely uninstall AnCLI`. The menu prints the supported one-shot flow. From a root Android shell, create the purge marker and then uninstall the module from your Magisk, KernelSU, or APatch Manager:
   ```bash
-  rm -rf /data/local/tmp/ancli
+  touch /data/local/tmp/ancli_force_purge
   ```
-  After wiping the directory, uninstall the module from your manager.
+  The uninstall script consumes the marker, removes the AnCLI data directory, and cleans the dynamic wrappers. Do not reuse the marker for a later upgrade.
 
-## Native (No-PROOT) Mode
+## Execution backend
 
-Native mode is registry-driven (`"native": true`) and still supported, but **no registry app currently uses it**: the current agy release (1.1.11) is **dynamically linked** (188MB, needs glibc) — direct exec on the Android host fails with `No such file or directory` (missing `/lib64/ld-linux-aarch64.so.1`). agy and grok therefore run in proot mode again; their wrappers execute inside the container where glibc exists.
-
-- Only **statically-linked** binaries qualify for native mode (instant startup, no proot translation overhead); the mechanism is kept for future static tools.
-- In proot mode everything else (config keys, proxy detection, browser redirect for OAuth, secrets) works unchanged.
+All official registry tools run through the single Ubuntu PRoot backend. This keeps glibc, Python, Node/npm, proxy, DNS, browser hand-off, and app-data behavior consistent across tools.
 
 ## Troubleshooting
 
@@ -324,11 +346,11 @@ The wrapper also avoids repeating slow setup on every launch: the system proxy i
 
 ### `bash -c 'test -x <file>'` 在容器内总是失败（faccessat2）
 
-已知问题：官方 proot（5.4.0）在 aarch64 上未映射 `faccessat2` syscall（glibc 2.39 的 bash `[ -x ]` 依赖它），导致 **bash 的权限检测误报 false**，而 `sh`（dash/toybox 走老 `access()`）正常。影响 jadx 等 Java 工具启动脚本里的 `JAVA_HOME`/`-x` 检测。
+已知问题：官方 proot（5.4.0）在 aarch64 上未映射 `faccessat2` syscall（glibc 2.39 的 `bash` `[ -x ]` 依赖它），导致权限检测可能误报 `false`；这台手机的运行时审定还观察到 `sh` 的 `test -x` 也会误报，因此不要把 `test -x` 当作可执行性证明。影响 jadx 等 Java 工具启动脚本里的 `JAVA_HOME`/`-x` 检测。
 
 **绕法**（mimo 已验证）：
-- 用 sh 写启动包装：`#!/bin/sh` + `exec java -cp /path/jadx-all.jar jadx.cli.JadxCLI "$@"`
-- 或先 `chmod +x` 后用 `sh -c` 调用
+- 用 Python `os.access(path, os.X_OK)`、`command -v` 或直接调用程序判断可执行性。
+- Java 工具用显式入口：`exec java -cp /path/jadx-all.jar jadx.cli.JadxCLI "$@"`；压缩包解出的启动文件先 `chmod +x`。
 - termux 的 proot 构建含修复但依赖 libtalloc/liblandroid-shmem（纯 Android 无），已放弃该路线
 
 ### No update notification in KernelSU/Magisk manager

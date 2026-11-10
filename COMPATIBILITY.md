@@ -4,11 +4,11 @@ This document records the architectural boundaries, compatibility tests, and val
 
 ---
 
-## 1. Core Technical Limitations on Android 15
+## 1. Core Technical Limitations on Android 15/16
 
 ### 1.1 Why NPM / Node.js fails inside PRoot
 
-Node.js uses **libuv** for asynchronous filesystem operations, which runs a pool of worker threads. On Android 15 kernels, `ptrace` path interception (used by PRoot) does not correctly trace filesystem calls originating from new, non-main worker threads.
+Node.js uses **libuv** for asynchronous filesystem operations, which runs a pool of worker threads. On the Android 15/16 device combinations covered by this project, `ptrace` path interception (used by PRoot) does not reliably trace filesystem calls originating from new, non-main worker threads. This boundary applies to npm build/install workflows; it does not mean every Node-based CLI must be removed from the project.
 
 As a result, a call like `mkdir('/root')` issued from a worker thread resolves to `/root` on the **host** filesystem instead of the PRoot guest filesystem, triggering `ENOENT` (no such file or directory) or `EACCES` (permission denied).
 
@@ -22,7 +22,7 @@ Android enforces strict domain boundaries. Programs labeled with root context ca
 
 ## 2. The Solution: Precompiled Standalone Binaries
 
-Instead of installing packages from `npm` registries inside the container, AnCLI downloads **precompiled Linux-arm64 native binaries** directly from GitHub Releases.
+For tools that publish standalone releases, AnCLI downloads **precompiled Linux-arm64 native binaries** directly from GitHub Releases. DeepSeek Harness (`dsh`) is the deliberate exception: it bootstraps a current Node.js `.tar.gz` inside the rootfs and installs its npm package there, so no host/Termux Node runtime crosses the Android boundary.
 
 | Platform / Tool | Source | Output | Type |
 | :--- | :--- | :--- | :--- |
@@ -30,7 +30,7 @@ Instead of installing packages from `npm` registries inside the container, AnCLI
 | **OpenCode** | `anomalyco/opencode` | `opencode-linux-arm64.tar.gz` | ELF binary |
 | **MiMo Code** | `XiaomiMiMo/MiMo-Code` | `mimocode-linux-arm64.tar.gz` | ELF binary |
 
-These binaries are statically compiled or bundled with their own minimal Node.js/JS runtimes. Since they run inside the PRoot glibc sandbox and perform standard synchronous ELF execution rather than asynchronous npm building scripts, they run natively on Android 15.
+These binaries are statically compiled or bundled with their own minimal Node.js/JS runtimes. They run inside the PRoot glibc sandbox and avoid the asynchronous npm build path that triggers the known boundary on affected devices.
 
 ---
 
@@ -44,3 +44,4 @@ These binaries are statically compiled or bundled with their own minimal Node.js
 | **Claude Code** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
 | **OpenCode** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Native Release binary |
 | **Grok** | Rust | ✅ **Supported** | PRoot / Ubuntu Base | Release binary (proot mode) |
+| **DeepSeek Harness (dsh)** | Node.js | ✅ **Supported** | PRoot / Ubuntu Base | Node LTS tarball + npm package inside the rootfs |
