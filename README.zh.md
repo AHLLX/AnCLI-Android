@@ -1,6 +1,8 @@
 # AnCLI
 
-AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Systemless）的命令行环境管理器与插件式安装器。它基于轻量容器化技术，让用户能够在安卓端原生且无缝地运行各种标准的 GNU/Linux glibc 命令行工具（如 Python AI 编程助手、Go 二进制体、基于 Node.js 的终端智能体及各种主流开发套件）。
+AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Systemless）的命令行环境管理器与插件式安装器。当前所有受支持的工具统一运行在一个 Ubuntu glibc PRoot 容器中，同时提供受控的 Android 路径映射、代理处理、浏览器跳转和 Root 管理器 wrapper。
+
+当前运行后端只有 `proot-ubuntu`。Android 的 `/system` 继续保持只读，工具通过模块 systemless wrapper 与 KernelSU/APatch 动态路径暴露；容器内 Agent 的全局运行时记忆固定在 `/root/.agents/AGENTS.md`。
 
 ## 功能特性
 
@@ -10,12 +12,17 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - **开机自动维护**：内置引导服务，每次开机时自动修复容器 DNS 配置与关键文件权限，保证环境稳定性。
 - **交互式变量注入**：在安装工具时自动提示输入所需的环境变量（如 API 密钥、自定义中转端），并安全地注入到运行包装器中。
 - **动态云端注册表**：工具的安装、更新和卸载逻辑由托管在 GitHub 上的 JSON 注册表动态解析，支持通过提交 Pull Request 扩展生态。
-- **命令行转义与代理直通**：通过 Python 内置网络库直连，绕过 ADB 命令行转义字符（如 `|`, `--`）被剥离的 bug；同时支持将宿主机的 HTTP 代理环境变量直接下发，一键连通下载通道。
+- **命令行转义与代理直通**：通过 Python 内置网络库直连，绕过 ADB 命令行转义字符（如 `|`, `--`）被剥离的 bug；需要代理的工具使用 Android 系统代理，DeepSeek Harness（`dsh`）使用直连模式，避免旧代理缓存导致连接失败。
 - **PRoot 系统调用稳定性修补**：自动规避 Android 内核对 `io_uring` 和 `epoll` 翻译残缺导致的 Event Loop 阻塞死锁问题，确保基于 Node.js / Bun 的现代终端应用（如 MiMo 和 Claude Code）能够完美接收键盘的 Raw TTY 交互事件，不卡顿、不乱码。
 - **物理键盘输入法支持**：初始化自动安装 `fcitx5` 及 `fcitx5-chinese-addons`（中文拼音/五笔等），并在环境配置中自动向容器导出输入法环境变量（`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`），以解决部分用户在安卓设备上外接物理键盘（蓝牙/有线键盘）时，在终端 TUI 应用（如 Aider, MiMo 等）中无法直接输入中文或其他非英文字符的问题。
 - **跨沙箱浏览器自动跳转（网页授权登录）**：彻底解决 PRoot 容器沙箱内没有图形界面导致开发套件（如 `grok login`, `agy auth login` 等）无法拉起浏览器进行 OAuth 设备授权认证的问题。通过宿主端中转配合劫持翻译 Go 语言的 `statx` 物理路径系统调用，自动将容器内打开网页的请求传递给宿主机安卓端，直接拉起手机默认浏览器完成登录。
 - **多语言商店偏好 (zh/en)**：支持直接在 `ancli` 应用商店主菜单进行中英文一键切换，并持久保存您的语言偏好配置。
 - **多重安全加固**：实现命令白名单校验、Shell 链式操作符过滤、环境变量转义和路径遍历防护。
+
+## 项目指导文件
+
+- [AGENTS.md](AGENTS.md) 是本地开发、模块维护、设备验证和发布流程的项目交接入口。修改核心脚本、registry、wrapper 或发布资产前先阅读它。
+- `src/runtime-context/AGENTS.md` 是手机容器内 Agent 使用的模板，安装后渲染到 `/root/.agents/AGENTS.md`，与项目开发指导文件分开维护。
 
 ## 支持的工具生态
 *(由云端注册表动态下发)*
@@ -43,7 +50,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 ```
 
 - **API 密钥**：`ancli config dsh` 填 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_BASE_URL`），或在 Web UI 的 Settings → Models 里填写。两者都会落到 `/root/.dsh`（即 `$DSH_HOME`），模块升级不会丢。
-- **代理**：DSH 读取 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY`，正是 AnCLI wrapper 已经从安卓系统代理注入的变量，因此不需要 TUN 模式也能走代理。
+- **代理**：DSH 在 AnCLI registry 中使用直连模式，不继承 Android 系统代理缓存；其他需要代理的工具继续使用 wrapper 的系统代理探测。
 - **Profile**：`web`、`headless`、`sdk`、`sdk-minimal`、`acp` 首次运行会自动初始化。**不存在 `tui` profile**：`dsh tui` 会直接报 *"profile \"tui\" does not exist; create it with `dsh plugin --profile tui add <package>`"*，上游 `packages/boot/app-boot` 的内置模板里没有终端 app bundle，npm 上也没有发布任何 TUI bundle（CLI `--help` 里的 `dsh tui` 示例是过期的）。交互界面就是 Web UI；脚本化一次性任务用 `dsh headless "…"`。（`dsh plugin … add <package>` 需要 `pnpm`，容器里没有预装。）
 - **浏览器会自动打开**：`dsh web` 打印带鉴权的 URL 后交给手机浏览器（AnCLI 在宿主侧代开：容器里跑不了 Android 的 `am`，失败时会把 URL 回显到终端）。这个 URL 带**每次运行的 token**——直接打开收藏夹里的 `127.0.0.1:3080` 会显示 *"dsh web authentication required"*，请用打印出来的完整 URL（它会写入签名 cookie 再跳到不带 token 的地址）。`--no-open` 可只在终端保留 URL；如果上一次 `dsh web` 还在跑，端口被占用，新的会直接退出——先 `Ctrl+C` 停掉旧的。
 - **看到 "authentication required" 怎么排查**：那句话只表示"这次请求没带上有效 cookie"。① 确认端口上跑的是**当前**这个实例（旧的 `dsh web` 没停掉时，浏览器打开新实例的 token 也会被旧实例拒绝）——先 `Ctrl+C` 停掉所有旧会话再重开；② 用**完整打印的 URL 新开一个标签页**（不要刷新那个已经跳成 `/` 的地址，也不要开无痕模式）；③ 浏览器若禁用了该站点 cookie，请放行 `127.0.0.1` 或换个浏览器——服务端流程本身可用（可用 `scripts/probe_dsh_auth.py` 在容器里验证）。
@@ -84,7 +91,8 @@ ancli config <app_id>          # 重新配置环境变量 (API Key 等)
 ancli list                     # 列出已安装的工具列表
 ancli check                    # 联网检查官方最新版本与可更新项
 ancli doctor --json            # 输出只读路径、挂载和工具诊断
-ancli agent-init               # 在默认工作目录生成 Agent 记忆和环境指导
+ancli agent-init               # 生成容器全局 Agent 记忆和环境指导
+ancli agent-init --refresh     # 已安装工具变化后刷新 AnCLI 生成的记忆文件
 ancli repair                   # 检测并修复环境问题
 ancli --help                   # 显示帮助信息
 ancli --version                # 显示版本号
@@ -201,10 +209,9 @@ WebUI 里点「设置」也能改（同一份配置，存在容器 `/root/.ancli
 ### 默认 Agent 记忆与环境指导
 
 AnCLI 会在容器全局目录 `/root/.agents/AGENTS.md` 维护一份简短的运行时 `AGENTS.md`。运行
-`ancli agent-init` 可以显式生成；`ancli repair`、`ancli skills` 和成功安装工具时也会幂等补齐。
-默认工作目录只影响工具启动位置；执行
-`ancli config --set default_cwd=/sdcard/projects` 后，文件位置就是
-运行时上下文仍然位于 `/root/.agents/AGENTS.md`。
+`ancli agent-init` 可以显式生成；`ancli repair`、`ancli skills` 和成功安装工具时也会刷新
+AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，运行时上下文始终位于
+`/root/.agents/AGENTS.md`。
 
 文件包含当前 AnCLI 版本、容器与 Android 数据路径、代理/DNS 和浏览器接力约定、已安装工具、
 已配置的环境变量名（绝不写入变量值）、共享 skills 路径以及 Agent 操作边界。它不是密钥存储，

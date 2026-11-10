@@ -1,6 +1,8 @@
 # AnCLI
 
-AnCLI is a unified, systemless environment manager and plugin-based installer for rooted Android devices. It enables seamless execution of standard GNU/Linux glibc command-line tools (such as Python AI pair programmers, Go binaries, and Node.js terminal agents) directly inside a lightweight containerized Ubuntu sandbox.
+AnCLI is a unified, systemless environment manager and plugin-based installer for rooted Android devices. It runs supported GNU/Linux command-line tools inside one Ubuntu glibc PRoot container while exposing controlled Android paths, proxy handling, browser hand-off, and root-manager wrappers.
+
+The current runtime has one execution backend, `proot-ubuntu`. Android `/system` remains read-only. Tools are exposed through systemless wrappers in the module and KernelSU/APatch dynamic paths, while the guest-wide Agent runtime context lives at `/root/.agents/AGENTS.md`.
 
 ## Features
 
@@ -10,13 +12,18 @@ AnCLI is a unified, systemless environment manager and plugin-based installer fo
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
 - **Dynamic Configuration Injection**: Configure API keys and custom endpoints anytime via `ancli config <app_id>`. Credentials are stored in per-tool secrets files (mode 0600) and sourced by the wrapper at runtime — never embedded in world-readable wrapper scripts.
 - **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
-- **Escaping & Proxy Passthrough**: Bypasses ADB character escaping bugs via Python urllib direct downloads, and dynamically forwards host proxy settings into the guest container.
+- **Escaping & Proxy Passthrough**: Bypasses ADB character escaping bugs via Python urllib direct downloads, forwards the Android system proxy to tools that need it, and keeps DeepSeek Harness (`dsh`) in direct-network mode so stale proxy state does not break its connection.
 - **PRoot Syscall Stabilization**: Automatically mitigates Android kernel `io_uring` and `epoll` translation bugs, ensuring modern Node.js and Bun interactive TUIs (like MiMo and Claude Code) can process raw keyboard input flawlessly without event loop blocking.
 - **Physical Keyboard Input Method Support**: Pre-installs `fcitx5` and `fcitx5-chinese-addons` during the container bootstrap phase, and automatically exports standard input variables (`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`) to solve the issue where users using external physical keyboards (Bluetooth/USB) on Android tablets/phones cannot input Chinese or non-English characters directly in terminal-based TUI tools (like Aider, MiMo).
 - **Cross-Sandbox Browser Redirect (OAuth login)**: Solves the headless virtualization restriction where terminal agents (like `grok login`, `agy auth login`) fail to open a browser for device flow authentication. We map host-side wrappers and translate Golang's `statx` pathing system calls, automatically launching your host Android's default web browser when tools try to open URLs inside the guest container.
 - **Multi-language Support (zh/en)**: Features an interactive language hot-toggle directly in the `ancli` menu, saving your locale preferences persistently.
 - **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 - **Shared Agent Skills**: one global skills directory (`~/.agents/skills` inside the container) is symlinked into every agent CLI's own skills path, so a `SKILL.md` written once is picked up by Claude Code, MiMo, Antigravity, Grok, OpenCode and DeepSeek Harness. Run `ancli skills` (or the WebUI's 修复环境) to create the layout.
+
+## Project guidance
+
+- [AGENTS.md](AGENTS.md) is the development and maintenance handoff for this repository. Read it before changing module scripts, registry entries, wrapper generation, release assets, or device-deployment code.
+- `src/runtime-context/AGENTS.md` is the template for Agents running inside the phone container. It is rendered to `/root/.agents/AGENTS.md`; it is separate from the repository's development guidance.
 
 ## Supported Applications
 *(Fetched dynamically from the cloud registry)*
@@ -49,8 +56,8 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 - **API key**: run `ancli config dsh` and set `DEEPSEEK_API_KEY` (optionally `DEEPSEEK_BASE_URL`),
   or enter it in the Web UI under Settings → Models. Either way it lands in `/root/.dsh`
   (`$DSH_HOME`), which module upgrades preserve.
-- **Proxy**: DSH reads `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY` — exactly what the AnCLI
-  wrapper already exports from the Android system proxy, so it works without TUN mode.
+- **Proxy**: DSH uses direct-network mode in the AnCLI registry. It does not inherit the cached
+  Android system proxy. Other tools continue to use the wrapper's system-proxy detection.
 - **Profiles**: `web`, `headless`, `sdk`, `sdk-minimal` and `acp` auto-initialize on first use.
   **There is no `tui` profile**: `dsh tui` aborts with *"profile \"tui\" does not exist; create it with
   `dsh plugin --profile tui add <package>`"*, the shipped templates in `packages/boot/app-boot`
@@ -106,7 +113,8 @@ ancli config <app_id>          # Reconfigure environment variables
 ancli list                     # List installed applications
 ancli check                    # Check official latest versions / available updates
 ancli doctor --json            # Print read-only path, mount, and tool diagnostics
-ancli agent-init               # Create the default-cwd Agent memory and environment guide
+ancli agent-init               # Create or refresh the guest-global Agent context
+ancli agent-init --refresh     # Refresh an AnCLI-generated context after installed tools change
 ancli repair                   # Detect and repair environment issues
 ancli --help                   # Show help message
 ancli --version                # Show version info
@@ -246,9 +254,9 @@ rejects it with a hint.
 
 AnCLI keeps a concise global runtime `AGENTS.md` at `/root/.agents/AGENTS.md`. It is created by
 `ancli agent-init`, and is also ensured by `ancli repair`, `ancli skills`, and a successful tool
-installation. With the built-in setting this is `/root/AGENTS.md`; after
-`ancli config --set default_cwd=/sdcard/projects`, the runtime context remains global and the
-working directory only affects tool launches.
+installation. With the built-in setting the working directory is `/root`; after
+`ancli config --set default_cwd=/sdcard/projects`, only tool launches from `/` use that directory.
+The runtime context remains global at `/root/.agents/AGENTS.md`.
 
 The generated file records the current AnCLI version, container and Android data paths, proxy/DNS
 and browser hand-off contract, installed tool names, configured environment-variable names (never
