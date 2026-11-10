@@ -1703,7 +1703,10 @@ def _install_proot_common(app_id, app, registry=None):
     # Fix permissions immediately so the tool is usable without a reboot
     _fix_config_permissions()
     setup_skill_dirs(verbose=False)
-    setup_runtime_context(verbose=False)
+    # The installed-app summary is generated from installed.json. Refresh the
+    # AnCLI-owned runtime context after every successful install so it cannot
+    # keep saying that no tools are installed.
+    setup_runtime_context(verbose=False, refresh=True)
     if app.get('executable') == 'dsh':
         # A fresh dsh install ships the unpatched cookie attribute again.
         patch_dsh_web_cookie(verbose=False)
@@ -1850,6 +1853,7 @@ def uninstall_app(app_id, registry):
     remove_wrapper(app.get('executable', app_id))
     del installed[app_id]
     save_installed(installed)
+    setup_runtime_context(verbose=False, refresh=True)
     # Forget the removed app's upstream version so it is not shown as installed.
     cache = _load_update_cache()
     if app_id in (cache.get('latest') or {}):
@@ -1893,6 +1897,7 @@ def update_app(app_id, registry):
     probed = _record_installed_version(installed, app_id, app, registry)
     installed[app_id]['installed_at'] = time.strftime("%Y-%m-%d %H:%M:%S")
     save_installed(installed)
+    setup_runtime_context(verbose=False, refresh=True)
     _fix_config_permissions()
     if app.get('executable') == 'dsh':
         # npm just replaced the packaged files: re-apply the Android cookie patch.
