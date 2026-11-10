@@ -661,6 +661,21 @@ async function runBackground(cmd) {
   }
 }
 
+// Launch a declared service-style entry without attaching the WebUI bridge to
+// its lifetime. Interactive terminal agents intentionally have no button here
+// because the bridge does not provide a TTY.
+async function runDetached(cmd) {
+  const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
+  const logFile = '/data/local/tmp/ancli/.webui_launch_' + tag + '.log';
+  const quoted = String(cmd).replace(/'/g, "'\\''");
+  const inner = "nohup sh -c '" + quoted + "' > " + logFile + " 2>&1 </dev/null &";
+  const outer = "sh -c '" + inner.replace(/'/g, "'\\''") + "'";
+  const r = await execCmd(outer);
+  if (r.code !== 0) throw new Error('启动命令失败（exit ' + r.code + '）');
+  logLine('$ ' + cmd + '  （已启动）', 'cmd');
+  logLine('服务正在后台运行，输出写入 ' + logFile, 'dim');
+}
+
 // ---------- 数据 ----------
 async function findAncli() {
   const candidates = [
@@ -810,6 +825,11 @@ function renderApps(apps) {
       btns.push('<button class="btn xs' + (a.update_available ? ' primary' : '') + '" data-act="update" title="' +
                 esc('从官方源拉取最新：' + (a.update_cmd || ('ancli update ' + a.id))) + '">更新</button>');
       if (hasEnv) btns.push('<button class="btn xs" data-act="config">配置</button>');
+      if (a.launch && a.launch.mode === 'web' && a.launch.command) {
+        btns.push('<button class="btn xs primary" data-act="launch">' + esc(a.launch.label || '启动') + '</button>');
+      } else if (a.executable) {
+        btns.push('<button class="btn xs" data-act="copy-command" title="复制后在 Termius 的 su 终端中执行">复制命令</button>');
+      }
       btns.push('<button class="btn xs danger" data-act="uninstall">卸载</button>');
     }
 
@@ -853,6 +873,37 @@ async function doUninstall(id) {
   try { await ancli('uninstall ' + id); }
   catch (e) { /* 已在输出面板记录 */ }
   finally { setBusy(false); await loadApps(); await loadStatus(); }
+}
+
+async function doLaunch(id) {
+  const app = currentApps.find(a => a.id === id);
+  if (!app || !app.launch || app.launch.mode !== 'web' || !app.launch.command) {
+    toast('该工具需要在终端中启动', 'err');
+    return;
+  }
+  setBusy(true, '启动 ' + app.name + '…');
+  try {
+    await runDetached(app.launch.command);
+    toast((app.launch.label || '启动') + '已请求');
+  } catch (e) {
+    toast('启动失败，见输出', 'err');
+    logLine(String(e), 'err');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function copyCommand(id) {
+  const app = currentApps.find(a => a.id === id);
+  if (!app || !app.executable) return;
+  const command = app.executable;
+  try {
+    await navigator.clipboard.writeText(command);
+    toast('已复制「' + command + '」，请在 su 终端中执行');
+  } catch (e) {
+    logLine('复制失败，请手动执行：' + command, 'err');
+    toast('复制失败，命令已写入输出面板', 'err');
+  }
 }
 
 async function doCheck() {
@@ -1100,6 +1151,8 @@ document.getElementById('apps').addEventListener('click', e => {
   if (act === 'install') doInstall(id);
   else if (act === 'update') doUpdate(id);
   else if (act === 'config') openConfig(id);
+  else if (act === 'launch') doLaunch(id);
+  else if (act === 'copy-command') copyCommand(id);
   else if (act === 'uninstall') doUninstall(id);
 });
 

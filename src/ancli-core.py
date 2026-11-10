@@ -2360,6 +2360,9 @@ def _app_record(aid, app, installed_flag, info, entry=None):
         "cloud_error": entry.get('error'),
         "update_available": update_avail,
         "update_cmd": app.get('update_cmd', ''),
+        # Only expose an explicitly declared, non-interactive launcher to the
+        # WebUI.  Terminal agents need a real TTY and must remain terminal-only.
+        "launch": app.get('launch') if isinstance(app.get('launch'), dict) else None,
         "required_env_vars": app.get('env_vars', []),
         "optional_env_vars": app.get('optional_env_vars', []),
         "configured_keys": info.get('configured_env') or list((info.get('env') or {}).keys()),
