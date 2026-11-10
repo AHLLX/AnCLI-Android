@@ -1352,7 +1352,7 @@ class TestBrowserHandoff:
         core.generate_proot_wrapper("dsh", {}, [])
 
         wrapper = (tmp_path / "ancli" / "bin" / "dsh").read_text(encoding="utf-8")
-        assert "/usr/bin/env BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
+        assert "/usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open dsh" in wrapper
 
     def test_wrapper_prefers_a_full_browser_over_the_chooser(self, tmp_path, monkeypatch):
         """No default browser => `am start` raises "Open with"; a WebView-based pick

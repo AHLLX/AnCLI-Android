@@ -761,7 +761,7 @@ fi
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
 -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
--w "$PROOT_CWD" /usr/bin/env BROWSER=/usr/local/bin/xdg-open {executable} "$@"
+-w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
 _ancli_rc=$?
 ancli_restore_tty
 exit $_ancli_rc
@@ -1418,6 +1418,21 @@ def repair_env(registry):
         print("\033[93m[!] Registry payload is not an object; repairing without it.\033[0m")
         registry = {}
 
+    # A failed network refresh can leave an older user cache newer than the
+    # registry shipped by the module. Prefer the bundled copy when it carries
+    # a newer version so repair regenerates wrappers from the installed code.
+    bundled_path = f"{ANCLI_DIR}/registry.json"
+    try:
+        with open(bundled_path, "r") as fh:
+            bundled = json.load(fh)
+        if (_ver_key(bundled.get("version")) or ()) > (_ver_key(registry.get("version")) or ()):
+            registry = bundled
+            with open(LOCAL_REGISTRY, "w") as fh:
+                json.dump(bundled, fh)
+            print(f"\033[96m[i] Using bundled registry v{bundled.get('version')} for repair.\033[0m")
+    except (OSError, ValueError, TypeError):
+        pass
+
     # Guard: ROOTFS must be a real path before doing any recursive operations
     if not ROOTFS or not os.path.isabs(ROOTFS) or len(ROOTFS) < 10:
         print(f"\033[91m[X] Refusing to operate: ROOTFS path looks invalid: {ROOTFS}\033[0m")
@@ -1458,7 +1473,7 @@ def repair_env(registry):
     # 2.2 Keep one concise, generated memory file beside the configured default
     # working directory.  Existing user guidance is intentionally preserved.
     print("\033[96m[*] Setting up the default Agent memory file...\033[0m")
-    setup_runtime_context()
+    setup_runtime_context(refresh=True)
 
     # 2.3 Android app-data channel: the real /data without the app namespace's
     #     /data/data mask (no-op when it is already mounted or we lack root).
