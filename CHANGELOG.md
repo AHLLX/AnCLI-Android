@@ -1,5 +1,9 @@
 ## Unreleased (reviewed 2026-11-09)
 
+### dsh WebUI launch recovery
+
+- The WebUI now starts `dsh web --no-open`, waits for the authenticated URL, opens it through the Android bridge, and reuses the existing port-3080 instance on repeated clicks. This avoids blank or stuck browser tabs followed by `EADDRINUSE`.
+
 ### Default Agent memory and documentation cleanup
 
 - Added a bundled `src/runtime-context/AGENTS.md` template and `ancli agent-init`. It renders the

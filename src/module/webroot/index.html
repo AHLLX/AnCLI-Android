@@ -674,6 +674,41 @@ async function runDetached(cmd) {
   if (r.code !== 0) throw new Error('启动命令失败（exit ' + r.code + '）');
   logLine('$ ' + cmd + '  （已启动）', 'cmd');
   logLine('服务正在后台运行，输出写入 ' + logFile, 'dim');
+  return logFile;
+}
+
+function shQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
+
+async function dshPortInUse() {
+  const r = await execCmd("ss -ltn 2>/dev/null | grep -qE '127\\.0\\.0\\.1:3080|0\\.0\\.0\\.0:3080' || netstat -ltn 2>/dev/null | grep -q ':3080'");
+  return r.code === 0;
+}
+
+async function dshUrlFromLog(logFile) {
+  const file = logFile || (await execCmd("ls -t /data/local/tmp/ancli/.webui_launch_*.log 2>/dev/null | head -1")).stdout.trim();
+  if (!file) return '';
+  const r = await execCmd("grep -Eo 'https?://127\\.0\\.0\\.1:3080/\\?token=[^[:space:]]+' " + shQuote(file) + " 2>/dev/null | tail -1");
+  return strip(r.stdout || '').trim();
+}
+
+async function openAndroidUrl(url) {
+  if (!url || !/^https?:\/\//.test(url)) throw new Error('dsh 未返回有效的浏览器地址');
+  const arg = shQuote(url);
+  let r = await execCmd('/system/bin/am start -a android.intent.action.VIEW -d ' + arg + ' >/dev/null 2>&1');
+  if (r.code !== 0) r = await execCmd('/system/bin/am start --user 0 -a android.intent.action.VIEW -d ' + arg + ' >/dev/null 2>&1');
+  if (r.code !== 0) throw new Error('Android 浏览器启动失败，请手动打开：' + url);
+}
+
+async function waitForDshUrl(logFile, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const url = await dshUrlFromLog(logFile);
+    if (url) return url;
+    await sleep(500);
+  }
+  return '';
 }
 
 // ---------- 数据 ----------
@@ -883,8 +918,23 @@ async function doLaunch(id) {
   }
   setBusy(true, '启动 ' + app.name + '…');
   try {
-    await runDetached(app.launch.command);
-    toast((app.launch.label || '启动') + '已请求');
+    let url = '';
+    if (id === 'dsh') {
+      if (await dshPortInUse()) {
+        url = await dshUrlFromLog();
+        if (!url) throw new Error('3080 已被已有 dsh 服务占用，但没有找到上次的 token URL。请先在终端结束旧的 dsh web，再重试。');
+        logLine('检测到已有 dsh web 服务，复用现有实例。', 'dim');
+      } else {
+        const logFile = await runDetached(app.launch.command);
+        url = await waitForDshUrl(logFile, 15000);
+        if (!url) throw new Error('dsh 服务启动超时，请查看 ' + logFile);
+      }
+      await openAndroidUrl(url);
+      toast('dsh Web UI 已打开');
+    } else {
+      await runDetached(app.launch.command);
+      toast((app.launch.label || '启动') + '已请求');
+    }
   } catch (e) {
     toast('启动失败，见输出', 'err');
     logLine(String(e), 'err');
