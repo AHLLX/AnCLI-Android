@@ -1,3 +1,11 @@
+## v1.2.6 (prepared, not published)
+
+This release is prepared in the repository and has not been published as a GitHub Release yet.
+
+- Route AGY's global rule discovery through `/root/.gemini/AGENTS.md`, linked to the canonical `/root/.agents/AGENTS.md` runtime context.
+- Keep dsh WebUI launches idempotent by waiting for the authenticated URL and reusing an existing port-3080 service.
+- Refresh the KernelSU Modules metadata and project documentation for the current PRoot runtime.
+
 ## Unreleased (reviewed 2026-11-09)
 
 ### dsh WebUI launch recovery
