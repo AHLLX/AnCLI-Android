@@ -3,8 +3,8 @@ move every version number together.
 
 Usage:
     python scripts/prepare_release.py                # re-sync to the current version (no CHANGELOG fold)
-    python scripts/prepare_release.py v1.2.5         # new version, versionCode = current + 1
-    python scripts/prepare_release.py v1.2.5 11      # new version with an explicit versionCode
+    python scripts/prepare_release.py v1.2.601       # multi-digit patch version, versionCode = current + 1
+    python scripts/prepare_release.py v1.2.601 601   # new version with an explicit versionCode
 
 Why this script derives instead of carrying literals: the v1.2.4 cut left the
 core's VERSION at 1.2.3 (the manager said v1.2.4 while `ancli --version` said
@@ -52,7 +52,7 @@ else:
     CODE = current_code
 
 if not re.fullmatch(r"v\d+\.\d+\.\d+", VERSION):
-    raise SystemExit(f"version must look like v1.2.5, got {VERSION!r}")
+    raise SystemExit(f"version must look like v1.2.601, got {VERSION!r}")
 if VERSION != current_version and CODE <= current_code:
     raise SystemExit(
         f"versionCode must increase: current {current_code}, requested {CODE}")

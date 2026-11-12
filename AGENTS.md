@@ -155,6 +155,8 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
 | GitHub Release asset | `ancli-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.601` is a valid small release after `v1.2.6`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. For example, `python scripts/prepare_release.py v1.2.601 601` writes the package version and module code together.
+
 Release procedure (copy-paste, in order):
 
 ```bash
