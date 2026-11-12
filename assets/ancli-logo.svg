@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">AnCLI</title>
+  <desc id="desc">A left half Android robot head beside the CLI wordmark</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d97706"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <g fill="none" stroke="#fff7ed" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M72 216c0-65 45-111 101-111s101 46 101 111v111H72z"/>
+    <path d="M98 104 74 65M224 104l24-39"/>
+    <path d="M72 216h202"/>
+    <path d="M72 327v55M274 327v55M72 382h30M244 382h30"/>
+  </g>
+  <circle cx="133" cy="177" r="13" fill="#fff7ed"/>
+  <path d="M314 173h80l-80 74h80" fill="none" stroke="#fff7ed" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M425 174v74" fill="none" stroke="#fff7ed" stroke-width="22" stroke-linecap="round"/>
+  <text x="313" y="326" fill="#fff7ed" font-family="Inter,Roboto,Arial,sans-serif" font-size="58" font-weight="800" letter-spacing="5">CLI</text>
+</svg>
