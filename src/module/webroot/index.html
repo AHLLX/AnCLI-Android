@@ -190,6 +190,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .detail { color: var(--faint); font-size: 11.5px; margin-top: 2px; }
 .detail b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 .app-actions { display: flex; gap: 6px; flex-wrap: wrap; grid-column: 2; margin-top: 10px; }
+.app-log-wrap { grid-column: 2; margin-top: 2px; }
+.app-log-toggle { font-size: 11px; color: var(--muted); border: 0; background: transparent; padding: 2px 0; cursor: pointer; }
+.app-log-toggle:hover { color: var(--accent); }
+.app-log { max-height: 150px; overflow: auto; margin-top: 5px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--console-bg); color: var(--console-text); font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .chip {
   display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
@@ -604,6 +608,19 @@ function logLine(text, kind, taskId) {
   appendLogRow(text, kind);
 }
 
+function appendTaskOutput(task, text, kind) {
+  const lines = String(text || '').replace(/\n$/, '').split(/\r?\n/).filter(Boolean);
+  task.output = (task.output || []).concat(lines).slice(-LOG_MAX);
+  if (task.id === activeTaskId) lines.forEach(line => appendLogRow(line, kind));
+  if (task.scope) {
+    const pane = document.getElementById('app-log-' + task.scope);
+    if (pane && !pane.hidden) {
+      pane.textContent = task.output.join('\n');
+      pane.scrollTop = pane.scrollHeight;
+    }
+  }
+}
+
 function clearLogView() {
   logEl().textContent = '';
   logLines = 0;
@@ -718,7 +735,8 @@ async function runBackground(cmd) {
   const logFile = '/data/local/tmp/ancli/.webui_' + tag + '.log';
   const exitFile = logFile + '.exit';
   const metaFile = logFile + '.meta';
-  const task = { id: tag, label: cmd.replace(/^.*ancli\s+/, ''), command: cmd, logFile, exitFile, metaFile, status: 'running' };
+  const scoped = cmd.match(/\bancli\s+(?:install|update|uninstall|config)\s+([^\s]+)/);
+  const task = { id: tag, label: cmd.replace(/^.*ancli\s+/, ''), command: cmd, scope: scoped ? scoped[1] : '', logFile, exitFile, metaFile, status: 'running' };
   taskTabs.set(task.id, task);
   activeTaskId = task.id;
   logFollow = true;
@@ -747,7 +765,7 @@ async function runBackground(cmd) {
     catch (e) { continue; }
     const text = strip(out.stdout || '');
     if (text) {
-      logLine(text.replace(/\n$/, ''), undefined, task.id);
+      appendTaskOutput(task, text);
       // `tail -c` 按字节计数：必须用 UTF-8 字节长度推进，否则会重复读取或截断中文
       last += new TextEncoder().encode(out.stdout || '').length;
     }
@@ -758,10 +776,10 @@ async function runBackground(cmd) {
     if (code !== '') {
       try {
         const rest = strip((await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null')).stdout || '');
-        if (rest) logLine(rest.replace(/\n$/, ''), undefined, task.id);
+        if (rest) appendTaskOutput(task, rest);
       } catch (e) { /* ignore */ }
-      if (code === '0') { task.status = 'done'; logLine('✓ 完成', 'ok', task.id); }
-      else { task.status = 'failed'; logLine('退出码: ' + code + '（命令失败，未生效）', 'err', task.id); }
+      if (code === '0') { task.status = 'done'; appendTaskOutput(task, '✓ 完成', 'ok'); }
+      else { task.status = 'failed'; appendTaskOutput(task, '退出码: ' + code + '（命令失败，未生效）', 'err'); }
       renderTaskTabs();
       break;
     }
@@ -800,7 +818,7 @@ async function monitorTask(task) {
       const out = await execCmd('tail -c +' + (last + 1) + ' ' + shQuote(task.logFile) + ' 2>/dev/null');
       const text = strip(out.stdout || '');
       if (text) {
-        if (task.id === activeTaskId) text.replace(/\n$/, '').split(/\r?\n/).filter(Boolean).forEach(line => appendLogRow(line));
+        appendTaskOutput(task, text);
         last += new TextEncoder().encode(out.stdout || '').length;
       }
       const done = await execCmd('[ -f ' + shQuote(task.exitFile) + ' ] && cat ' + shQuote(task.exitFile) + ' || true');
@@ -970,6 +988,7 @@ const UI_TEXT = {
 };
 let uiLang = 'zh';
 function uiText(key) { return (UI_TEXT[uiLang] && UI_TEXT[uiLang][key]) || UI_TEXT.zh[key] || key; }
+function logToggleText(open) { return open ? (uiLang === 'en' ? 'Collapse log' : '收起日志') : (uiLang === 'en' ? 'Expand log' : '展开日志'); }
 function applyLanguage(lang) {
   uiLang = lang === 'en' ? 'en' : 'zh';
   document.documentElement.lang = uiLang === 'en' ? 'en' : 'zh-CN';
@@ -1059,8 +1078,27 @@ function renderApps(apps) {
                (details.length ? '<div class="detail">' + details.join('<br>') + '</div>' : '') +
              '</div>' +
              '<div class="app-actions">' + btns.join('') + '</div>' +
+             (a.installed ? '<div class="app-log-wrap"><button class="app-log-toggle" data-act="toggle-log" aria-expanded="false" data-log-id="' + esc(a.id) + '">' + esc(logToggleText(false)) + '</button><pre class="app-log" id="app-log-' + esc(a.id) + '" hidden></pre></div>' : '') +
            '</div>';
   }).join('');
+}
+
+async function toggleAppLog(id, button) {
+  const pane = document.getElementById('app-log-' + id);
+  if (!pane) return;
+  const open = !pane.hidden;
+  pane.hidden = open;
+  button.setAttribute('aria-expanded', String(!open));
+  button.textContent = logToggleText(!open);
+  if (open) return;
+  const tasks = Array.from(taskTabs.values()).filter(task => task.scope === id);
+  const task = tasks[tasks.length - 1];
+  if (!task) { pane.textContent = uiLang === 'en' ? 'No task log' : '暂无任务日志'; return; }
+  try {
+    const r = await execCmd('cat ' + shQuote(task.logFile) + ' 2>/dev/null');
+    pane.textContent = strip(r.stdout || '');
+    pane.scrollTop = pane.scrollHeight;
+  } catch (e) { pane.textContent = String(e); }
 }
 
 // ---------- 动作 ----------
@@ -1379,6 +1417,7 @@ document.getElementById('apps').addEventListener('click', e => {
   if (!host) return;
   const id = host.dataset.id;
   const act = btn.dataset.act;
+  if (act === 'toggle-log') { toggleAppLog(id, btn); return; }
   if (act === 'install') doInstall(id);
   else if (act === 'update') doUpdate(id);
   else if (act === 'config') openConfig(id);
