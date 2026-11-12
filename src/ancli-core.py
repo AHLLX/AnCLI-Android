@@ -650,12 +650,8 @@ esac
 if [ "$PROOT_CWD" = "/" ]; then
 if [ -n "$_ancli_default_cwd" ]; then
     PROOT_CWD="$_ancli_default_cwd"
-    echo "[AnCLI] Launched from /; using the configured default directory: $PROOT_CWD" >&2
 else
     PROOT_CWD=/root
-    echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
-    echo "        cd to a project dir (e.g. /sdcard/...) to work there, or set one:" >&2
-    echo "        ancli config --set default_cwd=/sdcard/projects" >&2
 fi
 fi
 : "${{PROOT_CWD:=/root}}"

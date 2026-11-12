@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/KernelSU-Modules/tools/main/schemas/module.schema.json
 schemaVersion: 1
 id: ancli
-name: AnCLI
-summary: Run Linux CLI agents and development tools inside an Ubuntu PRoot container on rooted Android.
-description: README.md
+name: AnCLI 安卓 Linux 命令行环境
+summary: 在 Root 安卓设备上运行 Ubuntu Linux 命令行工具和 AI Agent。
+description: README.zh.md
 license: MIT
 homepage: https://github.com/AHLLX/AnCLI-Android
 support: https://github.com/AHLLX/AnCLI-Android/issues

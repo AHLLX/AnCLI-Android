@@ -4,6 +4,8 @@ This release is prepared in the repository and has not been published as a GitHu
 
 - Route AGY's global rule discovery through `/root/.gemini/AGENTS.md`, linked to the canonical `/root/.agents/AGENTS.md` runtime context.
 - Keep dsh WebUI launches idempotent by waiting for the authenticated URL and reusing an existing port-3080 service.
+- Persist WebUI task logs as selectable terminal tabs, restore them after reopening the page, and keep automatic scrolling from overriding manual log navigation.
+- Added a Chinese and English language switcher to the WebUI and removed wrapper working-directory hints from its diagnostic output.
 - Refresh the KernelSU Modules metadata and project documentation for the current PRoot runtime.
 
 ## Unreleased (reviewed 2026-11-09)

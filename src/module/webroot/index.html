@@ -100,6 +100,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   font: 500 11.5px/1 inherit; padding: 6px 10px; border-radius: var(--r-pill); transition: .16s;
 }
 .seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.lang-seg { margin-left: auto; }
 
 /* ============================ 布局 ============================ */
 .wrap {
@@ -220,6 +221,9 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   padding: 9px 10px 9px 13px; border-bottom: 1px solid var(--border); background: var(--surface);
 }
 .console-head b { font-size: 12.5px; font-weight: 620; }
+.log-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px 0; background: var(--console-bg); }
+.log-tab { flex: 0 0 auto; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-tab.active { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
 .spacer { flex: 1; }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid var(--accent-line); border-top-color: var(--accent);
   animation: spin .8s linear infinite; }
@@ -339,6 +343,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     <button data-theme="light">浅色</button>
     <button data-theme="dark">深色</button>
   </div>
+  <div class="seg lang-seg" id="langSwitch" role="group" aria-label="语言">
+    <button data-lang="zh">中文</button>
+    <button data-lang="en">EN</button>
+  </div>
 </header>
 
 <main class="wrap">
@@ -350,26 +358,26 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   </section>
 
   <section class="actions">
-    <button class="btn primary" id="btnCheck">
+    <button class="btn primary" id="btnCheck" data-i18n="check">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></svg>
       检查更新
     </button>
-    <button class="btn" id="btnRefresh">
+    <button class="btn" id="btnRefresh" data-i18n="refresh">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M3 12h3M18 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
       刷新
     </button>
-    <button class="btn quiet danger" id="btnRepair">
+    <button class="btn quiet danger" id="btnRepair" data-i18n="repair">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 21H3l1.3-9.7a4 4 0 0 0 5-5z"/></svg>
       修复环境
     </button>
-    <button class="btn" id="btnSettings">
+    <button class="btn" id="btnSettings" data-i18n="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       设置
     </button>
   </section>
 
   <div class="sec-head">
-    <h2>工具</h2>
+    <h2 data-i18n="tools">工具</h2>
     <span class="meta" id="checkInfo">尚未检查</span>
   </div>
   <div class="list" id="apps">
@@ -379,19 +387,20 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   <section class="card console" aria-label="输出">
     <div class="console-head">
       <span class="spin" id="busySpin" hidden></span>
-      <b>输出</b>
+      <b data-i18n="output">输出</b>
       <span class="meta" id="logCount">0 行</span>
       <span class="spacer"></span>
-      <button class="icon-btn" id="btnLogCopy" title="复制全部" aria-label="复制全部">
+      <button class="icon-btn" id="btnLogCopy" title="复制全部" aria-label="复制全部" data-i18n-title="copyAll">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
       </button>
-      <button class="icon-btn" id="btnLogClear" title="清空" aria-label="清空输出">
+      <button class="icon-btn" id="btnLogClear" title="清空" aria-label="清空输出" data-i18n-title="clear">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
       </button>
-      <button class="icon-btn" id="btnLogFollow" aria-pressed="true" title="自动滚动到底部" aria-label="自动滚动">
+      <button class="icon-btn" id="btnLogFollow" aria-pressed="true" title="自动滚动到底部" aria-label="自动滚动" data-i18n-title="follow">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
       </button>
     </div>
+    <div class="log-tabs" id="logTabs" role="tablist"></div>
     <div class="log" id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
   </section>
 
@@ -555,9 +564,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const LOG_MAX = 500;
 let logLines = 0;
 let logFollow = true;
+let activeTaskId = 'session';
+const taskTabs = new Map();
 const logEl = () => document.getElementById('log');
 
-function logLine(text, kind) {
+function updateLogCount() {
+  document.getElementById('logCount').textContent = logLines + ' 行' + (logLines > LOG_MAX ? '（仅保留最近 ' + LOG_MAX + ' 行）' : '');
+}
+
+function isLogAtBottom() {
+  const el = logEl();
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+}
+
+function updateFollowButton() {
+  const btn = document.getElementById('btnLogFollow');
+  btn.setAttribute('aria-pressed', logFollow ? 'true' : 'false');
+}
+
+function appendLogRow(text, kind) {
   const el = logEl();
   const row = document.createElement('div');
   if (kind) row.className = 'l-' + kind;
@@ -565,8 +590,51 @@ function logLine(text, kind) {
   el.appendChild(row);
   while (el.childElementCount > LOG_MAX) el.removeChild(el.firstElementChild);
   logLines++;
-  document.getElementById('logCount').textContent = logLines + ' 行' + (logLines > LOG_MAX ? '（仅保留最近 ' + LOG_MAX + ' 行）' : '');
+  updateLogCount();
   if (logFollow) el.scrollTop = el.scrollHeight;
+}
+
+function logLine(text, kind, taskId) {
+  if (taskId && taskId !== activeTaskId) return;
+  appendLogRow(text, kind);
+}
+
+function clearLogView() {
+  logEl().textContent = '';
+  logLines = 0;
+  updateLogCount();
+}
+
+function renderTaskTabs() {
+  const tabs = document.getElementById('logTabs');
+  tabs.textContent = '';
+  for (const task of taskTabs.values()) {
+    const b = document.createElement('button');
+    b.className = 'btn xs log-tab' + (task.id === activeTaskId ? ' active' : '');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.textContent = (task.status === 'running' ? '● ' : '○ ') + task.label;
+    b.title = task.command || task.label;
+    b.onclick = () => selectTask(task.id);
+    tabs.appendChild(b);
+  }
+}
+
+async function selectTask(id) {
+  const task = taskTabs.get(id);
+  if (!task) return;
+  activeTaskId = id;
+  logFollow = true;
+  clearLogView();
+  renderTaskTabs();
+  try {
+    const r = await execCmd('cat ' + shQuote(task.logFile) + ' 2>/dev/null');
+    const text = strip(r.stdout || '');
+    if (text) text.split(/\r?\n/).filter(Boolean).forEach(line => appendLogRow(line));
+    if (logFollow) logEl().scrollTop = logEl().scrollHeight;
+  } catch (e) {
+    appendLogRow(String(e), 'err');
+  }
 }
 
 function toast(msg, kind) {
@@ -598,9 +666,10 @@ async function run(cmd, quiet) {
     const out = strip(r.stdout || '').trim();
     const err = strip(r.stderr || '').trim();
     if (out && !quiet) logLine(out);
-    if (err) logLine(err, 'err');
+    if (err && !quiet) logLine(err, 'err');
     if (r.code !== 0) {
       if (quiet && out) logLine(out, 'err');
+      if (quiet && err) logLine(err, 'err');
       logLine('exit code: ' + r.code, 'err');
     }
     return r;
@@ -621,15 +690,26 @@ async function runBackground(cmd) {
   const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
   const logFile = '/data/local/tmp/ancli/.webui_' + tag + '.log';
   const exitFile = logFile + '.exit';
-  logLine('$ ' + cmd + '  （后台执行）', 'cmd');
+  const metaFile = logFile + '.meta';
+  const task = { id: tag, label: cmd.replace(/^.*ancli\s+/, ''), command: cmd, logFile, exitFile, metaFile, status: 'running' };
+  taskTabs.set(task.id, task);
+  activeTaskId = task.id;
+  logFollow = true;
+  renderTaskTabs();
+  clearLogView();
+  appendLogRow('$ ' + cmd + '  （后台执行）', 'cmd');
+  try { await execCmd('printf ' + shQuote(JSON.stringify(task)) + ' > ' + shQuote(metaFile)); } catch (e) { /* log file remains usable */ }
   try {
-    const r = await execCmd("sh -c '" + cmd + ' > ' + logFile + ' 2>&1; echo $? > ' + exitFile + "' &");
+    const shell = cmd + ' > ' + shQuote(logFile) + ' 2>&1; echo $? > ' + shQuote(exitFile);
+    const r = await execCmd('sh -c ' + shQuote(shell) + ' &');
     if (r.code !== 0 && !r.stdout && !r.stderr) {
       logLine('后台任务启动失败（exit ' + r.code + '）', 'err');
+      task.status = 'failed'; renderTaskTabs();
       return;
     }
   } catch (e) {
     logLine('后台任务启动失败: ' + e, 'err');
+    task.status = 'failed'; renderTaskTabs();
     return;
   }
   let last = 0;
@@ -640,7 +720,7 @@ async function runBackground(cmd) {
     catch (e) { continue; }
     const text = strip(out.stdout || '');
     if (text) {
-      logLine(text.replace(/\n$/, ''));
+      logLine(text.replace(/\n$/, ''), undefined, task.id);
       // `tail -c` 按字节计数：必须用 UTF-8 字节长度推进，否则会重复读取或截断中文
       last += new TextEncoder().encode(out.stdout || '').length;
     }
@@ -651,13 +731,59 @@ async function runBackground(cmd) {
     if (code !== '') {
       try {
         const rest = strip((await execCmd('tail -c +' + (last + 1) + ' ' + logFile + ' 2>/dev/null')).stdout || '');
-        if (rest) logLine(rest.replace(/\n$/, ''));
+        if (rest) logLine(rest.replace(/\n$/, ''), undefined, task.id);
       } catch (e) { /* ignore */ }
-      if (code === '0') logLine('✓ 完成', 'ok');
-      else logLine('退出码: ' + code + '（命令失败，未生效）', 'err');
-      try { await execCmd('rm -f ' + logFile + ' ' + exitFile); } catch (e) { /* ignore */ }
+      if (code === '0') { task.status = 'done'; logLine('✓ 完成', 'ok', task.id); }
+      else { task.status = 'failed'; logLine('退出码: ' + code + '（命令失败，未生效）', 'err', task.id); }
+      renderTaskTabs();
       break;
     }
+  }
+}
+
+async function restoreTasks() {
+  try {
+    const files = await execCmd("ls -t /data/local/tmp/ancli/.webui_*.log.meta 2>/dev/null || true");
+    for (const path of strip(files.stdout || '').split(/\r?\n/).filter(Boolean)) {
+      try {
+        const raw = await execCmd('cat ' + shQuote(path));
+        const task = JSON.parse(raw.stdout || '{}');
+        if (!task.id || !task.logFile || taskTabs.has(task.id)) continue;
+        const exit = await execCmd('[ -f ' + shQuote(task.exitFile) + ' ] && cat ' + shQuote(task.exitFile) + ' || true');
+        task.status = strip(exit.stdout || '').trim() === '' ? 'running' : (strip(exit.stdout || '').trim() === '0' ? 'done' : 'failed');
+        taskTabs.set(task.id, task);
+      } catch (e) { /* ignore malformed or concurrently removed task */ }
+    }
+    renderTaskTabs();
+    const first = taskTabs.values().next().value;
+    if (first) await selectTask(first.id);
+    for (const task of taskTabs.values()) if (task.status === 'running') monitorTask(task);
+  } catch (e) { /* the first page load can proceed without task history */ }
+}
+
+async function monitorTask(task) {
+  let last = 0;
+  try {
+    const size = await execCmd('wc -c < ' + shQuote(task.logFile) + ' 2>/dev/null || echo 0');
+    last = Number.parseInt(strip(size.stdout || '0').trim(), 10) || 0;
+  } catch (e) { /* start from the beginning if the size probe is unavailable */ }
+  for (;;) {
+    await sleep(1200);
+    try {
+      const out = await execCmd('tail -c +' + (last + 1) + ' ' + shQuote(task.logFile) + ' 2>/dev/null');
+      const text = strip(out.stdout || '');
+      if (text) {
+        if (task.id === activeTaskId) text.replace(/\n$/, '').split(/\r?\n/).filter(Boolean).forEach(line => appendLogRow(line));
+        last += new TextEncoder().encode(out.stdout || '').length;
+      }
+      const done = await execCmd('[ -f ' + shQuote(task.exitFile) + ' ] && cat ' + shQuote(task.exitFile) + ' || true');
+      const code = strip(done.stdout || '').trim();
+      if (code) {
+        task.status = code === '0' ? 'done' : 'failed';
+        renderTaskTabs();
+        break;
+      }
+    } catch (e) { /* retry while the bridge is available */ }
   }
 }
 
@@ -807,6 +933,33 @@ function renderCheckInfo() {
   el.textContent = msg;
 }
 
+const UI_TEXT = {
+  zh: { check: '检查更新', refresh: '刷新', repair: '修复环境', settings: '设置', tools: '工具', output: '输出',
+    copyAll: '复制全部', clear: '清空输出', follow: '自动滚动到底部', notChecked: '尚未检查', install: '安装', update: '更新',
+    config: '配置', uninstall: '卸载', openWeb: '打开 Web UI', copyCommand: '复制命令', running: '运行中', done: '完成', failed: '失败' },
+  en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output',
+    copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
+    config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed' }
+};
+let uiLang = 'zh';
+function uiText(key) { return (UI_TEXT[uiLang] && UI_TEXT[uiLang][key]) || UI_TEXT.zh[key] || key; }
+function applyLanguage(lang) {
+  uiLang = lang === 'en' ? 'en' : 'zh';
+  document.documentElement.lang = uiLang === 'en' ? 'en' : 'zh-CN';
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = uiText(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = uiText(el.dataset.i18nTitle); el.setAttribute('aria-label', uiText(el.dataset.i18nTitle)); });
+  document.querySelectorAll('#langSwitch button').forEach(b => b.classList.toggle('active', b.dataset.lang === uiLang));
+  renderApps(currentApps);
+  renderTaskTabs();
+  try { localStorage.setItem('ancli_lang', uiLang); } catch (e) { /* ignore */ }
+}
+document.querySelectorAll('#langSwitch button').forEach(b => {
+  b.onclick = async () => {
+    applyLanguage(b.dataset.lang);
+    try { await ancli('config --set lang=' + b.dataset.lang, true); } catch (e) { /* local UI still changed */ }
+  };
+});
+
 function renderApps(apps) {
   const wrap = document.getElementById('apps');
   const pending = apps.filter(a => a.installed && a.update_available).length;
@@ -855,17 +1008,18 @@ function renderApps(apps) {
                    (a.optional_env_vars && a.optional_env_vars.length);
     const btns = [];
     if (!a.installed) {
-      btns.push('<button class="btn xs primary" data-act="install">安装</button>');
+      btns.push('<button class="btn xs primary" data-act="install">' + esc(uiText('install')) + '</button>');
     } else {
       btns.push('<button class="btn xs' + (a.update_available ? ' primary' : '') + '" data-act="update" title="' +
                 esc('从官方源拉取最新：' + (a.update_cmd || ('ancli update ' + a.id))) + '">更新</button>');
-      if (hasEnv) btns.push('<button class="btn xs" data-act="config">配置</button>');
+      btns[btns.length - 1] = btns[btns.length - 1].replace('>更新</button>', '>' + esc(uiText('update')) + '</button>');
+      if (hasEnv) btns.push('<button class="btn xs" data-act="config">' + esc(uiText('config')) + '</button>');
       if (a.launch && a.launch.mode === 'web' && a.launch.command) {
-        btns.push('<button class="btn xs primary" data-act="launch">' + esc(a.launch.label || '启动') + '</button>');
+        btns.push('<button class="btn xs primary" data-act="launch">' + esc(uiText('openWeb')) + '</button>');
       } else if (a.executable) {
-        btns.push('<button class="btn xs" data-act="copy-command" title="复制后在 Termius 的 su 终端中执行">复制命令</button>');
+        btns.push('<button class="btn xs" data-act="copy-command" title="复制后在 Termius 的 su 终端中执行">' + esc(uiText('copyCommand')) + '</button>');
       }
-      btns.push('<button class="btn xs danger" data-act="uninstall">卸载</button>');
+      btns.push('<button class="btn xs danger" data-act="uninstall">' + esc(uiText('uninstall')) + '</button>');
     }
 
     const who = a.id || a.name || '?';
@@ -1243,6 +1397,10 @@ document.getElementById('btnLogFollow').onclick = e => {
   e.currentTarget.setAttribute('aria-pressed', String(logFollow));
   if (logFollow) logEl().scrollTop = logEl().scrollHeight;
 };
+logEl().addEventListener('scroll', () => {
+  if (!isLogAtBottom()) logFollow = false;
+  updateFollowButton();
+});
 document.getElementById('btnLogCopy').onclick = async () => {
   const text = logEl().innerText;
   if (!text) { toast('输出为空'); return; }
@@ -1307,10 +1465,15 @@ if (window.matchMedia) {
   let saved = 'auto';
   try { saved = localStorage.getItem('ancli_theme') || 'auto'; } catch (e) { /* ignore */ }
   applyTheme(saved);
+  let savedLang = 'zh';
+  try { savedLang = localStorage.getItem('ancli_lang') || 'zh'; } catch (e) { /* ignore */ }
+  applyLanguage(savedLang);
   // 清理上次页面被关闭/任务中断时残留的单次日志（2 小时前）
-  try { execCmd("find /data/local/tmp/ancli -maxdepth 1 -name '.webui_*.log*' -mmin +120 -delete 2>/dev/null"); }
+  try { execCmd("find /data/local/tmp/ancli -maxdepth 1 -name '.webui_*.log*' -mmin +1440 -delete 2>/dev/null"); }
   catch (e) { /* ignore */ }
   ANCLI = await findAncli();
+  try { const cfg = JSON.parse(await ancli('config --json', true)); applyLanguage(cfg.lang || savedLang); } catch (e) { /* keep local language */ }
+  await restoreTasks();
   await loadStatus();
   await loadApps();
   await maybeAutoCheck();

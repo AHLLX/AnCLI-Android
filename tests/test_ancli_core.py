@@ -308,7 +308,7 @@ class TestWrapperGeneration:
         assert "PROOT_CWD=/root" in wrapper
         # root-dir redirect so TUI tools don't scan the whole container fs
         assert 'if [ "$PROOT_CWD" = "/" ]; then' in wrapper
-        assert "Launched from /" in wrapper
+        assert "Launched from /" not in wrapper
         # /dev/shm conditional bind for Node/Bun workers
         assert 'SHM_BIND="-b ' in wrapper
         assert "shm:/dev/shm" in wrapper
