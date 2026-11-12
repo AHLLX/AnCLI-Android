@@ -224,6 +224,9 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .log-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px 0; background: var(--console-bg); }
 .log-tab { flex: 0 0 auto; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-tab.active { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.log-tab-label { overflow: hidden; text-overflow: ellipsis; }
+.log-tab-close { margin-left: 5px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.log-tab-close:hover { color: var(--danger); }
 .spacer { flex: 1; }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid var(--accent-line); border-top-color: var(--accent);
   animation: spin .8s linear infinite; }
@@ -385,6 +388,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   </div>
 
   <section class="card console" aria-label="输出">
+    <div class="log-tabs" id="logTabs" role="tablist"></div>
     <div class="console-head">
       <span class="spin" id="busySpin" hidden></span>
       <b data-i18n="output">输出</b>
@@ -400,7 +404,6 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
       </button>
     </div>
-    <div class="log-tabs" id="logTabs" role="tablist"></div>
     <div class="log" id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
   </section>
 
@@ -613,11 +616,33 @@ function renderTaskTabs() {
     b.className = 'btn xs log-tab' + (task.id === activeTaskId ? ' active' : '');
     b.type = 'button';
     b.setAttribute('role', 'tab');
-    b.textContent = (task.status === 'running' ? '● ' : '○ ') + task.label;
+    const label = document.createElement('span');
+    label.className = 'log-tab-label';
+    label.textContent = (task.status === 'running' ? '● ' : '○ ') + task.label;
+    b.appendChild(label);
     b.title = task.command || task.label;
     b.onclick = () => selectTask(task.id);
+    if (task.status !== 'running') {
+      const close = document.createElement('button');
+      close.className = 'log-tab-close';
+      close.type = 'button';
+      close.textContent = '×';
+      close.title = uiLang === 'en' ? 'Close task' : '关闭任务';
+      close.onclick = e => { e.stopPropagation(); closeTask(task.id); };
+      b.appendChild(close);
+    }
     tabs.appendChild(b);
   }
+}
+
+async function closeTask(id) {
+  const task = taskTabs.get(id);
+  if (!task || task.status === 'running') return;
+  taskTabs.delete(id);
+  try { await execCmd('rm -f ' + [task.logFile, task.exitFile, task.metaFile].map(shQuote).join(' ')); } catch (e) { /* keep UI responsive */ }
+  const next = taskTabs.values().next().value;
+  if (next) await selectTask(next.id);
+  else { activeTaskId = 'session'; clearLogView(); renderTaskTabs(); }
 }
 
 async function selectTask(id) {

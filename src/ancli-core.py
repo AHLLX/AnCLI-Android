@@ -247,6 +247,16 @@ STRINGS = {
         "app_broken": "[损坏: 缺少二进制文件]",
         "app_update_available": " (有新版本: v{})",
         "app_installed_at": "    安装时间: {}",
+        "check_no_apps": "[i] 没有已安装的应用可检查。",
+        "check_installed": "[OK] {}：已安装 v{}",
+        "check_version_fail": "[!] {}：无法读取已安装版本（{}）",
+        "check_registry_missing": "[!] {} 已安装但不在 registry 中，跳过。",
+        "check_lookup_fail": "[!] {}：官方版本查询失败（{}）",
+        "check_keep_version": "    保留之前解析的 v{}",
+        "check_official": "[i] {}：官方 v{} [{}] {}",
+        "check_no_source": "[i] {}：未配置官方版本来源",
+        "check_update_available": "可更新",
+        "check_up_to_date": "已是最新",
         "app_config_keys": "    配置的 Key: {}",
         "lang_switched": "\033[92m[OK] 已切换语言为：中文\033[0m",
     },
@@ -323,6 +333,16 @@ STRINGS = {
         "app_broken": "[Broken: Missing Binary]",
         "app_update_available": " (Update Available: v{})",
         "app_installed_at": "    Installed: {}",
+        "check_no_apps": "[i] No installed apps to check.",
+        "check_installed": "[OK] {}: installed v{}",
+        "check_version_fail": "[!] {}: could not read the installed version ({})",
+        "check_registry_missing": "[!] {} is installed but not in the registry; skipping.",
+        "check_lookup_fail": "[!] {}: official version lookup failed ({})",
+        "check_keep_version": "    keeping the previously resolved v{}",
+        "check_official": "[i] {}: official v{} [{}] {}",
+        "check_no_source": "[i] {}: no official version source configured",
+        "check_update_available": "update available",
+        "check_up_to_date": "up to date",
         "app_config_keys": "    Configured keys: {}",
         "lang_switched": "\033[92m[OK] Language switched to: English\033[0m",
     }
@@ -2309,12 +2329,12 @@ def check_updates(registry=None, probe=True):
     succeeded = 0
 
     if not installed:
-        print("\033[93m[i] No installed apps to check.\033[0m")
+        print(f"\033[93m{_t('check_no_apps')}\033[0m")
 
     for aid in list(installed.keys()):
         app = (registry.get('apps') or {}).get(aid)
         if not app:
-            print(f"\033[93m[!] {aid} is installed but not in the registry; skipping.\033[0m")
+            print(f"\033[93m{_t('check_registry_missing', aid)}\033[0m")
             continue
         name = app.get('name', aid)
 
@@ -2323,10 +2343,9 @@ def check_updates(registry=None, probe=True):
             if probed:
                 pending.setdefault(aid, {}).update(
                     {'installed_version': probed, 'version_verified': True})
-                print(f"\033[92m[OK] {name}: installed v{probed}\033[0m")
+                print(f"\033[92m{_t('check_installed', name, probed)}\033[0m")
             else:
-                print(f"\033[93m[!] {name}: could not read the installed version "
-                      f"(no usable '{app.get('version_cmd', '') or 'version_cmd'}')\033[0m")
+                print(f"\033[93m{_t('check_version_fail', name, app.get('version_cmd', '') or 'version_cmd')}\033[0m")
 
         ver, src, err = _latest_version(app, registry)
         previous = latest.get(aid) if isinstance(latest.get(aid), dict) else {}
@@ -2339,19 +2358,19 @@ def check_updates(registry=None, probe=True):
                 "source": previous.get('source') or src,
                 "error": err,
             }
-            print(f"\033[93m[!] {name}: official version lookup failed ({err})\033[0m")
+            print(f"\033[93m{_t('check_lookup_fail', name, err)}\033[0m")
             if previous.get('version'):
-                print(f"\033[90m    keeping the previously resolved v{previous['version']}\033[0m")
+                print(f"\033[90m{_t('check_keep_version', previous['version'])}\033[0m")
         elif ver:
             succeeded += 1
             latest[aid] = {"version": ver, "source": src, "error": None}
             local = pending.get(aid, {}).get('installed_version') or installed[aid].get('installed_version', 'unknown')
             trusted = 'installed_version' in pending.get(aid, {}) or not app.get('version_cmd')
-            mark = "-> update available" if _update_available(local, ver, trusted) else "(up to date)"
-            print(f"\033[96m[i] {name}: official v{ver} [{src}] {mark}\033[0m")
+            mark = _t('check_update_available') if _update_available(local, ver, trusted) else _t('check_up_to_date')
+            print(f"\033[96m{_t('check_official', name, ver, src, mark)}\033[0m")
         else:
             latest[aid] = {"version": None, "source": src, "error": None}
-            print(f"\033[90m[i] {name}: no official version source configured\033[0m")
+            print(f"\033[90m{_t('check_no_source', name)}\033[0m")
 
     # Drop entries for tools that are gone (kept small and honest).
     latest = {aid: entry for aid, entry in latest.items() if aid in installed}
