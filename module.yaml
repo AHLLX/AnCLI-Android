@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KernelSU-Modules/tools/main/schemas/module.schema.json
+schemaVersion: 1
+id: ancli
+name: AnCLI
+summary: Run Linux CLI agents and development tools inside an Ubuntu PRoot container on rooted Android.
+description: README.md
+license: MIT
+homepage: https://github.com/AHLLX/AnCLI-Android
+support: https://github.com/AHLLX/AnCLI-Android/issues
+tags: [root, terminal, linux, proot, tools]
+metamodule: false
+
+authors:
+  - name: AHLLX
+    url: https://github.com/AHLLX
+
+compatibility:
+  androidMinApi: 29
+  architectures: [arm64-v8a]
+
+release:
+  assetPattern: "ancli-*.zip"
