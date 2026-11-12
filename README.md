@@ -332,11 +332,7 @@ All official registry tools run through the single Ubuntu PRoot backend. This ke
 
 All Node/Bun-based TUIs (mimo, opencode, claude) scan the current directory's file tree at startup. From `/` inside the container, that scan covers the entire rootfs plus the `/data` and `/sdcard` bindings — hundreds of thousands of files — which hangs or silently aborts the TUI. Python (aider) and Go/Rust tools are affected to a lesser degree.
 
-The wrappers handle this automatically: launching from `/` (or any path not visible inside the container, e.g. `/cache`) now redirects the working directory to the container HOME (`/root`), so the TUI starts fast. You will see a hint like:
-
-```
-[AnCLI] Launched from /; using /root (container HOME) as working directory.
-```
+The wrappers redirect launches from `/` or another path that is not visible inside the container to the container HOME (`/root`). This keeps TUI startup focused on a small working directory.
 
 If you want to work on a project instead, `cd` into it first:
 
@@ -361,7 +357,7 @@ The wrapper also avoids repeating slow setup on every launch: the system proxy i
 **绕法**（mimo 已验证）：
 - 用 Python `os.access(path, os.X_OK)`、`command -v` 或直接调用程序判断可执行性。
 - Java 工具用显式入口：`exec java -cp /path/jadx-all.jar jadx.cli.JadxCLI "$@"`；压缩包解出的启动文件先 `chmod +x`。
-- termux 的 proot 构建含修复但依赖 libtalloc/liblandroid-shmem（纯 Android 无），已放弃该路线
+- Termux 的 proot 构建依赖 Android 环境缺少的 `libtalloc` 和 `liblandroid-shmem`，AnCLI 使用自带的 PRoot Ubuntu 后端。
 
 ### No update notification in KernelSU/Magisk manager
 

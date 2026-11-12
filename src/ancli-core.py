@@ -128,6 +128,33 @@ def set_lang(value):
     return True, ""
 
 
+def set_proxy_url(value):
+    """Persist a manual HTTP proxy URL, or clear it to use system detection."""
+    value = (value or "").strip()
+    if value:
+        parsed = urllib.parse.urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False, "代理地址必须是 http://host:port 或 https://host:port"
+        if parsed.username or parsed.password or "\n" in value or "\x00" in value:
+            return False, "代理地址不能包含认证信息或控制字符"
+        if parsed.port is None or not (1 <= parsed.port <= 65535):
+            return False, "代理端口必须在 1 到 65535 之间"
+    cfg = load_config()
+    cfg["proxy_url"] = value
+    save_config(cfg)
+    return True, ""
+
+
+def set_proxy_mode(value):
+    value = (value or "").strip().lower()
+    if value not in ("system", "manual", "direct"):
+        return False, "代理模式必须是 system、manual 或 direct"
+    cfg = load_config()
+    cfg["proxy_mode"] = value
+    save_config(cfg)
+    return True, ""
+
+
 def settings_command(argv):
     """`ancli config` with no app id: global settings (default cwd, language)."""
     errors = []
@@ -139,8 +166,12 @@ def settings_command(argv):
             changed_default_cwd = changed_default_cwd or ok
         elif key == "lang":
             ok, err = set_lang(value)
+        elif key == "proxy_url":
+            ok, err = set_proxy_url(value)
+        elif key == "proxy_mode":
+            ok, err = set_proxy_mode(value)
         else:
-            ok, err = False, f"未知配置项：{key}（支持 default_cwd、lang）"
+            ok, err = False, f"未知配置项：{key}（支持 default_cwd、lang、proxy_mode、proxy_url）"
         if not ok:
             errors.append(err)
 
@@ -154,6 +185,8 @@ def settings_command(argv):
             "lang": cfg.get("lang", "zh"),
             "default_cwd": cfg.get("default_cwd", ""),
             "effective_cwd": cfg.get("default_cwd") or DEFAULT_CWD,
+            "proxy_url": cfg.get("proxy_url", ""),
+            "proxy_mode": cfg.get("proxy_mode", "system"),
         }
         if memory is not None:
             payload["runtime_context"] = memory
@@ -165,6 +198,7 @@ def settings_command(argv):
         print("  从 / 启动工具时使用；设置示例："
               "ancli config --set default_cwd=/sdcard/projects")
         print(f"语言: {cfg.get('lang', 'zh')}")
+        print(f"代理: {cfg.get('proxy_url') or '系统自动探测'}")
     for err in errors:
         print(f"\033[91m[X] {err}\033[0m")
     if errors:

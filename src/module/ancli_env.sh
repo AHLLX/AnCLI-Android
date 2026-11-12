@@ -53,6 +53,35 @@ export GTK_IM_MODULE=fcitx
 export QT_IM_MODULE=fcitx
 export XMODIFIERS=@im=fcitx
 
+# Manual proxy override from the shared AnCLI configuration. Empty means use
+# Android system proxy detection below. The dsh wrapper can still opt out later.
+ANCLI_CONFIG="/data/local/tmp/ancli/rootfs/root/.ancli-config.json"
+ANCLI_PROXY_URL=""
+ANCLI_PROXY_MODE="system"
+if [ -f "$ANCLI_CONFIG" ]; then
+    ANCLI_PROXY_URL=$(sed -n 's/^[[:space:]]*"proxy_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ANCLI_CONFIG" 2>/dev/null | head -n 1)
+    ANCLI_PROXY_MODE=$(sed -n 's/^[[:space:]]*"proxy_mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ANCLI_CONFIG" 2>/dev/null | head -n 1)
+fi
+if [ "$ANCLI_PROXY_MODE" = "direct" ]; then
+    unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+    export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
+    export NO_PROXY="$no_proxy"
+fi
+if [ "$ANCLI_PROXY_MODE" = "manual" ] && [ -n "$ANCLI_PROXY_URL" ]; then
+    export http_proxy="$ANCLI_PROXY_URL"
+    export https_proxy="$ANCLI_PROXY_URL"
+    export HTTP_PROXY="$ANCLI_PROXY_URL"
+    export HTTPS_PROXY="$ANCLI_PROXY_URL"
+    export ALL_PROXY="$ANCLI_PROXY_URL"
+    export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
+    export NO_PROXY="$no_proxy"
+fi
+if [ "$ANCLI_PROXY_MODE" = "direct" ]; then
+    unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+    export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
+    export NO_PROXY="$no_proxy"
+fi
+
 # --- Android WiFi proxy detection & inheritance (cached for 30s) ---
 # dumpsys connectivity is a slow binder call (~1-2s); caching avoids paying it
 # on every tool launch while keeping VPN/proxy changes picked up quickly.
@@ -114,6 +143,15 @@ if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
     export ALL_PROXY="http://$PROXY_HOST:$PROXY_PORT"
     # Loopback must never go through the (possibly remote) proxy: local model
     # servers, MCP endpoints and the container's own services live there.
+    export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
+    export NO_PROXY="$no_proxy"
+fi
+if [ "$ANCLI_PROXY_MODE" = "manual" ] && [ -n "$ANCLI_PROXY_URL" ]; then
+    export http_proxy="$ANCLI_PROXY_URL"
+    export https_proxy="$ANCLI_PROXY_URL"
+    export HTTP_PROXY="$ANCLI_PROXY_URL"
+    export HTTPS_PROXY="$ANCLI_PROXY_URL"
+    export ALL_PROXY="$ANCLI_PROXY_URL"
     export no_proxy="localhost,127.0.0.1,::1,0.0.0.0"
     export NO_PROXY="$no_proxy"
 fi

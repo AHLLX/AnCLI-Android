@@ -356,6 +356,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     <button data-lang="zh">中文</button>
     <button data-lang="en">EN</button>
   </div>
+  <button class="btn xs" id="btnSettings" data-i18n="settings">设置</button>
 </header>
 
 <main class="wrap">
@@ -378,10 +379,6 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     <button class="btn quiet danger" id="btnRepair" data-i18n="repair">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 21H3l1.3-9.7a4 4 0 0 0 5-5z"/></svg>
       修复环境
-    </button>
-    <button class="btn" id="btnSettings" data-i18n="settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-      设置
     </button>
   </section>
 
@@ -450,6 +447,16 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
           <label>默认工作目录</label>
           <input id="setCwd" autocomplete="off" spellcheck="false" placeholder="/sdcard/projects（留空 = /root）">
           <div class="hint">从 <code>/</code> 启动工具（Termius 新会话、<code>su</code> 后直接敲 <code>mimo</code>）时使用。<br>必须是容器里存在的绝对路径；留空恢复内置默认 <code>/root</code>。</div>
+        </div>
+        <div class="field">
+          <label data-i18n="proxy">代理</label>
+          <select id="setProxyMode">
+            <option value="system">系统自动探测</option>
+            <option value="manual">手动指定</option>
+            <option value="direct">直连</option>
+          </select>
+          <input id="setProxyUrl" autocomplete="off" spellcheck="false" placeholder="http://192.168.1.10:7890">
+          <div class="hint">手动指定时使用 HTTP/HTTPS 代理地址。直连模式会清除工具的代理变量。</div>
         </div>
       </div>
     </div>
@@ -979,10 +986,10 @@ function renderCheckInfo() {
 }
 
 const UI_TEXT = {
-  zh: { check: '检查更新', refresh: '刷新', repair: '修复环境', settings: '设置', tools: '工具', output: '输出',
+  zh: { check: '检查更新', refresh: '刷新', repair: '修复环境', settings: '设置', tools: '工具', output: '输出', proxy: '代理',
     copyAll: '复制全部', clear: '清空输出', follow: '自动滚动到底部', notChecked: '尚未检查', install: '安装', update: '更新',
     config: '配置', uninstall: '卸载', openWeb: '打开 Web UI', copyCommand: '复制命令', running: '运行中', done: '完成', failed: '失败' },
-  en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output',
+  en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
     copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed' }
 };
@@ -994,6 +1001,12 @@ function applyLanguage(lang) {
   document.documentElement.lang = uiLang === 'en' ? 'en' : 'zh-CN';
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = uiText(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = uiText(el.dataset.i18nTitle); el.setAttribute('aria-label', uiText(el.dataset.i18nTitle)); });
+  const proxyMode = document.getElementById('setProxyMode');
+  if (proxyMode) {
+    proxyMode.options[0].textContent = uiLang === 'en' ? 'System detection' : '系统自动探测';
+    proxyMode.options[1].textContent = uiLang === 'en' ? 'Manual' : '手动指定';
+    proxyMode.options[2].textContent = uiLang === 'en' ? 'Direct' : '直连';
+  }
   document.querySelectorAll('#langSwitch button').forEach(b => b.classList.toggle('active', b.dataset.lang === uiLang));
   renderApps(currentApps);
   renderTaskTabs();
@@ -1376,12 +1389,16 @@ async function saveConfig() {
 async function openSettings() {
   const ov = document.getElementById('setOverlay');
   document.getElementById('setCwd').value = '';
+  document.getElementById('setProxyMode').value = 'system';
+  document.getElementById('setProxyUrl').value = '';
   ov.classList.add('show');
   ov.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
   try {
     const cfg = JSON.parse(await ancli('config --json', true));
     document.getElementById('setCwd').value = cfg.default_cwd || '';
+    document.getElementById('setProxyUrl').value = cfg.proxy_url || '';
+    document.getElementById('setProxyMode').value = cfg.proxy_mode || (cfg.proxy_url ? 'manual' : 'system');
   } catch (e) {
     // 读不到就留空，保存时仍可设置
   }
@@ -1396,11 +1413,14 @@ function closeSettings() {
 
 async function saveSettings() {
   const v = document.getElementById('setCwd').value.trim();
+  const proxyMode = document.getElementById('setProxyMode').value;
+  const proxyUrl = document.getElementById('setProxyUrl').value.trim();
   closeSettings();
   setBusy(true, '保存设置…');
   try {
     // 空值 = 恢复内置默认 /root；core 侧会校验绝对路径与目录是否存在
-    await ancli('config --set default_cwd=' + encodeURIComponent(v));
+    const proxyValue = proxyMode === 'manual' ? proxyUrl : '';
+    await ancli('config --set default_cwd=' + encodeURIComponent(v) + ' --set proxy_mode=' + encodeURIComponent(proxyMode) + ' --set proxy_url=' + encodeURIComponent(proxyValue));
     toast(v ? ('默认目录已设为 ' + v) : '已恢复内置默认目录 /root');
   } catch (e) {
     toast('保存失败，见输出', 'err');
