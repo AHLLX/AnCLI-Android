@@ -25,6 +25,7 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 
 - [AGENTS.md](AGENTS.md) is the development and maintenance handoff for this repository. Read it before changing module scripts, registry entries, wrapper generation, release assets, or device-deployment code.
 - `src/runtime-context/AGENTS.md` is the template for Agents running inside the phone container. It is rendered to `/root/.agents/AGENTS.md`; it is separate from the repository's development guidance.
+- Antigravity CLI also discovers the same generated context through `/root/.gemini/AGENTS.md`, which AnCLI links to the canonical file.
 
 ## Supported Applications
 *(Fetched dynamically from the cloud registry)*

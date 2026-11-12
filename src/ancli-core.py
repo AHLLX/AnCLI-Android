@@ -1151,6 +1151,42 @@ def _runtime_context_target():
     return target_dir, os.path.join(target_dir, RUNTIME_CONTEXT_NAME)
 
 
+def _runtime_context_compat_targets():
+    """Return vendor-specific discovery paths backed by the canonical context."""
+    return [os.path.join(ROOTFS, "root", ".gemini", RUNTIME_CONTEXT_NAME)]
+
+
+def _sync_runtime_context_compat(target_file, refresh=False):
+    """Expose the canonical context at Agent clients' documented global paths."""
+    result = []
+    for path in _runtime_context_compat_targets():
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            if os.path.islink(path) and os.path.realpath(path) == os.path.realpath(target_file):
+                result.append({"path": path, "status": "linked"})
+                continue
+            if os.path.lexists(path):
+                if not refresh:
+                    result.append({"path": path, "status": "kept"})
+                    continue
+                if os.path.islink(path):
+                    os.unlink(path)
+                elif os.path.isfile(path):
+                    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                        if RUNTIME_CONTEXT_MARKER not in fh.read():
+                            result.append({"path": path, "status": "kept"})
+                            continue
+                    os.remove(path)
+                else:
+                    result.append({"path": path, "status": "kept"})
+                    continue
+            os.symlink("../.agents/AGENTS.md", path)
+            result.append({"path": path, "status": "linked"})
+        except OSError as e:
+            result.append({"path": path, "status": "error", "reason": str(e)})
+    return result
+
+
 def _remove_legacy_runtime_contexts():
     """Remove only files carrying AnCLI's marker from retired locations."""
     candidates = [
@@ -1236,8 +1272,12 @@ def setup_runtime_context(verbose=True, refresh=False):
         if exists and not refresh:
             result["status"] = "kept"
             result["reason"] = "目标文件已存在，保留用户内容"
+            result["compatibility"] = _sync_runtime_context_compat(target_file, refresh=False)
             if verbose:
                 print(f"\033[96m[i] 已保留默认目录中的现有 Agent 记忆文件：{target_file}\033[0m")
+                for item in result["compatibility"]:
+                    if item["status"] == "linked":
+                        print(f"\033[92m[OK] Agent 兼容记忆入口：{item['path']}\033[0m")
             return result
         if exists:
             if os.path.islink(target_file) or not os.path.isfile(target_file):
@@ -1262,9 +1302,13 @@ def setup_runtime_context(verbose=True, refresh=False):
         os.chmod(tmp_file, 0o644)
         os.replace(tmp_file, target_file)
         result["status"] = "refreshed" if exists else "created"
+        result["compatibility"] = _sync_runtime_context_compat(target_file, refresh=refresh)
         if verbose:
             label = "已更新" if exists else "已创建"
             print(f"\033[92m[OK] {label}默认 Agent 记忆文件：{target_file}\033[0m")
+            for item in result["compatibility"]:
+                if item["status"] == "linked":
+                    print(f"\033[92m[OK] Agent 兼容记忆入口：{item['path']}\033[0m")
     except Exception as e:
         result["status"] = "error"
         result["reason"] = str(e)

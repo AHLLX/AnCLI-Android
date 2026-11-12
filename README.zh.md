@@ -24,6 +24,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 
 - [AGENTS.md](AGENTS.md) 是本地开发、模块维护、设备验证和发布流程的项目交接入口。修改核心脚本、registry、wrapper 或发布资产前先阅读它。
 - `src/runtime-context/AGENTS.md` 是手机容器内 Agent 使用的模板，安装后渲染到 `/root/.agents/AGENTS.md`，与项目开发指导文件分开维护。
+- Antigravity CLI 的全局规则入口是 `/root/.gemini/AGENTS.md`，AnCLI 会把它链接到同一份容器运行时记忆。
 
 ## 支持的工具生态
 *(由云端注册表动态下发)*
