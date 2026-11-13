@@ -1,3 +1,10 @@
+## v1.2.610 (2026-11-13)
+
+### Mobile WebUI layout
+
+- Add a phone layout for the top bar, status cards, application actions, logs, and settings dialogs.
+- Keep Chinese labels on one line and let narrow screens wrap actions without horizontal clipping.
+
 ## v1.2.609 (2026-11-13)
 
 ### Antigravity host command path

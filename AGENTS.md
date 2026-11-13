@@ -6,7 +6,7 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-13, v1.2.609)
+## Current handoff (2026-11-13, v1.2.610)
 
 - Keep the single `proot-ubuntu` backend. The old native execution branch and broad host-mode shims are removed. A narrowly scoped `/data/adb/ksu/bin/bash` or `/data/adb/ap/bin/bash` POSIX compatibility entrypoint is allowed only for AGY's host-side `bash -c` launcher and must never start a second PRoot.
 - Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
@@ -17,7 +17,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode reads the bundled registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
 - `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
 - Agent wrappers record the launching terminal parent PID and kernel start time. A watchdog stops the PRoot child when that parent disappears, so swiping away or force-stopping the terminal does not leave a live Agent behind; merely backgrounding the terminal keeps the Agent running. The `ancli reset` launcher also kills known Agent/PRoot processes before removing their files.
-- Release `v1.2.609` uses `versionCode=21`; the KernelSU official catalog workflow publishes the immutable asset `ancli-21-v1.2.609.zip`.
+- Release `v1.2.610` uses `versionCode=22`; the KernelSU official catalog workflow publishes the immutable asset `ancli-22-v1.2.610.zip`.
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
@@ -169,7 +169,7 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
 | GitHub Release asset | `<id>-<versionCode>-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.609` is the current small release after `v1.2.608`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.609 21` synchronizes the five version sources and the official KernelSU asset name.
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.610` is the current small release after `v1.2.609`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.610 22` synchronizes the five version sources and the official KernelSU asset name.
 
 Release procedure (copy-paste, in order):
 
