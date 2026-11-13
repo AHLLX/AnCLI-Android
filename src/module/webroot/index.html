@@ -343,6 +343,13 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .history-state.running { color: var(--accent); }
 .history-state.done { color: var(--ok); }
 .history-state.failed { color: var(--danger); }
+.settings-danger {
+  padding: 10px; margin-bottom: 13px; border: 1px solid var(--danger);
+  border-radius: var(--r); background: var(--danger-soft);
+}
+.settings-danger .setting-card-head { margin-bottom: 6px; }
+.settings-danger .setting-icon { color: var(--danger); background: var(--surface); }
+.settings-danger p { margin: 0 0 9px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .adv { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 12px; }
 .adv summary {
   cursor: pointer; list-style: none; color: var(--muted); font-size: 12px; font-weight: 600;
@@ -532,6 +539,14 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
         <div class="history-list" id="setLogHistory" aria-live="polite"></div>
         <div class="hint" data-i18n="logHistoryHint">任务日志最多保留 10 MB，不按时间自动删除。</div>
       </section>
+      <section class="settings-danger">
+        <div class="setting-card-head">
+          <span class="setting-icon" aria-hidden="true">!</span>
+          <div><b data-i18n="factoryReset">完全初始化环境</b><small data-i18n="factoryResetTitle">恢复模块自带的干净 Agent 环境</small></div>
+        </div>
+        <p data-i18n="factoryResetHint">删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。</p>
+        <button class="btn xs danger" id="btnFactoryReset" data-i18n="factoryResetAction">完全初始化</button>
+      </section>
       <div class="fields">
         <div class="field">
           <label data-i18n="defaultCwd">默认工作目录</label>
@@ -553,6 +568,28 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     <div class="dlg-foot">
       <button class="btn" id="setCancel" data-i18n="cancel">取消</button>
       <button class="btn primary" id="setSave" data-i18n="save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="resetOverlay" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
+    <div class="dlg-head">
+      <h3 id="resetTitle" data-i18n="factoryReset">完全初始化环境</h3>
+      <button class="icon-btn" id="resetClose" aria-label="关闭" data-i18n-title="close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dlg-body">
+      <div class="note" data-i18n="factoryResetWarning">此操作不可恢复。它会删除容器中的应用、密钥、配置、skills、Agent 记忆和全部旧日志；Ubuntu rootfs 和 AnCLI 模块文件会保留。</div>
+      <div class="field">
+        <label data-i18n="factoryResetConfirmLabel">输入 RESET 继续</label>
+        <input id="resetConfirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="RESET">
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" id="resetCancel" data-i18n="cancel">取消</button>
+      <button class="btn danger" id="resetApply" data-i18n="factoryResetAction">完全初始化</button>
     </div>
   </div>
 </div>
@@ -824,6 +861,8 @@ function setBusy(on, label) {
   document.body.classList.toggle('busy', busy > 0);
   document.getElementById('busySpin').hidden = busy === 0;
   ['btnCheck', 'btnRefresh', 'btnRepair'].forEach(id => { document.getElementById(id).disabled = busy > 0; });
+  const resetButton = document.getElementById('btnFactoryReset');
+  if (resetButton) resetButton.disabled = busy > 0;
   // Keep read-only log controls usable while an install/update runs.
   document.querySelectorAll('#apps button[data-act]:not([data-act="toggle-log"])').forEach(b => { b.disabled = busy > 0; });
   if (on && label) logLine(label, 'dim');
@@ -859,7 +898,8 @@ async function ancli(args, quiet) {
 }
 
 // 后台执行 + 实时输出（每次运行独立日志文件，避免两个任务互相串台）
-async function runBackground(cmd, preface) {
+async function runBackground(cmd, preface, options) {
+  options = options || {};
   const tag = Date.now() + '_' + Math.floor(Math.random() * 100000);
   const logFile = '/data/local/tmp/ancli/.webui_' + tag + '.log';
   const exitFile = logFile + '.exit';
@@ -882,17 +922,18 @@ async function runBackground(cmd, preface) {
   appendLogRow('$ ' + cmd + '  （后台执行）', 'cmd');
   try { await execCmd('printf ' + shQuote(JSON.stringify(task)) + ' > ' + shQuote(metaFile)); } catch (e) { /* log file remains usable */ }
   try {
-    const shell = cmd + ' > ' + shQuote(logFile) + ' 2>&1; echo $? > ' + shQuote(exitFile);
+    const actualCmd = options.keepLog ? cmd + ' --keep-log=' + shQuote(logFile) : cmd;
+    const shell = actualCmd + ' > ' + shQuote(logFile) + ' 2>&1; echo $? > ' + shQuote(exitFile);
     const r = await execCmd('sh -c ' + shQuote(shell) + ' &');
     if (r.code !== 0 && !r.stdout && !r.stderr) {
       logLine('后台任务启动失败（exit ' + r.code + '）', 'err');
       task.status = 'failed'; renderTaskTabs();
-      return;
+      return task;
     }
   } catch (e) {
     logLine('后台任务启动失败: ' + e, 'err');
     task.status = 'failed'; renderTaskTabs();
-    return;
+    return task;
   }
   let last = 0;
   for (;;) {
@@ -921,6 +962,7 @@ async function runBackground(cmd, preface) {
       break;
     }
   }
+  return task;
 }
 
 // 2026-11-13: Keep task history by size, not age, so a useful old run remains
@@ -1033,25 +1075,6 @@ async function restoreTasks() {
         taskTabs.set(task.id, task);
         if (task.scope) expandedAppLogs.add(task.scope);
       } catch (e) { /* ignore malformed or concurrently removed task */ }
-    }
-    // v1.2.601 and earlier used log files without metadata. Keep those files
-    // readable in Settings instead of silently losing the user's history.
-    const known = new Set(Array.from(taskTabs.values()).map(task => task.logFile));
-    const legacy = await execCmd("ls -t /data/local/tmp/ancli/.webui_*.log 2>/dev/null || true");
-    for (const path of strip(legacy.stdout || '').split(/\r?\n/).filter(Boolean)) {
-      if (path.includes('/.webui_launch_') || known.has(path)) continue;
-      const idMatch = path.match(/\/\.webui_(\d+_\d+)\.log$/);
-      if (!idMatch || taskTabs.has(idMatch[1])) continue;
-      let status = 'done';
-      try {
-        const exit = await execCmd('[ -f ' + shQuote(path + '.exit') + ' ] && cat ' + shQuote(path + '.exit') + ' || true');
-        const code = strip(exit.stdout || '').trim();
-        if (code && code !== '0') status = 'failed';
-      } catch (e) { /* legacy output is still viewable when its exit marker is missing */ }
-      taskTabs.set(idMatch[1], {
-        id: idMatch[1], label: uiLang === 'en' ? 'Legacy task log' : '历史任务日志', command: '', scope: '',
-        logFile: path, exitFile: path + '.exit', metaFile: path + '.meta', status, legacy: true
-      });
     }
     renderTaskTabs();
     const first = taskTabs.values().next().value;
@@ -1246,7 +1269,11 @@ const UI_TEXT = {
     settingsSaved: '设置已保存', settingsFailed: '设置保存失败，见输出', savingSettings: '保存设置…', invalidProxy: '请输入有效的 HTTP/HTTPS 代理地址',
     logHistory: '日志历史', logHistoryHint: '任务日志最多保留 10 MB，不按时间自动删除。', clearHistory: '清理历史',
     historyEmpty: '暂无历史任务', historyView: '查看日志', historyRunning: '运行中', historyDone: '已完成', historyFailed: '失败',
-    historyCleared: '历史日志已清理', historyNothingToClear: '没有可清理的历史日志', logHistoryLoading: '正在读取日志历史…' },
+    historyCleared: '历史日志已清理', historyNothingToClear: '没有可清理的历史日志', logHistoryLoading: '正在读取日志历史…',
+    factoryReset: '完全初始化环境', factoryResetTitle: '恢复模块自带的干净 Agent 环境',
+    factoryResetHint: '删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。',
+    factoryResetWarning: '此操作不可恢复。它会删除容器中的应用、密钥、配置、skills、Agent 记忆和全部旧日志；Ubuntu rootfs 和 AnCLI 模块文件会保留。',
+    factoryResetConfirmLabel: '输入 RESET 继续', factoryResetAction: '完全初始化', resetStarting: '正在初始化环境…', resetInvalid: '请输入 RESET 才能继续', resetDone: '环境已初始化，请重新安装需要的应用' },
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
     copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed', cancel: 'Cancel', save: 'Save', close: 'Close', footer: 'AnCLI · Android CLI environment manager',
@@ -1260,7 +1287,11 @@ const UI_TEXT = {
     settingsSaved: 'Settings saved', settingsFailed: 'Could not save settings; see output', savingSettings: 'Saving settings…', invalidProxy: 'Enter a valid HTTP/HTTPS proxy URL',
     logHistory: 'Log history', logHistoryHint: 'Task logs are kept up to 10 MB total; no time based expiry.', clearHistory: 'Clear history',
     historyEmpty: 'No task history', historyView: 'View log', historyRunning: 'Running', historyDone: 'Completed', historyFailed: 'Failed',
-    historyCleared: 'Task history cleared', historyNothingToClear: 'No completed logs to clear', logHistoryLoading: 'Reading log history…' }
+    historyCleared: 'Task history cleared', historyNothingToClear: 'No completed logs to clear', logHistoryLoading: 'Reading log history…',
+    factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
+    factoryResetHint: 'Delete installed apps, secrets, config, skills, memory and logs while keeping the Ubuntu rootfs and module payload. Reinstall tools after the reset.',
+    factoryResetWarning: 'This cannot be undone. It deletes container apps, secrets, config, skills, Agent memory and all old logs; the Ubuntu rootfs and AnCLI module files remain.',
+    factoryResetConfirmLabel: 'Type RESET to continue', factoryResetAction: 'Factory reset', resetStarting: 'Resetting environment…', resetInvalid: 'Type RESET to continue', resetDone: 'Environment reset; reinstall the tools you need' }
 };
 let uiLang = 'zh';
 function uiText(key) { return (UI_TEXT[uiLang] && UI_TEXT[uiLang][key]) || UI_TEXT.zh[key] || key; }
@@ -1780,6 +1811,58 @@ async function saveSettings() {
   }
 }
 
+function openReset() {
+  if (busy > 0) {
+    toast(uiText('resetStarting'), 'err');
+    return;
+  }
+  const input = document.getElementById('resetConfirm');
+  if (input) input.value = '';
+  const ov = document.getElementById('resetOverlay');
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  if (input) setTimeout(() => input.focus(), 0);
+}
+
+function closeReset() {
+  const ov = document.getElementById('resetOverlay');
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+
+async function performReset() {
+  const input = document.getElementById('resetConfirm');
+  if (!input || input.value.trim().toUpperCase() !== 'RESET') {
+    toast(uiText('resetInvalid'), 'err');
+    return;
+  }
+  closeReset();
+  closeSettings();
+  setBusy(true, uiText('resetStarting'));
+  let resetTask = null;
+  try {
+    resetTask = await runBackground(ANCLI + ' reset --yes', uiText('resetStarting'), { keepLog: true });
+  } finally {
+    // The reset command intentionally deletes all previous task metadata. Keep
+    // only the reset operation itself in the in-memory tab list as well.
+    taskTabs.clear();
+    expandedAppLogs.clear();
+    if (resetTask) {
+      taskTabs.set(resetTask.id, resetTask);
+      activeTaskId = resetTask.id;
+    } else {
+      activeTaskId = 'session';
+    }
+    renderTaskTabs();
+    setBusy(false);
+    await loadStatus();
+    await loadApps();
+    toast(uiText('resetDone'));
+  }
+}
+
 /* ================= 事件绑定 ================= */
 document.getElementById('apps').addEventListener('click', e => {
   const btn = e.target.closest('button[data-act]');
@@ -1816,6 +1899,10 @@ document.getElementById('btnSettings').onclick = openSettings;
 document.getElementById('setCancel').onclick = closeSettings;
 document.getElementById('setClose').onclick = closeSettings;
 document.getElementById('setSave').onclick = saveSettings;
+document.getElementById('btnFactoryReset').onclick = openReset;
+document.getElementById('resetCancel').onclick = closeReset;
+document.getElementById('resetClose').onclick = closeReset;
+document.getElementById('resetApply').onclick = () => { void performReset(); };
 document.getElementById('btnLogHistoryRefresh').onclick = () => { void refreshLogHistory(); };
 document.getElementById('btnLogHistoryClear').onclick = () => { void clearHistoryLogs(); };
 document.getElementById('setLogHistory').addEventListener('click', e => {
@@ -1827,12 +1914,16 @@ document.getElementById('setLogHistory').addEventListener('click', e => {
 document.getElementById('setOverlay').addEventListener('click', e => {
   if (e.target.id === 'setOverlay') closeSettings();
 });
+document.getElementById('resetOverlay').addEventListener('click', e => {
+  if (e.target.id === 'resetOverlay') closeReset();
+});
 document.getElementById('cfgOverlay').addEventListener('click', e => {
   if (e.target.id === 'cfgOverlay') closeConfig();
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (document.getElementById('cfgOverlay').classList.contains('show')) closeConfig();
+  else if (document.getElementById('resetOverlay').classList.contains('show')) closeReset();
   else if (document.getElementById('setOverlay').classList.contains('show')) closeSettings();
 });
 

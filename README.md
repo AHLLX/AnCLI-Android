@@ -23,6 +23,7 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 - **Shared Agent Skills**: one global skills directory (`~/.agents/skills` inside the container) is symlinked into every agent CLI's own skills path, so a `SKILL.md` written once is picked up by Claude Code, MiMo, Antigravity, Grok, OpenCode and DeepSeek Harness. Run `ancli skills` (or the WebUI's 修复环境) to create the layout.
 - **Reliable dsh WebUI launch**: the AnCLI WebUI waits for dsh's token URL before opening the browser and reuses an already listening dsh service instead of starting a second copy on port 3080.
 - **Persistent WebUI task logs**: installs, updates, checks, repairs, and uninstalls run in separate log tabs. The tabs and card logs are restored after reopening the WebUI, and completed task logs are retained up to 10 MB total without a time-based expiry. Settings → Log history lists, opens, and clears completed task logs.
+- **Factory reset**: Settings → Factory reset removes installed tools, credentials, global configuration, Agent memory, shared skills, task logs, and generated app files. It keeps the Ubuntu rootfs and module payload, then regenerates the module's runtime context so tools can be installed again from a clean state. The reset requires typing `RESET` and does not migrate pre-reset logs.
 
 ## Project guidance
 
@@ -121,6 +122,7 @@ ancli doctor --json            # Print read-only path, mount, and tool diagnosti
 ancli agent-init               # Create or refresh the guest-global Agent context
 ancli agent-init --refresh     # Refresh an AnCLI-generated context after installed tools change
 ancli repair                   # Detect and repair environment issues
+ancli reset --yes              # Delete app state, memory, credentials and logs; keep the module baseline
 ancli --help                   # Show help message
 ancli --version                # Show version info
 ```

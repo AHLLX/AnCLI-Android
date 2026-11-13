@@ -1751,3 +1751,57 @@ class TestReviewRegressions:
 
         assert json.loads(capsys.readouterr().out)['apps'] == []
         assert core._load_update_cache()['latest'] == {}   # bad type normalised away
+
+    def test_factory_reset_removes_user_state_and_restores_context(self, tmp_path, monkeypatch):
+        ancli_dir = tmp_path / "ancli"
+        rootfs = tmp_path / "rootfs"
+        module_dir = tmp_path / "module"
+        root_home = rootfs / "root"
+        for path in [root_home, rootfs / "usr" / "bin", rootfs / "bin",
+                     rootfs / "usr" / "local" / "bin", module_dir / "system" / "bin"]:
+            path.mkdir(parents=True, exist_ok=True)
+        (ancli_dir / "runtime-context").mkdir(parents=True)
+        template = "<!-- ancli:runtime-context v1 -->\napps={{INSTALLED_APPS}}\n"
+        (ancli_dir / "runtime-context" / "AGENTS.md").write_text(template, encoding="utf-8")
+        (ancli_dir / "registry.json").write_text(
+            json.dumps({"apps": {"fake": {"executable": "fake"}}}), encoding="utf-8")
+
+        monkeypatch.setattr(core, "ANCLI_DIR", str(ancli_dir))
+        monkeypatch.setattr(core, "ROOTFS", str(rootfs))
+        monkeypatch.setattr(core, "MOD_DIR", str(module_dir))
+        monkeypatch.setattr(core, "INSTALLED_FILE", str(ancli_dir / "installed.json"))
+        monkeypatch.setattr(core, "SECRETS_DIR", str(ancli_dir / "secrets"))
+        monkeypatch.setattr(core, "UPDATE_CACHE", str(ancli_dir / ".update_cache.json"))
+        monkeypatch.setattr(core, "DNS_CACHE", str(ancli_dir / ".dns_cache"))
+        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(ancli_dir / ".ancli-registry.json"))
+        monkeypatch.setattr(core, "SHARED_SKILL_DIR", str(root_home / ".agents" / "skills"))
+        monkeypatch.setattr(core, "SKILL_LINK_DIRS", (str(root_home / ".claude" / "skills"),))
+        monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
+        monkeypatch.setattr(core, "AP_BIN", str(tmp_path / "ap"))
+        monkeypatch.setattr(core, "_fix_config_permissions", lambda: None)
+
+        (ancli_dir / "installed.json").write_text(
+            json.dumps({"fake": {"name": "Fake", "executable": "fake"}}), encoding="utf-8")
+        (ancli_dir / "secrets").mkdir()
+        (ancli_dir / "secrets" / "fake.env").write_text("SECRET=x", encoding="utf-8")
+        (ancli_dir / ".update_cache.json").write_text("{}", encoding="utf-8")
+        (ancli_dir / ".webui_old.log").write_text("old", encoding="utf-8")
+        (root_home / ".agents").mkdir()
+        (root_home / ".agents" / "AGENTS.md").write_text("old memory", encoding="utf-8")
+        (root_home / "project.txt").write_text("delete me", encoding="utf-8")
+        (rootfs / "usr" / "local" / "bin" / "fake").write_text("binary", encoding="utf-8")
+        (rootfs / "usr" / "local" / "lib").mkdir(parents=True)
+        (rootfs / "usr" / "local" / "lib" / "node_modules").mkdir()
+
+        result = core.reset_environment(verbose=False)
+
+        assert result["status"] == "ok"
+        assert not (ancli_dir / "installed.json").exists()
+        assert not (ancli_dir / "secrets" / "fake.env").exists()
+        assert not (ancli_dir / ".webui_old.log").exists()
+        assert not (root_home / "project.txt").exists()
+        assert not (rootfs / "usr" / "local" / "bin" / "fake").exists()
+        context = root_home / ".agents" / "AGENTS.md"
+        assert context.exists()
+        assert "apps=无（尚未安装工具）" in context.read_text(encoding="utf-8")
+        assert (rootfs / "usr" / "local" / "bin" / "xdg-open").exists()
