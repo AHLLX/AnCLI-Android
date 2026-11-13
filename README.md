@@ -1,171 +1,134 @@
-<div align="right">[简体中文](README.zh.md) · English</div>
+<div align="center"><a href="README.md">简体中文</a> · <a href="README.en.md">English</a></div>
 
 <div align="center">
-  <img src="src/module/webroot/logo.png" alt="AnCLI logo" width="128">
+  <img src="src/module/webroot/logo.png" alt="AnCLI 徽标" width="128">
   <h1>AnCLI</h1>
-  <p>Unified CLI environment manager for rooted Android devices</p>
+  <p>面向 Root 安卓设备的统一 CLI 环境管理器</p>
 </div>
 
-AnCLI is a unified, systemless environment manager and plugin-based installer for rooted Android devices. It runs supported GNU/Linux command-line tools inside one Ubuntu glibc PRoot container while exposing controlled Android paths, proxy handling, browser hand-off, and root-manager wrappers.
+AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Systemless）的命令行环境管理器与插件式安装器。当前所有受支持的工具统一运行在一个 Ubuntu glibc PRoot 容器中，同时提供受控的 Android 路径映射、代理处理、浏览器跳转和 Root 管理器 wrapper。
 
-The current runtime has one execution backend, `proot-ubuntu`. Android `/system` remains read-only. Tools are exposed through systemless wrappers in the module and KernelSU/APatch dynamic paths, while the guest-wide Agent runtime context lives at `/root/.agents/AGENTS.md`.
+当前运行后端只有 `proot-ubuntu`。Android 的 `/system` 继续保持只读，工具通过模块 systemless wrapper 与 KernelSU/APatch 动态路径暴露；容器内 Agent 的全局运行时记忆固定在 `/root/.agents/AGENTS.md`。
 
-## Features
+## 功能特性
 
-- **No host Node.js Required for Standalone Tools**: Claude Code, OpenCode, and MiMo Code are installed as standalone, precompiled Linux-arm64 binaries. DeepSeek Harness (`dsh`) is the explicit npm exception and bootstraps its own Node LTS inside the container.
-- **Systemless Module Integration**: Installs as a standard Magisk/KernelSU/APatch module. The module overlay exposes wrappers through `/system/bin` on boot, while dynamic root paths receive instant-access wrappers without a reboot.
-- **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
-- **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
-- **Dynamic Configuration Injection**: Configure API keys and custom endpoints anytime via `ancli config <app_id>`. Credentials are stored in per-tool secrets files (mode 0600) and sourced by the wrapper at runtime — never embedded in world-readable wrapper scripts.
-- **Bundled application catalog**: Applications and installation steps are defined by the registry shipped with the module.
-- **Escaping & Proxy Passthrough**: Bypasses ADB character escaping bugs via Python urllib direct downloads, forwards the Android system proxy to tools that need it, and keeps DeepSeek Harness (`dsh`) in direct-network mode so stale proxy state does not break its connection.
-- **PRoot Syscall Stabilization**: Automatically mitigates Android kernel `io_uring` and `epoll` translation bugs, ensuring modern Node.js and Bun interactive TUIs (like MiMo and Claude Code) can process raw keyboard input flawlessly without event loop blocking.
-- **Physical Keyboard Input Method Support**: Pre-installs `fcitx5` and `fcitx5-chinese-addons` during the container bootstrap phase, and automatically exports standard input variables (`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`) to solve the issue where users using external physical keyboards (Bluetooth/USB) on Android tablets/phones cannot input Chinese or non-English characters directly in terminal-based TUI tools (like Aider, MiMo).
-- **Cross-Sandbox Browser Redirect (OAuth login)**: Solves the headless virtualization restriction where terminal agents (like `grok login`, `agy auth login`) cannot open a browser from the guest. The container queues the URL and the host wrapper launches Android's browser, with the URL echoed for manual fallback.
-- **Multi-language Support (zh/en)**: The CLI and WebUI share a persistent language setting.
-- **Visual WebUI Settings**: The Settings dialog edits language, theme, default working directory, proxy mode, and manual proxy URL, and shows the active backend, Android data channel, effective directory, and proxy mode.
-- **Short CLI Output**: Interactive labels and status lines stay compact; command details remain available through `ancli --help`, JSON output, and logs.
-- **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
-- **Shared Agent Skills**: one global skills directory (`~/.agents/skills` inside the container) is symlinked into every agent CLI's own skills path, so a `SKILL.md` written once is picked up by Claude Code, MiMo, Antigravity, Grok, OpenCode and DeepSeek Harness. Run `ancli skills` (or the WebUI's 修复环境) to create the layout.
-- **Reliable dsh WebUI launch**: the AnCLI WebUI waits for dsh's token URL before opening the browser and reuses an already listening dsh service instead of starting a second copy on port 3080.
-- **Android robot and CLI branding**: the module icon and WebUI header use the bundled black terminal/Android robot mark.
-- **Terminal lifecycle binding**: Agent wrappers stop their PRoot child when the terminal parent disappears, while ordinary backgrounding keeps the Agent running. A full reset stops known Agent and PRoot processes before clearing their files.
-- **Persistent WebUI task logs**: installs, updates, checks, repairs, and uninstalls run in separate log tabs. The tabs and card logs are restored after reopening the WebUI, and completed task logs are retained up to 10 MB total without a time-based expiry. Settings → Log history lists, opens, and clears completed task logs.
-- **Factory reset**: Settings → Factory reset removes installed tools, credentials, global configuration, Agent memory, shared skills, task logs, and generated app files. It keeps the Ubuntu rootfs and module payload, then regenerates the module's runtime context. The reset requires typing `RESET` and does not migrate pre-reset logs. An optional reinstall checkbox repeats the pre-reset app list in the clean PRoot without restoring secrets, proxy settings, or app configuration.
+- **独立二进制工具无需宿主 Node.js**：Claude Code、OpenCode 和 MiMo Code 直接安装官方预编译 Linux-arm64 二进制；DeepSeek Harness（`dsh`）是明确的 npm 例外，会在容器内引导自己的 Node LTS。
+- **模块化系统级集成**：支持作为 Magisk、KernelSU 或 APatch 模块安装。模块 overlay 在启动后通过 `/system/bin` 暴露 wrapper，同时即时注入 KSU/AP 动态路径，安装后无需重启手机即可全局调用。
+- **OTA 自动更新**：支持 root 管理器的 `updateJson` 更新规范，可直接在管理器 App 内检测并一键升级模块。
+- **开机自动维护**：内置引导服务，每次开机时自动修复容器 DNS 配置与关键文件权限，保证环境稳定性。
+- **交互式变量注入**：在安装工具时自动提示输入所需的环境变量（如 API 密钥、自定义中转端），并安全地注入到运行包装器中。
+- **模块内置应用目录**：工具的安装、更新和卸载逻辑由模块内置的 JSON 注册表描述；版本检查直接访问各工具的官方发布接口。
+- **命令行转义与代理直通**：通过 Python 内置网络库直连，绕过 ADB 命令行转义字符（如 `|`, `--`）被剥离的 bug；需要代理的工具使用 Android 系统代理，DeepSeek Harness（`dsh`）使用直连模式，避免旧代理缓存导致连接失败。
+- **PRoot 系统调用稳定性修补**：自动规避 Android 内核对 `io_uring` 和 `epoll` 翻译残缺导致的 Event Loop 阻塞死锁问题，确保基于 Node.js / Bun 的现代终端应用（如 MiMo 和 Claude Code）能够完美接收键盘的 Raw TTY 交互事件，不卡顿、不乱码。
+- **物理键盘输入法支持**：初始化自动安装 `fcitx5` 及 `fcitx5-chinese-addons`（中文拼音/五笔等），并在环境配置中自动向容器导出输入法环境变量（`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`），以解决部分用户在安卓设备上外接物理键盘（蓝牙/有线键盘）时，在终端 TUI 应用（如 Aider, MiMo 等）中无法直接输入中文或其他非英文字符的问题。
+- **跨沙箱浏览器自动跳转（网页授权登录）**：容器把需要打开的 URL 写入宿主队列，由 wrapper 调用 Android 浏览器；无法自动跳转时会把完整 URL 回显到终端，便于手动打开。
+- **多语言界面 (zh/en)**：CLI 和 WebUI 共用持久化的语言配置。
+- **WebUI 可视化设置**：设置窗口可编辑语言、主题、默认工作目录、代理模式和手动代理地址，并显示当前后端、Android 数据通道、生效目录和代理模式。
+- **简洁的 CLI 输出**：交互菜单和状态行只保留必要信息，命令细节通过 `ancli --help`、JSON 输出和日志查看。
+- **多重安全加固**：实现命令白名单校验、Shell 链式操作符过滤、环境变量转义和路径遍历防护。
+- **稳定的 dsh WebUI 启动**：AnCLI WebUI 等待 dsh 生成带 token 的地址后打开浏览器；3080 已有服务时复用该服务。
+- **统一品牌图标**：模块图标和 WebUI 顶部使用黑底终端与安卓机器人图标。
+- **终端生命周期绑定**：Agent wrapper 会绑定启动它的终端父进程；终端正常切到后台时继续运行，终端被划掉或强制停止时自动结束 PRoot 和 Agent。完全初始化前也会先清理已知 Agent 进程。
 
-## Project guidance
+## 项目指导文件
 
-- [AGENTS.md](AGENTS.md) is the development and maintenance handoff for this repository. Read it before changing module scripts, registry entries, wrapper generation, release assets, or device-deployment code.
-- `src/runtime-context/AGENTS.md` is the template for Agents running inside the phone container. It is rendered to `/root/.agents/AGENTS.md`; it is separate from the repository's development guidance.
-- Antigravity CLI also discovers the same generated context through `/root/.gemini/AGENTS.md` and `/root/.gemini/GEMINI.md`; AnCLI links both names to the canonical file.
+- [AGENTS.md](AGENTS.md) 是本地开发、模块维护、设备验证和发布流程的项目交接入口。修改核心脚本、registry、wrapper 或发布资产前先阅读它。
+- `src/runtime-context/AGENTS.md` 是手机容器内 Agent 使用的模板，安装后渲染到 `/root/.agents/AGENTS.md`，与项目开发指导文件分开维护。
+- Antigravity CLI 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`，AnCLI 会把两个名称都链接到同一份容器运行时记忆。
 
-## Screenshots
+## 界面效果
 
 <div align="center">
-  <p><strong>KernelSU WebUI on a tablet</strong></p>
-  <img src="Pad.jpg" alt="AnCLI WebUI on a tablet" width="820">
-  <p><strong>Terminal and Agent UI on a phone</strong></p>
-  <img src="Phone.jpg" alt="AnCLI terminal and Agent UI on a phone" width="360">
+  <p><strong>平板上的 KernelSU WebUI</strong></p>
+  <img src="Pad.jpg" alt="平板上的 AnCLI WebUI" width="820">
+  <p><strong>手机上的终端与 Agent 界面</strong></p>
+  <img src="Phone.jpg" alt="手机上的 AnCLI 终端与 Agent 界面" width="360">
 </div>
 
-## Supported Applications
-*(Read from the registry bundled with the module)*
+## 支持的工具生态
+*(由模块内置注册表提供)*
 
-| App | Runtime | Installation Method |
+| 工具 | 运行时 | 安装与运行后端 |
 | :--- | :--- | :--- |
-| **Aider** | Python | pip package |
-| **MiMo Code** | Node.js/JS | Precompiled Release binary |
-| **Antigravity CLI (agy)** | Go | Standalone release binary (proot mode — current release is dynamically linked) |
-| **Claude Code** | Node.js/JS | Precompiled Release binary (NPM-free) |
-| **OpenCode** | Node.js/JS | Precompiled Release binary (NPM-free) |
-| **Grok** | Rust | Standalone release binary (proot mode) |
-| **DeepSeek Harness (dsh)** | Node.js/JS | npm package `@deepseek-ai/dsh` + Node LTS bootstrap (needs Node ≥ 22.19) |
+| **Aider** | Python | pip 模块包安装（PRoot 容器） |
+| **MiMo Code** | Node.js/JS | 预编译原生二进制文件（PRoot 容器） |
+| **Antigravity CLI (agy)** | Go (动态链接) | 独立发布二进制文件（PRoot 容器） |
+| **Claude Code** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
+| **OpenCode** | Node.js/JS | 预编译原生二进制文件（PRoot 容器，无需 NPM） |
+| **Grok** | Rust (静态链接) | 独立发布二进制文件（PRoot 容器） |
+| **DeepSeek Harness (dsh)** | Node.js/JS | npm 包 `@deepseek-ai/dsh` + Node LTS 引导（要求 Node ≥ 22.19） |
 
-### DeepSeek Harness on Android
+### 在安卓上使用 DeepSeek Harness
 
-`dsh` is the one app that is installed from **npm** rather than a prebuilt binary, because its
-launcher resolves 80+ plugin-bundle packages. The registry entry therefore bootstraps a modern
-Node first (the container's apt Node is 18; `dsh` requires `^22.19 || >=24`) and then installs the
-CLI from the official registry:
+`dsh` 是唯一从 **npm** 安装的工具（它的启动器要解析 80 多个插件 bundle 包），因此注册表条目会先引导一个现代 Node，再从官方源安装 CLI：
 
 ```bash
-ancli install dsh        # download Node LTS → npm i -g @deepseek-ai/dsh
-dsh --version            # runtime version (also what `ancli check` probes)
-dsh web                  # Web UI on http://127.0.0.1:3080 — opens the phone's browser via AnCLI's xdg-open bridge
-dsh web --no-open        # …or just print the URL
-dsh headless "summarize this repo"   # one-shot task, prints the answer and exits
+ancli install dsh        # 下载 Node LTS → npm i -g @deepseek-ai/dsh
+dsh --version            # 运行时版本（也是 ancli check 探测的值）
+dsh web                  # Web UI 监听 http://127.0.0.1:3080，并通过 AnCLI 的 xdg-open 桥接直接拉起手机浏览器
+dsh web --no-open        # 或者只打印 URL，不自动开浏览器
+dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 ```
 
-- **API key**: run `ancli config dsh` and set `DEEPSEEK_API_KEY` (optionally `DEEPSEEK_BASE_URL`),
-  or enter it in the Web UI under Settings → Models. Either way it lands in `/root/.dsh`
-  (`$DSH_HOME`), which module upgrades preserve.
-- **Proxy**: DSH uses direct-network mode in the AnCLI registry. It does not inherit the cached
-  Android system proxy. Other tools continue to use the wrapper's system-proxy detection.
-- **Profiles**: `web`, `headless`, `sdk`, `sdk-minimal` and `acp` auto-initialize on first use.
-  **There is no `tui` profile**: `dsh tui` aborts with *"profile \"tui\" does not exist; create it with
-  `dsh plugin --profile tui add <package>`"*, the shipped templates in `packages/boot/app-boot`
-  contain no terminal app bundle, and no TUI bundle is published on npm — the examples in the CLI
-  `--help` are stale. The interactive interface is the Web UI; for scripted one-shots use
-  `dsh headless "…"`. (`dsh plugin … add <package>` needs `pnpm`, which the container does not ship.)
-- **The browser opens itself.** `dsh web` prints an authenticated URL and hands it to the phone's
-  browser (AnCLI bridges it: the container cannot execute Android's `am`, so the wrapper opens it on
-  the host and echoes the URL back if that fails). The URL carries a **per-run token** — opening the
-  bare `127.0.0.1:3080` from a bookmark shows *"dsh web authentication required"*, so use the printed
-  URL (it sets a signed cookie and then redirects to the token-less one). `--no-open` keeps it in the
-  terminal; if a previous `dsh web` is still running, the port is taken and the new one exits —
-  stop the old session first (`Ctrl+C`).
-- **When the page says "authentication required"**: that text only means the request arrived without a
-  valid cookie. (1) Make sure the server on that port is the instance you just started — a leftover
-  `dsh web` rejects the new instance's token, so stop old sessions first; (2) open the printed URL in a
-  *fresh* tab (a reload of the `/` address it redirected to, or a private window, will not have the
-  cookie); (3) if the browser blocks cookies for the site, allow `127.0.0.1` or use another browser —
-  the server side works, as `scripts/probe_dsh_auth.py` verifies against a live instance.
+- **API 密钥**：`ancli config dsh` 填 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_BASE_URL`），或在 Web UI 的 Settings → Models 里填写。两者都会落到 `/root/.dsh`（即 `$DSH_HOME`），模块升级不会丢。
+- **代理**：DSH 在 AnCLI registry 中使用直连模式，不继承 Android 系统代理缓存；其他需要代理的工具继续使用 wrapper 的系统代理探测。
+- **Profile**：`web`、`headless`、`sdk`、`sdk-minimal`、`acp` 首次运行会自动初始化。**不存在 `tui` profile**：`dsh tui` 会直接报 *"profile \"tui\" does not exist; create it with `dsh plugin --profile tui add <package>`"*，上游 `packages/boot/app-boot` 的内置模板里没有终端 app bundle，npm 上也没有发布任何 TUI bundle（CLI `--help` 里的 `dsh tui` 示例是过期的）。交互界面就是 Web UI；脚本化一次性任务用 `dsh headless "…"`。（`dsh plugin … add <package>` 需要 `pnpm`，容器里没有预装。）
+- **浏览器会自动打开**：`dsh web` 打印带鉴权的 URL 后交给手机浏览器（AnCLI 在宿主侧代开：容器里跑不了 Android 的 `am`，失败时会把 URL 回显到终端）。这个 URL 带**每次运行的 token**——直接打开收藏夹里的 `127.0.0.1:3080` 会显示 *"dsh web authentication required"*，请用打印出来的完整 URL（它会写入签名 cookie 再跳到不带 token 的地址）。`--no-open` 可只在终端保留 URL；如果上一次 `dsh web` 还在跑，端口被占用，新的会直接退出——先 `Ctrl+C` 停掉旧的。
+- **看到 "authentication required" 怎么排查**：那句话只表示"这次请求没带上有效 cookie"。① 确认端口上跑的是**当前**这个实例（旧的 `dsh web` 没停掉时，浏览器打开新实例的 token 也会被旧实例拒绝）——先 `Ctrl+C` 停掉所有旧会话再重开；② 用**完整打印的 URL 新开一个标签页**（不要刷新那个已经跳成 `/` 的地址，也不要开无痕模式）；③ 浏览器若禁用了该站点 cookie，请放行 `127.0.0.1` 或换个浏览器——服务端流程本身可用（可用 `scripts/probe_dsh_auth.py` 在容器里验证）。
 
-## Installation
+## 安装方法
 
-### Method A: Flashing via Root Manager (Recommended)
+### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.606.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
-2. Open your Magisk, KernelSU, or APatch Manager app.
-3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
-4. After bootstrap finishes, open any root terminal and run `ancli`.
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.606.zip`）。
+2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
+3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
+4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。
 
-### Method B: CLI Bootstrap
+### 方式 B：命令行快速安装
 
-Run the following command as root in Termux or any terminal emulator:
+在 Termux 或任意终端中获取 root 权限 (`su`) 后执行：
 
 ```bash
 curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/install.sh | sh
 ```
 
-This script detects your active root manager, downloads the module ZIP, and guides you through the installation.
+此脚本会自动检测当前的 root管理器，下载对应的模块 ZIP 并引导完成刷入。
 
-## Usage
+## 使用说明
 
-### Interactive Menu
+### 交互菜单
+启动包管理器主界面：
 ```bash
 ancli
 ```
 
-### CLI Mode
+### 命令行模式
 ```bash
-ancli install <app_id>         # Install an application
-ancli uninstall <app_id>       # Uninstall an application
-ancli update <app_id>          # Update an installed application
-ancli config <app_id>          # Reconfigure environment variables
-ancli list                     # List installed applications
-ancli check                    # Check official latest versions / available updates
-ancli doctor --json            # Print read-only path, mount, and tool diagnostics
-ancli agent-init               # Create or refresh the guest-global Agent context
-ancli agent-init --refresh     # Refresh an AnCLI-generated context after installed tools change
-ancli repair                   # Detect and repair environment issues
-ancli reset --yes              # Delete app state, memory, credentials and logs; keep the module baseline
-ancli reset --yes --reinstall  # Reset, then reinstall the apps recorded before reset without secrets
-ancli --help                   # Show help message
-ancli --version                # Show version info
+ancli install <app_id>         # 安装工具
+ancli uninstall <app_id>       # 卸载工具
+ancli update <app_id>          # 更新已安装的工具
+ancli config <app_id>          # 重新配置环境变量 (API Key 等)
+ancli list                     # 列出已安装的工具列表
+ancli check                    # 联网检查官方最新版本与可更新项
+ancli doctor --json            # 输出只读路径、挂载和工具诊断
+ancli agent-init               # 生成容器全局 Agent 记忆和环境指导
+ancli agent-init --refresh     # 已安装工具变化后刷新 AnCLI 生成的记忆文件
+ancli repair                   # 检测并修复环境问题
+ancli --help                   # 显示帮助信息
+ancli --version                # 显示版本号
 ```
 
-### Running Installed Tools
-Once a tool is installed, run it directly from any shell:
-```bash
-aider
-claude
-opencode
-mimo
-agy
-```
+### 可配置项
 
-### Configuration
+全局配置保存在容器内的 `/root/.ancli-config.json`。当前只接受以下四个键：
 
-Global settings are stored in `/root/.ancli-config.json` inside the container.
-The command accepts exactly these keys:
-
-| Key | Values | Effect |
+| 配置键 | 可用值 | 作用 |
 | :--- | :--- | :--- |
-| `default_cwd` | absolute path or empty | Directory used when a tool is launched from `/`; empty restores `/root`. |
-| `lang` | `zh`, `en` | Language used by the AnCLI interactive output and WebUI preference. |
-| `proxy_mode` | `system`, `manual`, `direct` | Android system detection, configured proxy, or no proxy. |
-| `proxy_url` | `http://host:port` or `https://host:port` | Manual proxy address; used when `proxy_mode=manual`. |
+| `default_cwd` | 绝对路径或空值 | 从 `/` 启动工具时使用的目录；留空恢复 `/root`。 |
+| `lang` | `zh`、`en` | AnCLI 命令输出和 WebUI 的语言偏好。 |
+| `proxy_mode` | `system`、`manual`、`direct` | 使用 Android 系统探测、手动代理或直连。 |
+| `proxy_url` | `http://host:port` 或 `https://host:port` | 手动代理地址，仅在 `manual` 模式使用。 |
 
 ```bash
 ancli config --json
@@ -176,158 +139,135 @@ ancli config --set proxy_mode=manual --set proxy_url=http://192.168.1.10:7890
 ancli config --set proxy_mode=direct
 ```
 
-Per-tool variables are declared by `src/registry.json` and can be listed with
-`ancli list --json`. Set them without embedding secrets in wrappers:
+工具自己的环境变量由 `src/registry.json` 声明，可用 `ancli list --json` 查看；
+使用 `ancli config <app_id> --set KEY=VALUE` 写入，密钥只保存在容器的 secrets 文件中，
+不会嵌入 wrapper。当前 Claude Code 支持 `ANTHROPIC_API_KEY`、
+`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL`；DeepSeek Harness
+支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`；所有工具都可选配置
+`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`。
 
+### 运行已安装的工具
+工具安装完成后，可直接在终端中调用，无需添加 `ancli` 前缀：
 ```bash
-ancli config claude-code --set ANTHROPIC_BASE_URL=https://example.invalid
-ancli config dsh --set DEEPSEEK_BASE_URL=https://example.invalid
+aider
+claude
+opencode
+mimo
+agy
 ```
 
-The current registry exposes provider variables for Claude Code (`ANTHROPIC_API_KEY`,
-`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) and DeepSeek Harness
-(`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`). All supported tools also expose the optional
-`HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` variables; Aider, MiMo, OpenCode, Antigravity,
-and Grok currently have no additional provider variables.
+### 更新检测（识别官方最新版本）
 
-### Update Detection (official versions)
+AnCLI 不再"猜"版本号：对每个已安装的工具，它会
 
-AnCLI does not guess versions. For every installed tool it asks **the tool itself**
-(`version_cmd`, e.g. `claude --version`) for the installed version, and asks the
-**vendor's own release endpoint** (`latest` in `registry.json`) for the official
-latest one:
+1. **问工具自己**（registry 里的 `version_cmd`，例如 `claude --version`）拿到本地真实版本；
+2. **问官方发布接口**（registry 里的 `latest`）拿到官方最新版本。
 
-| Tool | Official source |
+| 工具 | 官方版本来源 |
 | :--- | :--- |
-| Aider | PyPI (`aider-chat`) |
-| MiMo Code | GitHub Releases (`XiaomiMiMo/MiMo-Code`) |
-| Antigravity CLI | Vendor release manifest (`antigravity-cli-auto-updater…/manifests/linux_arm64.json`) |
-| Claude Code | GitHub Releases (`anthropics/claude-code`) |
-| OpenCode | GitHub Releases (`anomalyco/opencode`) |
-| Grok CLI | Vendor channel pointer (`x.ai/cli/stable`, GCS mirror as fallback) |
+| Aider | PyPI（`aider-chat`） |
+| MiMo Code | GitHub Releases（`XiaomiMiMo/MiMo-Code`） |
+| Antigravity CLI | 官方发布清单（`antigravity-cli-auto-updater…/manifests/linux_arm64.json`） |
+| Claude Code | GitHub Releases（`anthropics/claude-code`） |
+| OpenCode | GitHub Releases（`anomalyco/opencode`） |
+| Grok CLI | 官方通道指针（`x.ai/cli/stable`，失败时回落 GCS 镜像） |
 
-Results are cached in `/data/local/tmp/ancli/.update_cache.json`, so the WebUI can
-show the last known result while offline. On every WebUI login, AnCLI checks the
-installed tools against their official release endpoints; the highlighted
-**检查更新 (check)** button runs the same check on demand. A failed lookup keeps
-the previous known version and records the error for that app.
+结果保存在（`/data/local/tmp/ancli/.update_cache.json`）中，WebUI 离线时仍可显示上次结果；
+每次登录 WebUI 都会按各工具自己的官方发布地址检查已安装工具，顶部的 **检查更新** 按钮也可手动执行同一检查；
+单个地址查询失败时保留上一次已知版本，并在对应条目显示失败状态。
 
 ```bash
-ancli check            # refresh installed + official versions (network)
-ancli check --json     # same, machine-readable (for scripts; the WebUI calls `check` + `list --json`)
-ancli list             # show "可更新 → vX (source)" once a check has run
+ancli check            # 联网刷新"本地版本 + 官方最新版本"
+ancli check --json     # 同上，机器可读（给脚本/自动化用；WebUI 走 ancli check + list --json）
+ancli list             # 检查后显示 "可更新 → vX (来源)"
 ```
 
-A failed `ancli update` (no network, proxy down, vendor 404) now exits non-zero,
-so the WebUI reports the failure instead of claiming success, and the recorded
-version stays untouched.
+**注意**：WebUI 页面（`webroot/index.html`）只能随模块刷入更新——`ancli repair` 无法替换它（`/data/adb/modules` 受 SELinux 保护）。若 `check` 报 `[Errno 13] Permission denied`，说明当前 shell 域不能写 `/data/local/tmp/ancli`，请在 KernelSU 管理器里打开 WebUI 点「检查更新」（走管理器的 exec 通道），或换一个 root 终端再试。
 
-**Note**: the WebUI page (`webroot/index.html`) can only be replaced by flashing the
-module — `ancli repair` cannot write it (`/data/adb/modules` is SELinux-protected). If
-`check` reports `[Errno 13] Permission denied`, the current shell domain cannot write
-`/data/local/tmp/ancli`; use the WebUI's 检查更新 button (manager exec channel) or
-another root shell.
+`ancli update` 失败（断网、代理不可用、官方 404）现在会以非 0 退出码结束，
+WebUI 会显示更新失败原因，并保留已记录的版本号。
 
-## Network Proxy & VPN Handling
+## 网络代理与 VPN 说明
 
-On Android, VPN applications (like Clash, v2rayNG running in TUN mode) typically bypass Root (UID 0) traffic to prevent routing loops. As a result, network requests from tools like `agy` or `aider` running in a root shell will pierce through the VPN and connect directly, potentially being blocked by firewalls.
+在 Root (UID 0) 环境下，安卓的 VPN 软件（如 Clash、v2rayNG 等运行在 TUN 模式时）通常会放行 Root 流量以避免产生死循环。这会导致在终端里运行 `agy` 或 `aider` 等工具时，流量会直接穿透 VPN 直连网络。
 
-**AnCLI provides a seamless solution:**
-1. **Auto Proxy Detection**: Every time you launch a shortcut (e.g., typing `agy`), the wrapper automatically polls Android's `dumpsys connectivity` state. If your VPN is configured with a global or system HTTP proxy, the wrapper will extract the local IP and port and inject it into the guest container, achieving **zero-config transparent proxying**.
-2. **Hardcoded Proxy Override (Pure VPN Mode)**: If your VPN app does not support system proxy injection, simply run `ancli config <app_id>` (e.g., `ancli config agy`) in your terminal. You can directly input your local proxy address (like `http://127.0.0.1:7890`) into the `HTTP_PROXY` and `ALL_PROXY` fields. This will permanently bake the proxy route into that tool's execution flow.
+**AnCLI 提供了完美的解决方案：**
+1. **自动代理探测**：每次执行快捷命令（如敲下 `agy`）时，启动脚本会自动通过 `dumpsys connectivity` 请求 Android 系统的网络状态。如果你的 VPN 设置了全局或系统 HTTP 代理，框架会自动拾取代理的 IP 和端口，并注入到运行容器中，实现**零配置透明代理**。
+2. **强制硬编码代理（纯 VPN 模式）**：如果你的翻墙软件不支持注入系统代理，可以在终端输入 `ancli config <工具名>`（例如 `ancli config agy`），在交互提示中直接填入你的本地代理地址（如 `http://127.0.0.1:7890`）到 `HTTP_PROXY` 和 `ALL_PROXY` 项中，即可将其永久绑定到该工具。
 
-## Shared Agent Skills
+## 统一 Agent Skills
 
-Every agent CLI in AnCLI reads skills from its own path, but they all agree on one
-"agents" convention — so AnCLI points them at a single directory:
+每个 Agent 工具都从自己的路径读 skill，但它们都认一套 "agents" 约定，所以 AnCLI 把它们指到同一个目录：
 
 ```bash
-ancli skills          # create ~/.agents/skills and link each tool's skills dir to it
-ancli skills --json   # same, machine-readable
-ancli repair          # also runs the setup (the WebUI's 修复环境 button does too)
+ancli skills          # 建 ~/.agents/skills，并把各工具的 skills 目录链过去
+ancli skills --json   # 同上，机器可读
+ancli repair          # 也会执行这套设置（WebUI 的「修复环境」按钮同理）
 ```
 
-Put a skill at `/root/.agents/skills/<name>/SKILL.md` (frontmatter needs `name` and
-`description`; names are lower-case kebab-case) and every tool below sees it. Existing
-per-tool skill directories with your own content are never overwritten — the command
-reports them as `kept` instead.
+把 skill 放到 `/root/.agents/skills/<名字>/SKILL.md`（frontmatter 需要 `name` 和 `description`，名字用小写 kebab-case），下面所有工具都能看到。**已有内容的工具自有 skills 目录不会被覆盖**，命令会把它们列为 `kept`。
 
-| Tool | Global (container `$HOME`) | Project-scoped | Notes |
+| 工具 | 全局（容器 `$HOME`） | 项目级 | 备注 |
 | :--- | :--- | :--- | :--- |
-| **Claude Code** | `~/.claude/skills/<name>/SKILL.md` | `<repo>/.claude/skills/` | linked to the shared root |
-| **OpenCode** | `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/` | `<repo>/.opencode/skills/`, `.claude/skills/`, `.agents/skills/` | bundle folders only, no flat `.md` |
-| **MiMo Code** | `~/.mimocode/skills/`, `~/.claude/skills/`, `~/.agents/skills/` | same names in the repo | |
-| **Antigravity CLI** | `~/.agents/skills/` (+ `~/.agents/skills.json`), `~/.gemini/config/skills/` | `<repo>/.agents/skills/` | reads the shared root natively |
-| **Grok CLI** | `~/.grok/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, bundled `~/.grok/bundled/skills/` | `<repo>/.grok/skills/`, `.claude/skills/`, `.agents/skills/` | |
-| **DeepSeek Harness** | `~/.dsh/skills/`, `~/.agents/skills/` | `<repo>/.dsh/skills/`, `.agents/skills/` | also accepts a flat `<name>.md` |
-| **Aider** | — (no skill system) | `CONVENTIONS.md` (or `aider --read FILE`) | use conventions files instead |
+| **Claude Code** | `~/.claude/skills/<名字>/SKILL.md` | `<仓库>/.claude/skills/` | 已链到统一目录 |
+| **OpenCode** | `~/.config/opencode/skills/`、`~/.claude/skills/`、`~/.agents/skills/` | `<仓库>/.opencode/skills/`、`.claude/skills/`、`.agents/skills/` | 只认文件夹形式，不认平铺 `.md` |
+| **MiMo Code** | `~/.mimocode/skills/`、`~/.claude/skills/`、`~/.agents/skills/` | 仓库内同名路径 | |
+| **Antigravity CLI** | `~/.agents/skills/`（另读 `~/.agents/skills.json` 索引）、`~/.gemini/config/skills/` | `<仓库>/.agents/skills/` | 原生读统一根 |
+| **Grok CLI** | `~/.grok/skills/`、`~/.claude/skills/`、`~/.agents/skills/`、内置 `~/.grok/bundled/skills/` | `<仓库>/.grok/skills/`、`.claude/skills/`、`.agents/skills/` | |
+| **DeepSeek Harness** | `~/.dsh/skills/`、`~/.agents/skills/` | `<仓库>/.dsh/skills/`、`.agents/skills/` | 也接受平铺 `<名字>.md` |
+| **Aider** | —（没有 skill 机制） | `CONVENTIONS.md`（或 `aider --read 文件`） | 用 conventions 文件替代 |
 
-Skills live inside the container's `/root`, which module upgrades preserve. To keep them
-with your projects, put them in the repo (`<repo>/.agents/skills/`) — that path works for
-every tool except Aider.
+skill 存在容器的 `/root` 下，模块升级不会丢；想跟着项目走就放仓库里的 `<仓库>/.agents/skills/`——除 Aider 外所有工具都认这个路径。
 
-## Workspaces and the phone's real files
+## 工作区与"手机上的真实文件"
 
-The container is not a sandbox: host directories are **bind-mounted** into it, so a container path *is*
-the phone path. Edits take effect immediately (any file manager or editor sees them) — nothing to sync.
+容器并不是个隔离沙箱：宿主机的目录是**绑定挂载**进容器的，所以容器里的路径就是手机上的真实路径，改完立刻生效（文件管理器/编辑器马上能看到），不需要同步。
 
-| Container path | What it actually is |
+| 容器内路径 | 实际是什么 |
 | :--- | :--- |
-| `/sdcard`, `/storage/emulated/0` | **The phone's internal storage** (what file managers show) |
-| `/data` | The phone's `/data` (app-private dirs included, visible to root) |
-| `/mnt`, `/storage` | The phone's matching mount points |
-| `/root` | The container's private HOME: tool config, credentials, skills. **Not** in the phone's file manager |
+| `/sdcard`、`/storage/emulated/0` | **手机内部存储**（文件管理器里看到的那些） |
+| `/data` | 手机 `/data`（各 App 私有目录等，root 可见） |
+| `/mnt`、`/storage` | 手机对应的挂载点 |
+| `/root` | 容器私有的 HOME：各工具的配置、密钥、skills 都在这，**不在**手机文件管理器里 |
 
-In `dsh web`'s "choose workspace directory" dialog:
+所以 `dsh web` 的"选择工作区目录"里：
 
-- It starts in the container HOME `/root`, which holds only dotfiles (`.claude`, `.dsh`, …) — that is
-  why it looks empty until "show hidden files" is ticked, and those are **tool config**, not your files.
-- To work on phone files, type `/sdcard` or a project path such as `/sdcard/projects/demo` in the path box.
-- Easier: **start dsh from the directory you want** — `cd /sdcard/projects/demo && dsh web` — the
-  workspace then defaults there and the agent's working directory is already your project.
-- Note: Android 11+ restricts `/sdcard/Android/data` and similar; quote paths that contain spaces.
+- 默认停在 **容器 HOME `/root`**，那里只有 `.claude`、`.dsh` 这类点文件，所以第一眼像是空的——勾选"显示隐藏文件"才看得到，那些是**工具配置**，不是你的手机文件。
+- 想操作手机文件，就在路径框里填 `/sdcard` 或某个项目目录（如 `/sdcard/projects/demo`）。
+- 更省事的办法：**先 cd 到项目目录再启动**——`cd /sdcard/projects/demo && dsh web`，工作区会默认落在那里，AI 的当前目录直接就是你的工程。
+- 注意：Android 11+ 对 `/sdcard/Android/data` 等目录有访问限制；带空格的路径记得加引号。
 
-### Default working directory (launches from `/`)
+### 默认工作目录（从 `/` 启动时）
 
-A fresh Termius session, or `su` followed by `mimo`, leaves the cwd at `/`. A full-screen TUI walks
-its cwd at startup, so `/` means scanning the whole container plus the `/data` and `/sdcard` bindings
-(hundreds of thousands of files) — slow, and often a hang. AnCLI starts such launches in a small
-directory instead: `/root` by default, or whatever you configure:
+Termius 新会话、或 `su` 之后直接敲 `mimo`，宿主 cwd 是 `/`。全屏 TUI 启动时会遍历 cwd，等于扫描整个容器 + 绑进来的 `/data`、`/sdcard`（几十万文件），会卡很久甚至起不来。AnCLI 把这种启动转到一个小目录——默认 `/root`，也可以自己指定：
 
 ```bash
-ancli config                                     # show the current setting
-ancli config --set default_cwd=/sdcard/projects  # where launches from / land
-ancli config --set default_cwd=                  # empty = back to /root
+ancli config                                     # 查看当前设置
+ancli config --set default_cwd=/sdcard/projects  # 从 / 启动时落到这里
+ancli config --set default_cwd=                  # 留空 = 恢复内置默认 /root
 ```
 
-The WebUI's **Settings** button edits the same value (stored in the container at
-`/root/.ancli-config.json`).
+WebUI 里点「设置」也能改（同一份配置，存在容器 `/root/.ancli-config.json`）。设置窗口还可以编辑
+`lang`、`proxy_mode` 和 `proxy_url`；主题偏好保存在当前 WebUI。状态卡片会显示当前 Ubuntu/PRoot
+后端、`/mnt/ancli-data` 数据通道、生效目录和代理模式。
 
-The same dialog also edits `lang`, `proxy_mode`, and `proxy_url`. The theme is a local WebUI
-preference. Its status card reports the active Ubuntu/PRoot backend, `/mnt/ancli-data` readiness,
-the effective launch directory, and the selected proxy mode.
+修改 `default_cwd` 不会移动运行时上下文。AnCLI 统一维护容器全局的
+`/root/.agents/AGENTS.md`，需要重建时运行 `ancli agent-init`。
 
-Changing `default_cwd` no longer moves the runtime context. AnCLI keeps the generated global
-context at `/root/.agents/AGENTS.md`; use `ancli agent-init` to regenerate it explicitly.
+只影响“从 `/` 启动”这一种情况：先 `cd` 到项目目录再启动时，用的永远是你的 cwd。目录必须是容器里存在的绝对路径，否则 `ancli config` 会直接拒绝并提示。
 
-This only affects launches from `/`: if you `cd` into a project first, your cwd is used verbatim.
-The directory must be an absolute path that exists inside the container — otherwise `ancli config`
-rejects it with a hint.
+### 默认 Agent 记忆与环境指导
 
-### Default Agent memory and environment guide
+AnCLI 会在容器全局目录 `/root/.agents/AGENTS.md` 维护一份简短的运行时 `AGENTS.md`。运行
+`ancli agent-init` 可以显式生成；`ancli repair`、`ancli skills` 和成功安装工具时也会刷新
+AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，运行时上下文始终位于
+`/root/.agents/AGENTS.md`。
 
-AnCLI keeps a concise global runtime `AGENTS.md` at `/root/.agents/AGENTS.md`. It is created by
-`ancli agent-init`, and is also ensured by `ancli repair`, `ancli skills`, and a successful tool
-installation. With the built-in setting the working directory is `/root`; after
-`ancli config --set default_cwd=/sdcard/projects`, only tool launches from `/` use that directory.
-The runtime context remains global at `/root/.agents/AGENTS.md`.
-
-The fresh file contains a first-run protocol. The first Agent session must probe the current
-device, then run `ancli agent-init --finalize`. AnCLI writes the measured paths, bindings, available
-commands, installed tools, and operation boundaries back into that device's file and removes the
-protocol. It never writes secrets. An existing project `AGENTS.md` is kept. The source template is
-`src/runtime-context/AGENTS.md`; `ancli reset --yes` restores the original pending protocol, while
-`ancli agent-init --refresh` replaces the current generated context with it.
+新文件包含首次环境确认协议。第一个读取它的 Agent 必须先探测当前设备，再运行
+`ancli agent-init --finalize`。AnCLI 会把实测路径、绑定关系、可用命令、已安装工具和操作边界
+写回这台设备独有的文件，并删除首次确认协议；不会写入密钥。已有的项目 `AGENTS.md` 会保留。
+模板位于 `src/runtime-context/AGENTS.md`；`ancli reset --yes` 会恢复带首次确认协议的原版，
+`ancli agent-init --refresh` 也会用它替换当前生成文件。
 
 ```bash
 ancli agent-init
@@ -336,108 +276,49 @@ ancli agent-init --refresh
 ancli agent-init --finalize
 ```
 
-## Other apps' data (`/data/data` can look empty)
+## 跨 App 数据（为什么有时看不到 `/data/data`）
 
-Android gives every app its own mount namespace and masks `/data/data` inside it with a tmpfs — only
-that app's own directories remain (`mode 751`). A root shell started from Termius or an SSH-server
-app inherits that shrunken view, which is why `/data/data` sometimes shows a handful of packages
-instead of hundreds. This is not a proot limitation: the same shell started from `adb shell` (or a
-system-level terminal) sees the full tree.
+Android 给每个 App 的进程一个独立的 mount namespace，并把它**不该看到的** `/data/data` 用 tmpfs 遮住（只留自己的几个目录，`mode 751`）。所以从 Termius 这类 App 里 `su` 出来的 root shell，会继承这个"缩水"的视图——这不是 proot 的限制，从 ADB 或系统级终端 `su` 进去就能看到完整的 752 个包。
 
-AnCLI works around it by **binding the real `/data` non-recursively onto `/mnt/ancli-data`** every
-time a tool starts. A non-recursive bind does not inherit submounts, so the tmpfs mask is left behind;
-`/mnt` is already bound into the container, so the path is directly visible:
+AnCLI 的处理方式是：**每次启动工具时，在宿主侧把真实的 `/data` 非递归 bind 到 `/mnt/ancli-data`**。非递归 bind 不会继承子挂载，正好绕过那层 tmpfs 遮蔽；容器里 `/mnt` 本来就是绑进来的，所以路径直接可见：
 
 ```bash
-ls /mnt/ancli-data/data                 # every app's private dir, the real view
-ls /mnt/ancli-data/data/com.tencent.mm  # one app's data
+ls /mnt/ancli-data/data                 # 所有 App 的私有目录（真实视图）
+ls /mnt/ancli-data/data/com.tencent.mm  # 某个 App 的私有数据
 ```
 
-- Requires root; when `/mnt` is not writable the step is skipped and the tool still starts.
-- Idempotent: it checks `/proc/mounts` first and never stacks a second mount.
-- `ancli repair` checks and mounts it too; `ancli status` / `status --json` expose `android_data`.
-- The mount belongs to the current mount namespace: it goes away with the app, while one made from a
-  global `su` lasts until the next reboot.
+- 需要 root；`/mnt` 不可写时自动跳过，不影响工具启动。
+- 幂等：已经在挂载表里就不会重复挂（`grep /proc/mounts` 判断）。
+- `ancli repair` 会顺带检查并挂载；`ancli status` / `status --json` 的 `android_data` 字段显示是否就绪。
+- 挂载只在当前 mount namespace 内有效：App 内的会话随 App 结束；从 ADB 全局 `su` 挂的那次会留到重启（重启自然清空）。
 
-## Directory Structure
+## 路径说明
 
-| Component | Path | Description |
+| 组件 | 物理路径 (宿主机视角) | 说明 |
 | :--- | :--- | :--- |
-| **Ubuntu Rootfs** | `/data/local/tmp/ancli/rootfs/` | PRoot guest container |
-| **AnCLI Core** | `/data/local/tmp/ancli/bin/ancli-core.py` | Python package manager |
-| **State Database** | `/data/local/tmp/ancli/installed.json` | Installed app metadata |
-| **Module Directory** | `/data/adb/modules/ancli/` | Systemless module files |
-| **Dynamic Bin Paths** | `/data/adb/ksu/bin/` or `/data/adb/ap/bin/` | Reboot-free wrapper paths |
+| **Ubuntu 根文件系统** | `/data/local/tmp/ancli/rootfs/` | 完整的 Ubuntu 容器文件目录 |
+| **AnCLI 包管理器** | `/data/local/tmp/ancli/bin/ancli-core.py` | 包管理器 Python 主程序 |
+| **安装状态数据库** | `/data/local/tmp/ancli/installed.json` | 记录已安装工具及其配置元数据 |
+| **模块目录** | `/data/adb/modules/ancli/` | Magisk/KSU 挂载模块目录 |
+| **即时命令路径** | `/data/adb/ksu/bin/` 或 `/data/adb/ap/bin/` | 免重启直接调用的 wrapper 路径 |
 
-## Custom Mirror
+## 自定义镜像源
 
-To use a specific Ubuntu archive mirror during rootfs bootstrap:
+如果需要在初始化过程中使用国内特定镜像源（默认使用清华 TUNA 镜像），可在安装前在 shell 中导出 `ANCLI_MIRROR` 变量：
 
 ```bash
-export ANCLI_MIRROR="archive.ubuntu.com"
+export ANCLI_MIRROR="mirrors.ustc.edu.cn"
 ```
 
-## Uninstallation
+## 卸载方法
 
-- **Soft Uninstall (Safe & Default)**: Removing the module from your KernelSU/Magisk/APatch manager only cleans up the module's hooks. It **safely preserves** your entire Ubuntu container, downloaded Python packages, and API configurations so you can upgrade easily.
-- **Full Purge (Complete Removal)**: If you wish to permanently destroy the container, installed tools, credentials, and configuration, use the `ancli` menu and press `u`, then select `[3] Completely uninstall AnCLI`. The menu prints the supported one-shot flow. From a root Android shell, create the purge marker and then uninstall the module from your Magisk, KernelSU, or APatch Manager:
+- **普通卸载（安全且默认）**：在 Magisk/KernelSU/APatch 管理器中删除模块时，系统只会清理模块的挂载入口，而**安全保留**你的完整 Ubuntu 容器系统、已安装的 Python 依赖包和 API 密钥配置。这样你在以后升级重装时能够瞬间恢复环境。
+- **彻底清除（完全卸载）**：如果你想彻底删除容器、已安装工具、密钥和配置，请在 `ancli` 主菜单中按 `u` 键，然后选择 `[3] Completely uninstall AnCLI` 获取受支持的清理流程。在 root Android shell 中先创建一次性清除标记，再从 Magisk、KernelSU 或 APatch 管理器卸载模块：
   ```bash
   touch /data/local/tmp/ancli_force_purge
   ```
-  The uninstall script consumes the marker, removes the AnCLI data directory, and cleans the dynamic wrappers. Do not reuse the marker for a later upgrade.
+  卸载脚本会消费并删除这个标记，清理 AnCLI 数据目录和动态 wrapper。升级时不要保留这个标记。
 
-## Execution backend
+## 技术架构
 
-All catalog tools run through the single Ubuntu PRoot backend. This keeps glibc, Python, Node/npm, proxy, DNS, browser hand-off, and app-data behavior consistent across tools.
-
-## Troubleshooting
-
-### TUI tools (mimo / claude / opencode / agy) don't start from `/`
-
-All Node/Bun-based TUIs (mimo, opencode, claude) scan the current directory's file tree at startup. From `/` inside the container, that scan covers the entire rootfs plus the `/data` and `/sdcard` bindings — hundreds of thousands of files — which hangs or silently aborts the TUI. Python (aider) and Go/Rust tools are affected to a lesser degree.
-
-The wrappers redirect launches from `/` or another path that is not visible inside the container to the container HOME (`/root`). This keeps TUI startup focused on a small working directory. The wrapper binds every common Android tree that exists in the current root namespace; if that namespace has no `/sdcard` alias, it skips that alias and continues with `/storage`, `/mnt`, `/data`, and the other available trees.
-
-The dsh directory picker therefore starts at `/root` when launched from `/`. Dot directories such as `.dsh` and `.agents` are tool state; enable hidden files to see them. Set `default_cwd` to `/sdcard` or `/sdcard/code` when phone storage should be the starting location.
-
-Agent commands started from Termius remain active while the Termius session stays alive in the background. If the terminal app is swiped away or force-stopped, the wrapper watchdog sees the original parent disappear and stops the PRoot child. A detached service is not created for interactive tools; use a dedicated service manager for a web-only process if it must survive the terminal app.
-
-If you want to work on a project instead, `cd` into it first:
-
-```bash
-cd /sdcard/MyProject && mimo
-```
-
-### Tools take ~10s to start from `/sdcard`
-
-`/sdcard` is Android's FUSE (emulated storage): every file operation costs 50–200 ms (proot translation + FUSE round trip). Startup scans that take 100 ms on a normal disk take ~10 s there. For fast startups, keep the project **inside the container rootfs** instead:
-
-```bash
-cd /root/projects && mimo   # instant startup, native ext4 speed
-```
-
-The wrapper also avoids repeating slow setup on every launch: the system proxy is detected via `dumpsys connectivity` and cached for 30 seconds (see `ancli_env.sh`), and Clash virtual-IP loopback binds are only re-applied when missing.
-
-### `bash -c 'test -x <file>'` 在容器内总是失败（faccessat2）
-
-已知问题：官方 proot（5.4.0）在部分 aarch64 环境上未映射 `faccessat2` syscall（glibc 2.39 的 `bash` `[ -x ]` 依赖它），导致权限检测可能误报 `false`；部分 Android shell 的 `test -x` 也可能误报，因此不要把 `test -x` 当作可执行性证明。影响 jadx 等 Java 工具启动脚本里的 `JAVA_HOME`/`-x` 检测。
-
-**绕法**（mimo 已验证）：
-- 用 Python `os.access(path, os.X_OK)`、`command -v` 或直接调用程序判断可执行性。
-- Java 工具用显式入口：`exec java -cp /path/jadx-all.jar jadx.cli.JadxCLI "$@"`；压缩包解出的启动文件先 `chmod +x`。
-- Termux 的 proot 构建依赖 Android 环境缺少的 `libtalloc` 和 `liblandroid-shmem`，AnCLI 使用自带的 PRoot Ubuntu 后端。
-
-### No update notification in KernelSU/Magisk manager
-
-The manager polls `update.json` (`updateJson` in `module.prop`). If `raw.githubusercontent.com` is unreachable on your network, no update will appear — use a proxy/VPN, or point `updateJson` at a jsDelivr mirror. Also verify the `zipUrl` asset name exactly matches what you uploaded to the GitHub release — a mismatch silently disables OTA.
-
-This is separate from **tool** updates inside the module: the module OTA upgrades AnCLI itself, while the WebUI's 检查更新 / `ancli check` reports newer versions of the AI CLIs you installed. Both need working network + proxy.
-
-### TLS & package-source trade-offs (known)
-
-- Official version checks and installer-script downloads verify TLS certificates first, and fall back to an **unverified** retry only when certificate validation fails (the proot container may ship an incomplete CA store). Downloads of third-party installer scripts then execute them with `bash` — review what you install.
-- `customize.sh` installs APT packages with `--allow-unauthenticated` (the rootfs ships with a minimal keyring) and downloads `ubuntu-base` without a checksum. Both are pragmatic trade-offs for a bootstrap that must work offline-first; do not extend this pattern to user-supplied inputs.
-
-## Technical Details
-
-For the execution architecture, dual-injection wrapper mechanism, PRoot configuration, and registry schema, see the [Architecture Document](ARCHITECTURE.md). For technical boundaries and compatibility analysis, see the [Compatibility Dossier](COMPATIBILITY.md).
+关于双重注入免重启原理、PRoot 挂载细节及应用目录格式，请参阅 [技术架构详细文档](ARCHITECTURE.md)。关于 Android 15/16 下 Node.js 和 Bun 的兼容性技术边界，请参阅 [兼容性 white paper](COMPATIBILITY.md)。
