@@ -1786,6 +1786,8 @@ class TestReviewRegressions:
         (ancli_dir / "secrets" / "fake.env").write_text("SECRET=x", encoding="utf-8")
         (ancli_dir / ".update_cache.json").write_text("{}", encoding="utf-8")
         (ancli_dir / ".webui_old.log").write_text("old", encoding="utf-8")
+        current_log = ancli_dir / ".webui_current.log"
+        current_log.write_text("reset output", encoding="utf-8")
         (root_home / ".agents").mkdir()
         (root_home / ".agents" / "AGENTS.md").write_text("old memory", encoding="utf-8")
         (root_home / "project.txt").write_text("delete me", encoding="utf-8")
@@ -1793,12 +1795,13 @@ class TestReviewRegressions:
         (rootfs / "usr" / "local" / "lib").mkdir(parents=True)
         (rootfs / "usr" / "local" / "lib" / "node_modules").mkdir()
 
-        result = core.reset_environment(verbose=False)
+        result = core.reset_environment(keep_log=str(current_log), verbose=False)
 
         assert result["status"] == "ok"
         assert not (ancli_dir / "installed.json").exists()
         assert not (ancli_dir / "secrets" / "fake.env").exists()
         assert not (ancli_dir / ".webui_old.log").exists()
+        assert current_log.exists()
         assert not (root_home / "project.txt").exists()
         assert not (rootfs / "usr" / "local" / "bin" / "fake").exists()
         context = root_home / ".agents" / "AGENTS.md"
