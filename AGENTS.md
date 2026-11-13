@@ -187,7 +187,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin main && git push origin vX.Y.Z
 # 5) inspect the KernelSU Check Run and the immutable Release asset
 # 6) confirm the manager-visible manifest is live and points to the new asset
-curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json
+curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json
 ```
 
 Release rules:

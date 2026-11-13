@@ -6,8 +6,8 @@ summary: 在 Root 安卓设备上运行 Ubuntu Linux 命令行工具和 AI Agent
 description: README.md
 icon: assets/ancli-logo.png
 license: MIT
-homepage: https://github.com/AHLLX/AnCLI-Android
-support: https://github.com/AHLLX/AnCLI-Android/issues
+homepage: https://github.com/AHLLX/AnCLI
+support: https://github.com/AHLLX/AnCLI/issues
 tags: [root, terminal, linux, proot, tools]
 metamodule: false
 

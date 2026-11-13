@@ -86,7 +86,7 @@ AnCLI 保留在自己的公开 GitHub 仓库中，KernelSU Modules 负责校验�
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（例如 `ancli-19-v1.2.607.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（例如 `ancli-19-v1.2.607.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。
@@ -96,7 +96,7 @@ AnCLI 保留在自己的公开 GitHub 仓库中，KernelSU Modules 负责校验�
 在 Termux 或任意终端中获取 root 权限 (`su`) 后执行：
 
 ```bash
-curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/install.sh | sh
+curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI/main/src/install.sh | sh
 ```
 
 此脚本会自动检测当前的 root管理器，下载对应的模块 ZIP 并引导完成刷入。

@@ -89,7 +89,7 @@ asset_name = f"{module_id}-{CODE}-{VERSION}.zip"
 manifest = json.loads(read(MANIFEST))
 manifest["version"] = VERSION
 manifest["versionCode"] = CODE
-manifest["zipUrl"] = (f"https://github.com/AHLLX/AnCLI-Android/releases/download/"
+manifest["zipUrl"] = (f"https://github.com/AHLLX/AnCLI/releases/download/"
                       f"{VERSION}/{asset_name}")
 write(MANIFEST, json.dumps(manifest, indent=2) + "\n")
 print("update.json:", {k: manifest[k] for k in ("version", "versionCode", "zipUrl")})

@@ -111,7 +111,7 @@ For later upgrades, increase `versionCode`, run `python scripts/prepare_release.
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-<versionCode>-<version>.zip`, e.g. `ancli-19-v1.2.607.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-<versionCode>-<version>.zip`, e.g. `ancli-19-v1.2.607.zip`) from the [Releases](https://github.com/AHLLX/AnCLI/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -121,7 +121,7 @@ For later upgrades, increase `versionCode`, run `python scripts/prepare_release.
 Run the following command as root in Termux or any terminal emulator:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/install.sh | sh
+curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI/main/src/install.sh | sh
 ```
 
 This script detects your active root manager, downloads the module ZIP, and guides you through the installation.

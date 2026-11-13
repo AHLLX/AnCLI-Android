@@ -12,7 +12,7 @@ info() { printf "${C}>${NC} %s\n" "$1"; }
 
 # Resolve the latest module URL from update.json (single source of truth),
 # so releases only need to update that one file.
-UPDATE_JSON_URL="https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json"
+UPDATE_JSON_URL="https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json"
 MODULE_URL=$(curl -fsSL --connect-timeout 15 --max-time 30 "$UPDATE_JSON_URL" 2>/dev/null \
     | sed -n 's/.*"zipUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
 if [ -z "${MODULE_URL:-}" ]; then
