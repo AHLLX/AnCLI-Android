@@ -12,6 +12,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const src = path.join(root, 'src', 'module', 'webroot', 'index.html');
+const logo = path.join(root, 'src', 'module', 'webroot', 'logo.png');
 const listJson = fs.readFileSync(path.join(__dirname, 'list.json'), 'utf8');
 const statusJson = fs.readFileSync(path.join(__dirname, 'status.json'), 'utf8');
 
@@ -82,6 +83,12 @@ const trailer = (scenario, theme, dialog, settings) => `
 `;
 
 let html = fs.readFileSync(src, 'utf8');
+// Keep the local screenshot self-contained when the WebUI references its
+// packaged logo beside index.html.
+if (fs.existsSync(logo)) {
+  const logoData = 'data:image/png;base64,' + fs.readFileSync(logo).toString('base64');
+  html = html.replace(/src="logo\.png\?v=[^"]+"/, `src="${logoData}"`);
+}
 // 2026-11-13: Accept LF and CRLF source files; the preview harness must not
 // depend on the editor's line-ending choice when injecting the bridge mock.
 html = html.replace(/<script>\r?\n\/\* =+/, mock + '<script>\n/* ====');

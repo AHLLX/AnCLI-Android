@@ -42,4 +42,13 @@ if mkdir -p /data/local/tmp/ancli/shm 2>/dev/null; then
     chmod 1777 /data/local/tmp/ancli/shm 2>/dev/null || true
     SHM_BIND="-b /data/local/tmp/ancli/shm:/dev/shm"
 fi
-exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli -b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"
+# Some adb-root namespaces omit the /sdcard alias. Keep every available
+# Android tree mapped and skip only an absent alias to avoid a noisy proot
+# warning during the launcher itself.
+ANCLI_BIND_ARGS=""
+for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system; do
+    if [ -e "$_ancli_bind" ] || [ -d "$_ancli_bind" ]; then
+        ANCLI_BIND_ARGS="$ANCLI_BIND_ARGS -b $_ancli_bind"
+    fi
+done
+exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

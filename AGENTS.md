@@ -6,7 +6,7 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-13, v1.2.601)
+## Current handoff (2026-11-13, v1.2.602)
 
 - Keep the single `proot-ubuntu` backend. The old native execution branch and host-mode shims are removed.
 - Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
@@ -16,7 +16,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - The WebUI theme is stored locally in the page; the language is persisted through AnCLI global config. Do not add a second settings store.
 - `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode intentionally reads the bundled or available registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
 - `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
-- Release `v1.2.601` uses `versionCode=13`; keep the tag, `update.json`, module asset, and changelog aligned.
+- Release `v1.2.602` uses `versionCode=14`; keep the tag, `update.json`, module asset, and changelog aligned.
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
@@ -154,9 +154,9 @@ the bundled docs. Aider-style tools with no skill system use `CONVENTIONS.md` / 
 - **Go Socket Binds**: Go binaries (like `agy`) crash when binding to `198.18.0.x` virtual IPs created by Clash TUN. Ensure `ancli_env.sh` pre-binds these to the loopback interface (`ip addr add 198.18.0.x/32 dev lo`).
 
 ## 9. PRoot Path Resolution & TUI Crashes
-- **The `/sdcard` Trap**: Android's `/sdcard` is a complex chain of symlinks pointing to `/mnt/user/0/...` or `/storage/emulated/0`. 
+- **The `/sdcard` Trap**: Android's `/sdcard` is a complex chain of symlinks pointing to `/mnt/user/0/...` or `/storage/emulated/0`; some adb-root namespaces omit the alias entirely.
 - **Node.js/Bun TUI Panics**: If you run Node.js-based tools (like `mimo`) inside PRoot while inside `/sdcard`, the tool will attempt to resolve its absolute physical path. If PRoot is missing `-b /mnt` or `-b /data` binds, the physical path resolution will fail, causing the Event Loop or TUI library to silently crash (you won't even see an error, the TUI simply won't launch).
-- **The Solution**: NEVER use dynamic path binding heuristics (e.g. `case "$PWD"`). Instead, ALWAYS bind the entire physical tree unconditionally when generating wrappers: `-b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig`. This ensures all underlying symlink targets exist within the container.
+- **The Solution**: Do not choose binds from `$PWD`. Generate wrappers with the complete common-tree list and include each path when it exists in the current namespace: `/sdcard`, `/storage`, `/mnt`, `/data`, `/apex`, `/linkerconfig`, and `/system`. This keeps symlink targets available without emitting a fatal-looking warning for an absent `/sdcard` alias.
 
 ## 10. Version & Release Checklist (CRITICAL)
 Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, so **every version number lives in three places and must move together**:
@@ -167,7 +167,7 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
 | GitHub Release asset | `ancli-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.601` is a valid small release after `v1.2.6`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.601` selects the next code; pass an explicit second argument only when a different increasing code is required.
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.602` is the current small release after `v1.2.601`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.602` selects the next code; pass an explicit second argument only when a different increasing code is required.
 
 Release procedure (copy-paste, in order):
 

@@ -26,7 +26,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.601"
+VERSION = "1.2.602"
 
 REGISTRY_URL   = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -832,11 +832,19 @@ if ! grep -qs " $ANCLI_DATA_MNT " /proc/mounts; then
 fi
 fi
 
-# 9. Launch PRoot with unified global binds
-# By binding all common Android root directories (/sdcard, /storage, /mnt, /data, /apex, /system),
-# we prevent Node.js fs.realpath and other symlink-following logic from breaking.
+# 9. Launch PRoot with unified global binds.
+# Bind every common Android tree that exists in this mount namespace. Some
+# adb-root namespaces omit /sdcard even though /storage and /mnt are present;
+# skipping only that absent path avoids a noisy proot warning while preserving
+# the full physical-tree mapping wherever Android exposes it.
+ANCLI_BIND_ARGS=""
+for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system; do
+    if [ -e "$_ancli_bind" ] || [ -d "$_ancli_bind" ]; then
+        ANCLI_BIND_ARGS="$ANCLI_BIND_ARGS -b $_ancli_bind"
+    fi
+done
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
--b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system \\
+$ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
 -w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
 _ancli_rc=$?

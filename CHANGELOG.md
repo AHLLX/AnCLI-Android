@@ -1,3 +1,9 @@
+## v1.2.602 (2026-11-13)
+
+- Replace the module and WebUI branding with the black terminal and Android robot logo.
+- Skip only unavailable Android bind aliases such as `/sdcard` when generating wrappers, removing the noisy PRoot warning while keeping all available physical trees mapped.
+- Document that dsh's default workspace is the container HOME `/root`; users can set `/sdcard` or `/sdcard/code` as the default working directory.
+
 ## v1.2.601 (2026-11-13)
 
 - Keep one Ubuntu/PRoot execution backend and remove the unused native wrapper path.

@@ -312,8 +312,12 @@ class TestWrapperGeneration:
         # /dev/shm conditional bind for Node/Bun workers
         assert 'SHM_BIND="-b ' in wrapper
         assert "shm:/dev/shm" in wrapper
-        # full unconditional binds (AGENTS.md requirement)
-        assert "-b /sdcard -b /storage -b /mnt -b /data -b /apex -b /linkerconfig -b /system" in wrapper
+        # The wrapper considers every common Android tree and skips only paths
+        # absent from the caller's mount namespace (for example /sdcard under
+        # some adb-root shells), avoiding a noisy proot warning.
+        assert "for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system" in wrapper
+        assert 'ANCLI_BIND_ARGS="$ANCLI_BIND_ARGS -b $_ancli_bind"' in wrapper
+        assert "$ANCLI_BIND_ARGS" in wrapper
         # env bootstrap + per-tool secrets sourcing
         assert "ancli_env.sh" in wrapper
         assert "secrets/mimo.env" in wrapper

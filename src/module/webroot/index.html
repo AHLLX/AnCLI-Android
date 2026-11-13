@@ -85,12 +85,11 @@ body {
 body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--surface); }
 .brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .mark {
-  width: 27px; height: 27px; flex: none; border-radius: 9px;
-  display: grid; place-items: center; color: var(--accent-ink);
-  background: linear-gradient(150deg, var(--accent), color-mix(in srgb, var(--accent) 62%, #000 12%));
-  box-shadow: var(--shadow-sm);
+  width: 32px; height: 32px; flex: none; border-radius: 9px;
+  display: grid; place-items: center; overflow: hidden;
+  background: #000; box-shadow: var(--shadow-sm);
 }
-.mark svg { width: 15px; height: 15px; }
+.mark img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .brand b { font-size: 15px; font-weight: 650; letter-spacing: .01em; }
 .brand small { display: block; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.2; }
 
@@ -396,11 +395,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 15c0-6 4-10 9-10s9 4 9 10v9H4z"/><path d="m6 5-2-3M20 5l2-3M4 15h18"/>
-        <circle cx="10" cy="11" r="1" fill="currentColor" stroke="none"/>
-        <path d="M25 11h4l-4 4h4M29 20v-5"/>
-      </svg>
+      <img src="logo.png?v=1.2.602" alt="">
     </span>
     <span>
       <b>AnCLI</b>
