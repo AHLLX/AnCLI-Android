@@ -6,7 +6,7 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-13, v1.2.606)
+## Current handoff (2026-11-13, v1.2.607)
 
 - Keep the single `proot-ubuntu` backend. The old native execution branch and host-mode shims are removed.
 - Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
@@ -17,7 +17,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode reads the bundled registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
 - `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
 - Agent wrappers record the launching terminal parent PID and kernel start time. A watchdog stops the PRoot child when that parent disappears, so swiping away or force-stopping the terminal does not leave a live Agent behind; merely backgrounding the terminal keeps the Agent running. The `ancli reset` launcher also kills known Agent/PRoot processes before removing their files.
-- Release `v1.2.606` uses `versionCode=18`; keep the tag, `update.json`, module asset, and changelog aligned.
+- Release `v1.2.607` uses `versionCode=19`; the KernelSU official catalog workflow publishes the immutable asset `ancli-19-v1.2.607.zip`.
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
@@ -166,24 +166,26 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | :--- | :--- | :--- |
 | `src/module/module.prop` | `version` / `versionCode` | source of truth; `versionCode` must always increase |
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
-| GitHub Release asset | `ancli-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
+| GitHub Release asset | `<id>-<versionCode>-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.606` is the current small release after `v1.2.605`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.606` selects the next code; pass an explicit second argument only when a different increasing code is required.
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.607` is the current small release after `v1.2.606`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.607 19` synchronizes the five version sources and the official KernelSU asset name.
 
 Release procedure (copy-paste, in order):
 
 ```bash
-# 1) bump version: src/module/module.prop (version=vX.Y.Z, versionCode=N+1) and update.json (same + zipUrl/changelog)
-# 2) update CHANGELOG.md (managers display it via update.json -> changelog URL)
-# 3) build the flashable zip (build.sh syncs src/* into src/module/ancli/ first)
-sh build.sh
-unzip -l ancli-vX.Y.Z.zip | head          # sanity: module.prop must be at the ZIP ROOT, not nested
-# 4) commit + tag + push
+# 1) add an `## Unreleased — ...` section to CHANGELOG.md
+# 2) synchronize module.prop, update.json, core, registry and the official asset name
+python scripts/prepare_release.py vX.Y.Z N
+# 3) build the flashable zip (module.prop must be at the ZIP root)
+python scripts/build_module.py
+unzip -l <id>-N-vX.Y.Z.zip | head
+# 4) run local checks, then commit, tag and push; the pinned workflow publishes the release
+python scripts/extract_release_notes.py vX.Y.Z .release-notes.md
+python -m pytest tests/ -q
 git add -A && git commit -m "release: vX.Y.Z (versionCode N)"
 git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin main && git push origin vX.Y.Z
-# 5) publish the asset (name must equal update.json zipUrl basename)
-gh release create vX.Y.Z ancli-vX.Y.Z.zip --title "vX.Y.Z" --notes-file CHANGELOG.md
+# 5) inspect the KernelSU Check Run and the immutable Release asset
 # 6) confirm the manager-visible manifest is live and points to the new asset
 curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json
 ```
@@ -191,6 +193,9 @@ curl -sL https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/update.json
 Release rules:
 
 - **Never reuse or decrease `versionCode`**: managers compare it to decide there is an update.
+- **Never edit or replace an immutable Release**: fix a bad build with a new tag and a higher `versionCode`.
+- **Keep the KernelSU workflow pinned**: it performs the same ZIP validation as the official catalog and fails if the published Release is not immutable.
+- **Release notes must be version-specific**: use `scripts/extract_release_notes.py`; do not publish the entire historical `CHANGELOG.md` as one Release body.
 - **Never ship a zip whose root is not the module root** (no extra folder around `module.prop`), and keep the module directory name equal to `id` in `module.prop`.
 - **Upgrade must not lose user data**: `uninstall.sh` preserves `/data/local/tmp/ancli/rootfs` and `installed.json` (see section 4.5). Re-check that rule before every release that touches install/uninstall logic.
 - **Pre-release checks you can actually run here**: `sh -n` on every `src/module/*.sh`, `python -m pytest tests/`, and a manual read of the diff for `/system` writes (must not exist — see section 3 dual-injection).

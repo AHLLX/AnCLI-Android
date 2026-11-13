@@ -101,11 +101,17 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
   cookie); (3) if the browser blocks cookies for the site, allow `127.0.0.1` or use another browser —
   the server side works, as `scripts/probe_dsh_auth.py` verifies against a live instance.
 
+## KernelSU Modules directory maintenance
+
+AnCLI stays in its public GitHub repository while KernelSU Modules validates and indexes immutable Releases. Before the first submission, enable **Settings → General → Releases → Enable release immutability** in GitHub, then use the [KernelSU Developer Portal](https://developers.kernelsu.org/) in this order: **Precheck → Preview → Submit**. The registered module ID is `ancli`.
+
+For later upgrades, increase `versionCode`, run `python scripts/prepare_release.py` and `python scripts/build_module.py`, then push the `v*` tag. The repository [KernelSU release workflow](.github/workflows/kernelsu-release.yml) builds and publishes the immutable Release. Official assets use `ancli-<versionCode>-<version>.zip`, for example `ancli-19-v1.2.607.zip`. See [KernelSU maintenance](docs/KERNELSU-MAINTENANCE.md) for the complete runbook.
+
 ## Installation
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.606.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-<versionCode>-<version>.zip`, e.g. `ancli-19-v1.2.607.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -364,7 +370,7 @@ ls /mnt/ancli-data/data/com.tencent.mm  # one app's data
 | Component | Path | Description |
 | :--- | :--- | :--- |
 | **Ubuntu Rootfs** | `/data/local/tmp/ancli/rootfs/` | PRoot guest container |
-| **AnCLI Core** | `/data/local/tmp/ancli/bin/ancli-core.py` | Python package manager |
+| **AnCLI** | `/data/local/tmp/ancli/bin/ancli-core.py` | Python package manager |
 | **State Database** | `/data/local/tmp/ancli/installed.json` | Installed app metadata |
 | **Module Directory** | `/data/adb/modules/ancli/` | Systemless module files |
 | **Dynamic Bin Paths** | `/data/adb/ksu/bin/` or `/data/adb/ap/bin/` | Reboot-free wrapper paths |

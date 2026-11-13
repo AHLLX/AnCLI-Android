@@ -3,8 +3,8 @@ move every version number together.
 
 Usage:
     python scripts/prepare_release.py                # re-sync to the current version (no CHANGELOG fold)
-    python scripts/prepare_release.py v1.2.601       # multi-digit patch version, versionCode = current + 1
-    python scripts/prepare_release.py v1.2.601 601   # new version with an explicit versionCode
+    python scripts/prepare_release.py v1.2.607       # multi-digit patch version, versionCode = current + 1
+    python scripts/prepare_release.py v1.2.607 19    # new version with an explicit versionCode
 
 Why this script derives instead of carrying literals: the v1.2.4 cut left the
 core's VERSION at 1.2.3 (the manager said v1.2.4 while `ancli --version` said
@@ -12,7 +12,7 @@ core's VERSION at 1.2.3 (the manager said v1.2.4 while `ancli --version` said
 hand. Here every copy is written from one source:
 
     src/module/module.prop     version / versionCode   (managers read this)
-    update.json                version / versionCode / zipUrl
+    update.json                version / versionCode / KernelSU asset zipUrl
     src/ancli-core.py          VERSION                  (`ancli --version`, --json payloads)
     src/registry.json          top-level "version"      (docs/bookkeeping; no code reads it)
     CHANGELOG.md               ## vX.Y.Z section
@@ -40,6 +40,7 @@ def write(path, text):
 
 
 prop = read(PROP)
+module_id = re.search(r"^id=(.+)$", prop, re.M).group(1).strip()
 current_version = re.search(r"^version=(.+)$", prop, re.M).group(1).strip()
 current_code = int(re.search(r"^versionCode=(\d+)$", prop, re.M).group(1))
 
@@ -83,12 +84,13 @@ write(PROP, prop)
 print("module.prop:", [line for line in prop.splitlines()
                        if line.startswith(("version", "versionCode"))])
 
-# 3) update.json (zipUrl must name the exact release asset)
+# 3) update.json (the official action names assets as <id>-<versionCode>-<version>.zip)
+asset_name = f"{module_id}-{CODE}-{VERSION}.zip"
 manifest = json.loads(read(MANIFEST))
 manifest["version"] = VERSION
 manifest["versionCode"] = CODE
 manifest["zipUrl"] = (f"https://github.com/AHLLX/AnCLI-Android/releases/download/"
-                      f"{VERSION}/ancli-{VERSION}.zip")
+                      f"{VERSION}/{asset_name}")
 write(MANIFEST, json.dumps(manifest, indent=2) + "\n")
 print("update.json:", {k: manifest[k] for k in ("version", "versionCode", "zipUrl")})
 
@@ -113,4 +115,5 @@ write(REGISTRY, registry_text)
 print(f"registry.json: version = {VERSION.lstrip('v')}")
 
 print(f"\n[OK] {VERSION} (versionCode {CODE}) is consistent across all five places.")
-print("     Next: python scripts/build_module.py, then commit, tag, push, gh release create.")
+print(f"     KernelSU asset: {asset_name}")
+print("     Next: python scripts/build_module.py, commit, tag, push; the KernelSU workflow publishes the immutable release.")

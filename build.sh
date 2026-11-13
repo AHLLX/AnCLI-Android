@@ -4,15 +4,17 @@
 # Packages src/module/ into a flashable ZIP
 # ============================================================
 # Usage (from repo root):
-#   sh build.sh              → outputs ancli-<version>.zip (version from module.prop)
+#   sh build.sh              → outputs ancli-<versionCode>-<version>.zip
 #   sh build.sh custom-name  → outputs custom-name.zip
 
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODULE_DIR="$SCRIPT_DIR/src/module"
+MODULE_ID=$(grep '^id=' "$MODULE_DIR/module.prop" | cut -d= -f2)
 VERSION=$(grep '^version=' "$MODULE_DIR/module.prop" | cut -d= -f2)
-OUTPUT="${1:-ancli-${VERSION}.zip}"
+VERSION_CODE=$(grep '^versionCode=' "$MODULE_DIR/module.prop" | cut -d= -f2)
+OUTPUT="${1:-${MODULE_ID}-${VERSION_CODE}-${VERSION}.zip}"
 
 # Sync latest source files into module package
 echo "> Syncing source files..."

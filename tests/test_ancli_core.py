@@ -1122,7 +1122,7 @@ def test_release_version_strings_move_together():
 
     assert prop_version == manifest['version'] == 'v' + core.VERSION
     assert prop_code == manifest['versionCode']
-    assert manifest['zipUrl'].endswith(f"ancli-{prop_version}.zip")
+    assert manifest['zipUrl'].endswith(f"ancli-{prop_code}-{prop_version}.zip")
 
     # customize.sh announces the version in the flash log: it must read module.prop,
     # not carry a literal that goes stale (the v1.2.4 log said v1.2.3).

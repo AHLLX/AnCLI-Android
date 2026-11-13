@@ -1,0 +1,91 @@
+name: AnCLI KernelSU release
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/kernelsu-release.yml"
+      - "module.yaml"
+      - "src/module/**"
+      - "src/ancli-core.py"
+      - "src/registry.json"
+      - "src/runtime-context/**"
+      - "scripts/build_module.py"
+      - "scripts/prepare_release.py"
+      - "scripts/extract_release_notes.py"
+      - "CHANGELOG.md"
+
+permissions:
+  contents: read
+
+jobs:
+  precheck:
+    name: KernelSU ZIP precheck
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Read module version
+        id: metadata
+        shell: bash
+        run: |
+          echo "version=$(sed -n 's/^version=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
+          echo "version_code=$(sed -n 's/^versionCode=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the module ZIP
+        run: python3 scripts/build_module.py
+
+      - name: Run the KernelSU validator
+        uses: KernelSU-Modules/tools/actions/module-release@e72995777c079c0bb32c49cd6fccd2773ebb0987
+        with:
+          zip: ancli-${{ steps.metadata.outputs.version_code }}-${{ steps.metadata.outputs.version }}.zip
+          asset-pattern: ancli-*.zip
+          dry-run: true
+
+  release:
+    name: Publish immutable KernelSU release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Read module version
+        id: metadata
+        shell: bash
+        run: |
+          echo "version=$(sed -n 's/^version=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
+          echo "version_code=$(sed -n 's/^versionCode=//p' src/module/module.prop)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the module ZIP
+        run: python3 scripts/build_module.py
+
+      - name: Extract this version's changelog
+        run: python3 scripts/extract_release_notes.py "${GITHUB_REF_NAME}" .release-notes.md
+
+      - name: Publish and verify the immutable release
+        id: release
+        uses: KernelSU-Modules/tools/actions/module-release@e72995777c079c0bb32c49cd6fccd2773ebb0987
+        with:
+          zip: ancli-${{ steps.metadata.outputs.version_code }}-${{ steps.metadata.outputs.version }}.zip
+          asset-pattern: ancli-*.zip
+          release-notes-file: .release-notes.md
+          require-immutable: true
+
+      - name: Print release digest
+        env:
+          RELEASE_URL: ${{ steps.release.outputs.release-url }}
+          ASSET_NAME: ${{ steps.release.outputs.asset-name }}
+          SHA256: ${{ steps.release.outputs.sha256 }}
+        run: |
+          echo "AnCLI release: ${RELEASE_URL}"
+          echo "Asset: ${ASSET_NAME}"
+          echo "SHA-256: ${SHA256}"

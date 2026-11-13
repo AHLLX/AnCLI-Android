@@ -1,3 +1,11 @@
+## v1.2.607 (2026-11-13)
+
+### KernelSU official module maintenance
+
+- Add a pinned KernelSU Modules release workflow for pull-request prechecks and immutable tag releases.
+- Use the official `ancli-<versionCode>-<version>.zip` asset name and keep `update.json` aligned with it.
+- Add the AnCLI KernelSU maintenance runbook and make the module display name `AnCLI`.
+
 ## v1.2.606 (2026-11-13)
 
 ### device-specific runtime memory

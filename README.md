@@ -76,11 +76,17 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 - **浏览器会自动打开**：`dsh web` 打印带鉴权的 URL 后交给手机浏览器（AnCLI 在宿主侧代开：容器里跑不了 Android 的 `am`，失败时会把 URL 回显到终端）。这个 URL 带**每次运行的 token**——直接打开收藏夹里的 `127.0.0.1:3080` 会显示 *"dsh web authentication required"*，请用打印出来的完整 URL（它会写入签名 cookie 再跳到不带 token 的地址）。`--no-open` 可只在终端保留 URL；如果上一次 `dsh web` 还在跑，端口被占用，新的会直接退出——先 `Ctrl+C` 停掉旧的。
 - **看到 "authentication required" 怎么排查**：那句话只表示"这次请求没带上有效 cookie"。① 确认端口上跑的是**当前**这个实例（旧的 `dsh web` 没停掉时，浏览器打开新实例的 token 也会被旧实例拒绝）——先 `Ctrl+C` 停掉所有旧会话再重开；② 用**完整打印的 URL 新开一个标签页**（不要刷新那个已经跳成 `/` 的地址，也不要开无痕模式）；③ 浏览器若禁用了该站点 cookie，请放行 `127.0.0.1` 或换个浏览器——服务端流程本身可用（可用 `scripts/probe_dsh_auth.py` 在容器里验证）。
 
+## KernelSU 官方模块目录维护
+
+AnCLI 保留在自己的公开 GitHub 仓库中，KernelSU Modules 负责校验并索引不可变 Release。首次提交前，在 GitHub 仓库开启 **Settings → General → Releases → Enable release immutability**，然后在 [KernelSU Developer Portal](https://developers.kernelsu.org/) 中执行 **预检 → 预览 → 提交收录**。模块 ID 固定为 `ancli`。
+
+后续升级只需提高 `versionCode`，运行 `python scripts/prepare_release.py` 和 `python scripts/build_module.py`，提交 `v*` 标签并推送；仓库内的 [KernelSU 发布工作流](.github/workflows/kernelsu-release.yml) 会构建并发布不可变 Release。官方资产名称为 `ancli-<versionCode>-<version>.zip`，例如 `ancli-19-v1.2.607.zip`。完整维护步骤见 [KernelSU 官方目录维护](docs/KERNELSU-MAINTENANCE.md)。
+
 ## 安装方法
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.606.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（例如 `ancli-19-v1.2.607.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。

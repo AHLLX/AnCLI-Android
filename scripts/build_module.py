@@ -22,17 +22,24 @@ SKIP_DIRS = {".git", "__MACOSX", "__pycache__"}
 SKIP_FILES = {".DS_Store"}
 
 
-def module_version():
+def module_metadata():
+    values = {}
     with open(os.path.join(MODULE_DIR, "module.prop"), encoding="utf-8") as fh:
         for line in fh:
-            if line.startswith("version="):
-                return line.split("=", 1)[1].strip()
-    raise SystemExit("module.prop has no version=")
+            if "=" in line:
+                key, value = line.rstrip("\n").split("=", 1)
+                values[key] = value.strip()
+    for key in ("id", "version", "versionCode"):
+        if not values.get(key):
+            raise SystemExit(f"module.prop has no {key}=")
+    return values
 
 
 def main():
-    version = module_version()
-    output = sys.argv[1] if len(sys.argv) > 1 else f"ancli-{version}.zip"
+    metadata = module_metadata()
+    version = metadata["version"]
+    output = (sys.argv[1] if len(sys.argv) > 1 else
+              f"{metadata['id']}-{metadata['versionCode']}-{version}.zip")
     output_path = os.path.join(ROOT, output)
 
     print("> Syncing source files...")
