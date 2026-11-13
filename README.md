@@ -80,13 +80,13 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 AnCLI 保留在自己的公开 GitHub 仓库中，KernelSU Modules 负责校验并索引不可变 Release。首次提交前，在 GitHub 仓库开启 **Settings → General → Releases → Enable release immutability**，然后在 [KernelSU Developer Portal](https://developers.kernelsu.org/) 中执行 **预检 → 预览 → 提交收录**。模块 ID 固定为 `ancli`。
 
-后续升级只需提高 `versionCode`，运行 `python scripts/prepare_release.py` 和 `python scripts/build_module.py`，提交 `v*` 标签并推送；仓库内的 [KernelSU 发布工作流](.github/workflows/kernelsu-release.yml) 会构建并发布不可变 Release。官方资产名称为 `ancli-<versionCode>-<version>.zip`，当前资产为 `ancli-20-v1.2.608.zip`。完整维护步骤见 [KernelSU 官方目录维护](docs/KERNELSU-MAINTENANCE.md)。
+后续升级只需提高 `versionCode`，运行 `python scripts/prepare_release.py` 和 `python scripts/build_module.py`，提交 `v*` 标签并推送；仓库内的 [KernelSU 发布工作流](.github/workflows/kernelsu-release.yml) 会构建并发布不可变 Release。官方资产名称为 `ancli-<versionCode>-<version>.zip`，当前资产为 `ancli-21-v1.2.609.zip`。完整维护步骤见 [KernelSU 官方目录维护](docs/KERNELSU-MAINTENANCE.md)。
 
 ## 安装方法
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（当前为 `ancli-20-v1.2.608.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（当前为 `ancli-21-v1.2.609.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。

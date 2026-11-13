@@ -17,7 +17,7 @@ AnCLI 保留在自己的公开 GitHub 仓库中，KernelSU Modules 只读取仓�
 
 4. 在门户点击 **预检**，确认没有错误后再点击 **提交收录**，提交模块 ID `ancli`。
 
-Release 不可变功能不会追溯修改旧版本；启用后要发布一个更高版本号的新 Release。AnCLI 当前版本使用 `v1.2.608` 和 `versionCode=20`。
+Release 不可变功能不会追溯修改旧版本；启用后要发布一个更高版本号的新 Release。AnCLI 当前版本使用 `v1.2.609` 和 `versionCode=21`。
 
 ## 发布新版本
 
@@ -25,9 +25,9 @@ Release 不可变功能不会追溯修改旧版本；启用后要发布一个更
 
 ```bash
 # 1. 在 CHANGELOG.md 顶部添加一个 ## Unreleased — ... 区块
-python scripts/prepare_release.py v1.2.608 20
+python scripts/prepare_release.py v1.2.609 21
 
-# 2. 本地构建，默认文件名为 ancli-20-v1.2.608.zip
+# 2. 本地构建，默认文件名为 ancli-21-v1.2.609.zip
 python scripts/build_module.py
 
 # 3. 基础检查
@@ -38,14 +38,14 @@ sh -n src/module/service.sh
 sh -n src/module/uninstall.sh
 
 # 4. 检查 ZIP 根目录
-unzip -l ancli-20-v1.2.608.zip | head
+unzip -l ancli-21-v1.2.609.zip | head
 
 # 5. 提交、打标签并推送；标签会触发 .github/workflows/kernelsu-release.yml
 git add -A
-git commit -m "release: v1.2.608 (versionCode 20)"
-git tag -a v1.2.608 -m "v1.2.608"
+git commit -m "release: v1.2.609 (versionCode 21)"
+git tag -a v1.2.609 -m "v1.2.609"
 git push origin main
-git push origin v1.2.608
+git push origin v1.2.609
 ```
 
 工作流会自动完成：
@@ -67,7 +67,7 @@ ancli-<versionCode>-<version>.zip
 例如：
 
 ```text
-ancli-20-v1.2.608.zip
+ancli-21-v1.2.609.zip
 ```
 
 因此 `update.json` 的 `zipUrl` 必须指向这个完整文件名。`scripts/prepare_release.py` 会自动同步它。

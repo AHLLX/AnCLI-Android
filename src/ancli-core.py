@@ -28,7 +28,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.608"
+VERSION = "1.2.609"
 
 # 2026-11-13: Keep the application catalog in the flashed module. Official
 # release checks use each app's own `latest` entry and never fetch a second

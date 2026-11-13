@@ -3,8 +3,8 @@ move every version number together.
 
 Usage:
     python scripts/prepare_release.py                # re-sync to the current version (no CHANGELOG fold)
-    python scripts/prepare_release.py v1.2.608       # multi-digit patch version, versionCode = current + 1
-    python scripts/prepare_release.py v1.2.608 20    # new version with an explicit versionCode
+    python scripts/prepare_release.py v1.2.609       # multi-digit patch version, versionCode = current + 1
+    python scripts/prepare_release.py v1.2.609 21    # new version with an explicit versionCode
 
 Why this script derives instead of carrying literals: the v1.2.4 cut left the
 core's VERSION at 1.2.3 (the manager said v1.2.4 while `ancli --version` said

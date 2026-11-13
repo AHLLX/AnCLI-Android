@@ -6,6 +6,10 @@
 # Keep this entrypoint deliberately narrow: it forwards POSIX-compatible
 # command execution to Android's shell and never starts a second PRoot.
 # GNU Bash-only syntax still belongs inside the container's /bin/bash.
+# Make AnCLI's dynamic wrapper visible to the host command runner even when its
+# inherited PATH contains only /system/bin. The wrapper then enters PRoot for
+# `ancli`, `agy`, `dsh`, and other managed commands.
+export PATH=/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/modules/ancli/system/bin:/system/bin:/system/xbin:$PATH
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --noprofile|--norc)

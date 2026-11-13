@@ -1,7 +1,7 @@
 """Extract one version section from CHANGELOG.md for an immutable release.
 
 Usage:
-    python scripts/extract_release_notes.py v1.2.608 .release-notes.md
+    python scripts/extract_release_notes.py v1.2.609 .release-notes.md
 
 KernelSU Modules displays the Release notes as the version changelog. Passing
 the complete CHANGELOG would make every release repeat all previous versions,

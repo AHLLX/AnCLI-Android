@@ -1,3 +1,9 @@
+## v1.2.609 (2026-11-13)
+
+### Antigravity host command path
+
+- Prepend the KernelSU/APatch wrapper directories inside the AGY host Bash compatibility entrypoint so `ancli` and managed tools remain discoverable when the runner inherits only `/system/bin`.
+
 ## v1.2.608 (2026-11-13)
 
 ### Antigravity host command compatibility
