@@ -4,7 +4,7 @@
 
 ## 当前基线
 
-- 当前仓库版本：`v1.2.603`，模块 `versionCode=15`。
+- 当前仓库版本：`v1.2.604`，模块 `versionCode=16`。
 - 运行后端：Android 宿主 wrapper → 单层 PRoot → Ubuntu 24.04 arm64 glibc rootfs。
 - 核心：[`src/ancli-core.py`](src/ancli-core.py)，只使用 Python 标准库。
 - registry：[`src/registry.json`](src/registry.json)，安装、卸载、版本探测和官方 latest 来源都由数据定义。

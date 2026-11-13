@@ -395,7 +395,7 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">
-      <img src="logo.png?v=1.2.603" alt="">
+      <img src="logo.png?v=1.2.604" alt="">
     </span>
     <span>
       <b>AnCLI</b>
@@ -1199,7 +1199,6 @@ async function loadStatus() {
 
 let lastCheck = 0;
 let lastCheckFailed = 0;
-let checkTtl = 21600;
 let supportsCheck = false;
 let autoCheckStarted = false;
 
@@ -1211,7 +1210,6 @@ async function loadApps() {
     currentApps = data.apps || [];
     lastCheck = data.last_check || 0;
     lastCheckFailed = data.check_failed || 0;
-    if (typeof data.check_ttl === 'number' && data.check_ttl > 0) checkTtl = data.check_ttl;
     supportsCheck = (typeof data.check_ttl === 'number');
     if (data.ancli_version) document.getElementById('stVer').textContent = 'v' + data.ancli_version;
     renderApps(currentApps);
@@ -1233,7 +1231,7 @@ const SOURCE_LABELS = [
   [/^npm:/, '官方 npm'],
   [/^manifest$/, '官方发布清单'],
   [/^channel$/, '官方通道'],
-  [/^registry$/, 'registry 声明'],
+  [/^registry$/, '模块声明'],
   [/^none$/, '无官方接口'],
 ];
 function srcLabel(src) {
@@ -1350,7 +1348,7 @@ function renderApps(apps) {
   setStat('stUpdates', pending ? pending + ' 个' : '无', pending ? null : 'ok');
   setStat('stCount', apps.filter(a => a.installed).length + ' 个');
   if (!apps.length) {
-    wrap.innerHTML = '<div class="card empty">registry 中没有可用工具 — 点「检查更新」拉取云端 registry</div>';
+    wrap.innerHTML = '<div class="card empty">模块内置目录中没有可用工具</div>';
     return;
   }
   wrap.innerHTML = apps.map(a => {
@@ -1537,12 +1535,12 @@ async function doRepair() {
 }
 
 async function maybeAutoCheck() {
+  // 2026-11-13: Refresh vendor versions on every WebUI session; the catalog
+  // is local, so this request only checks official app release endpoints.
   if (autoCheckStarted || !supportsCheck) return;
-  const age = lastCheck ? Math.floor(Date.now() / 1000) - lastCheck : Infinity;
-  if (age < checkTtl) return;
   if (!currentApps.some(a => a.installed)) return;
   autoCheckStarted = true;
-  logLine('官方版本信息已过期（' + (lastCheck ? fmtAge(age) + '前' : '从未检查') + '），自动检查…', 'dim');
+  logLine('正在读取已安装工具的官方地址和版本…', 'dim');
   setBusy(true);
   try { await runBackground(ANCLI + ' check'); }
   finally { await trimTaskLogs(); setBusy(false); await loadApps(); }
@@ -2032,4 +2030,4 @@ if (window.matchMedia) {
 })();
 </script>
 </body>
-</html>
+</html>\n

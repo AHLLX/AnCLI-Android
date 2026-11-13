@@ -26,10 +26,11 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.603"
+VERSION = "1.2.604"
 
-REGISTRY_URL   = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
-LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
+# 2026-11-13: Keep the application catalog in the flashed module. Official
+# release checks use each app's own `latest` entry and never fetch a second
+# AnCLI registry from the network.
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
 SECRETS_DIR    = f"{ANCLI_DIR}/secrets"   # Per-tool API key files (mode 0600)
 CONFIG_FILE    = "/root/.ancli-config.json"
@@ -48,13 +49,13 @@ GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url")
 # exist under $ROOTFS on disk), so an existence check must skip them.
 BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
                     "/data", "/apex", "/system", "/linkerconfig")
-# Upstream "official latest version" cache written by `ancli check` and merged
-# into `ancli list --json` (so the WebUI shows update badges without needing a
-# network round-trip on every page load).
+# Official latest-version cache written by `ancli check` and merged into
+# `ancli list --json`; it supplies offline fallback data after the WebUI login
+# check completes.
 UPDATE_CACHE   = f"{ANCLI_DIR}/.update_cache.json"
 DNS_CACHE      = f"{ANCLI_DIR}/.dns_cache"   # real DNS servers, probed on the host by ancli_env.sh
-CHECK_TTL      = 6 * 3600                 # seconds; the WebUI auto-checks when older
-CHECK_TTL_FAILED = 15 * 60                # shorter retry window when a check had failures
+CHECK_TTL      = 6 * 3600                 # cache hint exposed to older WebUI clients
+CHECK_TTL_FAILED = 15 * 60                # shorter retry hint after a failed check
 PROBE_TIMEOUT  = 20                       # seconds per `version_cmd` probe (a --version must be fast)
 
 # Allowed command prefixes for security validation.
@@ -418,7 +419,7 @@ def _t(key, *args):
 
 
 # ---------------------------------------------------------------------------
-# Registry & State
+# Bundled catalog, official version checks, and state
 # ---------------------------------------------------------------------------
 
 def _urlopen_verified(url, headers, timeout):
@@ -458,114 +459,43 @@ def _http_json(url, timeout=15):
 
 
 
-def _fetch_registry_once(req):
-    """Perform one registry fetch with cert verification enabled; fall back to an
-    unverified context only when certificate validation fails (the PRoot container
-    may ship an incomplete CA store). Plain network errors propagate to the retry loop."""
-    try:
-        with urllib.request.urlopen(req, timeout=15) as response:
-            return json.loads(response.read().decode())
-    except (ssl.SSLError, urllib.error.URLError) as e:
-        if not _is_cert_verification_error(e):
-            raise
-        # Cert validation failed -> warn and retry once without verification,
-        # scoped to this request.
-        print(f"\033[93m[!] TLS certificate verification failed ({e}); retrying this request without verification.\033[0m")
-        with urllib.request.urlopen(req, timeout=15, context=ssl._create_unverified_context()) as response:
-            return json.loads(response.read().decode())
-
-
-def fetch_registry():
-    # Local test mode fallback
-    if os.path.exists(f"{ANCLI_DIR}/test_mode"):
-        # Offline local-registry mode (device testing): newest copy wins, so a
-        # stale file cannot shadow a freshly deployed one.
-        for p in _registry_cache_candidates() or _registry_cache_paths():
-            if os.path.exists(p):
-                try:
-                    with open(p, "r") as f:
-                        return json.load(f)
-                except Exception:
-                    pass
-
-    last_net_err = None
-    for attempt in range(3):
+def _registry_paths():
+    """Return the two module-owned catalog copies, newest first."""
+    paths = [f"{ANCLI_DIR}/registry.json", f"{ANCLI_DIR}/bin/registry.json"]
+    existing = []
+    for path in paths:
         try:
-            req = urllib.request.Request(REGISTRY_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            data = _fetch_registry_once(req)
-            # Try to cache locally; silently ignore if the filesystem is read-only
-            # (e.g. SELinux denies writes from inside the PRoot context).
-            try:
-                with open(LOCAL_REGISTRY, "w") as f:
-                    json.dump(data, f)
-            except OSError:
-                pass
-            return data
-        except urllib.error.HTTPError as e:
-            # 4xx means the URL/branch is wrong — retrying cannot fix it, and
-            # silently serving a stale cache is how users end up with an app
-            # "not found in registry". Fail loudly and immediately.
-            if 400 <= e.code < 500 and e.code != 429:
-                print(f"\033[91m[X] Registry fetch rejected with HTTP {e.code}: {REGISTRY_URL}\033[0m")
-                print("\033[93m    The registry URL/branch is broken; fix it instead of retrying.\033[0m")
-                last_net_err = e
-                break
-            last_net_err = e
-            if attempt < 2:
-                print(f"\033[93m[!] Retry {attempt+1}/3: {e}\033[0m")
-                time.sleep(2)
-        except Exception as e:
-            last_net_err = e
-            if attempt < 2:
-                print(f"\033[93m[!] Retry {attempt+1}/3: {e}\033[0m")
-                time.sleep(2)
-    # All retries exhausted, fall back to the newest local copy: the cache
-    # written by an earlier successful fetch, else the registry shipped inside
-    # the module ZIP (needed for a first boot with no network at all).
-    candidates = _registry_cache_candidates()
-    cached = _load_local_registry_cache()
-    if cached is not None:
-        source = candidates[0] if candidates else 'unknown'
-        kind = 'fetched cache' if os.path.basename(source) == os.path.basename(LOCAL_REGISTRY) \
-            else 'bundled registry'
-        print(f"\033[93m[!] Using local {kind} ({source}) — network unavailable: {last_net_err}\033[0m")
-        return cached
-
-    print(f"\033[91m[X] Failed to fetch registry, no cache, and no fallback found: {last_net_err}\033[0m")
-    sys.exit(1)
-
-# Registry copies that can exist on disk (resolved at call time so tests and
-# path overrides stay valid). The core reads 'bin/registry.json' (shipped by
-# customize.sh); 'registry.json' is accepted too because older module builds
-# deployed it there.
-def _registry_cache_paths():
-    return (LOCAL_REGISTRY, f"{ANCLI_DIR}/bin/registry.json", f"{ANCLI_DIR}/registry.json")
-
-def _registry_cache_candidates():
-    """Existing registry files, newest modification time first.
-
-    Choosing by mtime means a stale leftover can never shadow a freshly
-    fetched/deployed registry (the bug that hid new per-app versions before)."""
-    found = []
-    for p in _registry_cache_paths():
-        try:
-            if os.path.exists(p):
-                found.append((os.path.getmtime(p), p))
+            if os.path.exists(path):
+                existing.append((os.path.getmtime(path), path))
         except OSError:
             continue
-    found.sort(key=lambda item: item[0], reverse=True)
-    return [p for _, p in found]
+    existing.sort(key=lambda item: item[0], reverse=True)
+    return [path for _, path in existing]
 
-def _load_local_registry_cache():
-    """Load registry from local disk cache only — no network request.
-    Returns None if no cache is available."""
-    for p in _registry_cache_candidates():
+
+def _load_bundled_registry():
+    """Load the catalog shipped with this module; never access the network."""
+    for path in _registry_paths():
         try:
-            with open(p, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict) and isinstance(data.get("apps"), dict):
+                return data
+        except (OSError, ValueError, TypeError):
+            continue
     return None
+
+
+def load_registry(required=True):
+    """Load the module catalog and fail clearly when the payload is missing."""
+    registry = _load_bundled_registry()
+    if registry is not None:
+        return registry
+    message = "[X] Bundled application catalog is missing or invalid. Repair or reinstall the module."
+    if required:
+        print(message)
+        sys.exit(1)
+    return {}
 
 def load_installed():
     if os.path.exists(INSTALLED_FILE):
@@ -1024,7 +954,7 @@ def _registry_exe_prefixes(registry=None):
     """ALLOWED_CMD_PREFIXES plus every registry executable, so a registry-defined
     `version_cmd` (e.g. "claude --version") can run while no arbitrary command can."""
     prefixes = list(ALLOWED_CMD_PREFIXES)
-    reg = registry if registry is not None else (_load_local_registry_cache() or {})
+    reg = registry if registry is not None else (_load_bundled_registry() or {})
     for app in (reg.get('apps') or {}).values():
         exe = str(app.get('executable', ''))
         if _is_safe_exec_name(exe):
@@ -1581,21 +1511,6 @@ def repair_env(registry):
         print("\033[93m[!] Registry payload is not an object; repairing without it.\033[0m")
         registry = {}
 
-    # A failed network refresh can leave an older user cache newer than the
-    # registry shipped by the module. Prefer the bundled copy when it carries
-    # a newer version so repair regenerates wrappers from the installed code.
-    bundled_path = f"{ANCLI_DIR}/registry.json"
-    try:
-        with open(bundled_path, "r") as fh:
-            bundled = json.load(fh)
-        if (_ver_key(bundled.get("version")) or ()) > (_ver_key(registry.get("version")) or ()):
-            registry = bundled
-            with open(LOCAL_REGISTRY, "w") as fh:
-                json.dump(bundled, fh)
-            print(f"\033[96m[i] Using bundled registry v{bundled.get('version')} for repair.\033[0m")
-    except (OSError, ValueError, TypeError):
-        pass
-
     # Guard: ROOTFS must be a real path before doing any recursive operations
     if not ROOTFS or not os.path.isabs(ROOTFS) or len(ROOTFS) < 10:
         print(f"\033[91m[X] Refusing to operate: ROOTFS path looks invalid: {ROOTFS}\033[0m")
@@ -1688,7 +1603,7 @@ def repair_env(registry):
         print(f"\033[96m[*] Verifying wrappers for installed apps: {', '.join(installed.keys())}...\033[0m")
         if not registry:
             try:
-                registry = fetch_registry()
+                registry = load_registry()
             except Exception:
                 pass
 
@@ -2052,7 +1967,7 @@ def _reset_registry_executables():
                 names.add(str(info["executable"]))
     except Exception:
         pass
-    for path in _registry_cache_paths()[1:]:
+    for path in _registry_paths():
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -2074,7 +1989,7 @@ def reset_environment(keep_log=None, verbose=True, reinstall=False):
     memory, update cache, and WebUI history is removed. ``keep_log`` is used by
     the WebUI so the reset operation can keep its own new output log while
     deleting all previous logs. When ``reinstall`` is true, the pre-reset app
-    IDs are installed again from the bundled or freshly fetched registry, with
+    IDs are installed again from the bundled registry, with
     no old secrets or proxy configuration restored.
     """
     root_home = os.path.join(ROOTFS, "root")
@@ -2144,7 +2059,8 @@ def reset_environment(keep_log=None, verbose=True, reinstall=False):
     # Clear AnCLI's mutable state but keep core, proot, registry copies, hosts,
     # runtime-context template, and rootfs itself.
     mutable_files = (
-        INSTALLED_FILE, UPDATE_CACHE, DNS_CACHE, LOCAL_REGISTRY,
+        INSTALLED_FILE, UPDATE_CACHE, DNS_CACHE,
+        os.path.join(ROOTFS, "root", ".ancli-registry.json"),
         f"{ANCLI_DIR}/.proxy_cache", f"{ANCLI_DIR}/.proxy_cache_last",
         f"{ANCLI_DIR}/.open_url", f"{ANCLI_DIR}/agent-memory/AGENTS.md",
     )
@@ -2201,7 +2117,7 @@ def reset_environment(keep_log=None, verbose=True, reinstall=False):
     }
     if reinstall and before:
         try:
-            registry = fetch_registry()
+            registry = load_registry()
             for app_id in before:
                 if install_app(app_id, registry):
                     result["reinstalled_apps"].append(app_id)
@@ -2349,7 +2265,7 @@ def _stdout_to_stderr():
     """Keep `--json` stdout parseable: progress/diagnostics go to stderr.
 
     Redirects at BOTH levels: the Python-level `sys.stdout` (our own prints and
-    `fetch_registry` retries) and file descriptor 1 (anything a child process
+    official version checks) and file descriptor 1 (anything a child process
     writes — `os.system`/`subprocess` helpers, which ignore `sys.stdout`)."""
     sys.stdout.flush()
     saved_fd = None
@@ -2614,7 +2530,7 @@ def check_updates(registry=None, probe=True):
 
     and persist (2) in UPDATE_CACHE so `ancli list --json` / the WebUI stay fast
     and offline-safe. Returns the cache dict (with `failed`/`succeeded` counts)."""
-    registry = registry if registry is not None else fetch_registry()
+    registry = registry if registry is not None else load_registry()
     installed = load_installed()
     # Repair config values that older WebUI builds stored percent-encoded. Merged
     # (not saved wholesale) together with the probes at the end of this run.
@@ -2750,13 +2666,12 @@ def _app_record(aid, app, installed_flag, info, entry=None):
 
 
 def list_apps_json():
-    """Registry + install state + last known official versions as pure JSON.
+    """Bundled catalog + install state + last known official versions as JSON.
 
-    Offline-safe by design: it reads the local registry cache and the
-    `.update_cache.json` written by `ancli check` (the WebUI triggers a check
-    when that cache is older than CHECK_TTL)."""
+    Offline-safe by design: it reads the module catalog and the
+    `.update_cache.json` written by `ancli check`."""
     with _stdout_to_stderr():
-        registry = _load_local_registry_cache() or {}
+        registry = _load_bundled_registry() or {}
         installed = load_installed()
         cache = _load_update_cache()
         latest = cache.get('latest') or {}
@@ -2777,7 +2692,7 @@ def list_apps_json():
 def check_updates_json():
     """`ancli check --json`: refresh installed + official versions, emit the verdict."""
     with _stdout_to_stderr():
-        registry = fetch_registry()
+        registry = load_registry()
         cache = check_updates(registry)
         installed = load_installed()
         latest = cache.get('latest') or {}
@@ -2903,7 +2818,7 @@ def migrate_encoded_env(installed=None, save=True):
 
 def show_menu():
     global LANG
-    registry = fetch_registry()
+    registry = load_registry()
 
     while True:
         installed = load_installed()
@@ -3033,14 +2948,14 @@ if __name__ == "__main__":
                 result = reset_environment(keep_log=keep_log, reinstall=reinstall, verbose=True)
                 sys.exit(0 if result.get("status") == "ok" else 1)
 
-            # 'list' reads local state only — no network needed.
-            # 'check' refreshes both the cloud registry and the upstream versions.
-            # All write-ops (install/update/config/repair) fetch the latest cloud registry.
+            # 'list' reads the bundled catalog and local state only.
+            # 'check' refreshes installed versions and each vendor's official version.
+            # Install/update/config/repair use the same bundled catalog.
             if action == "list":
                 if "--json" in sys.argv:
                     list_apps_json()
                     sys.exit(0)
-                registry  = _load_local_registry_cache()  # offline-safe, no network
+                registry  = _load_bundled_registry()  # offline-safe, no network
                 installed = load_installed()
                 latest_map = (_load_update_cache().get('latest') or {})
                 if not installed:
@@ -3057,7 +2972,7 @@ if __name__ == "__main__":
                         status_tag = f"\033[92m{_t('app_active')}\033[0m" if bin_exists else f"\033[91m{_t('app_broken')}\033[0m"
 
                         # Update hint: prefer the upstream version from `ancli check`,
-                        # else the registry's declared version (local cache, no network).
+                        # else the registry's declared version (bundled fallback).
                         app_reg = (registry or {}).get('apps', {}).get(aid, {})
                         entry = latest_map.get(aid) or {}
                         cloud_ver = entry.get('version') or app_reg.get('version', 'unknown')
@@ -3098,7 +3013,7 @@ if __name__ == "__main__":
                     result = setup_runtime_context(refresh=refresh)
                 sys.exit(1 if result.get("status") == "error" else 0)
             elif action == "status":
-                # No registry needed: fetching one would let retry diagnostics land
+                # No catalog needed: loading one would add work before this status
                 # on stdout and break the WebUI's JSON.parse (observed on device).
                 if "--json" in sys.argv:
                     status_json()
@@ -3120,7 +3035,7 @@ if __name__ == "__main__":
                 sys.exit(0)
             elif action == "config" and (not app_id or app_id.startswith("-")):
                 # Global settings, not a per-app env dialog: no registry needed,
-                # so it is dispatched before the (network) registry fetch.
+                # so it is dispatched before the catalog and version-check paths.
                 settings_command(sys.argv[2:])
                 sys.exit(0)
             elif action == "check":
@@ -3143,7 +3058,7 @@ if __name__ == "__main__":
                     print("\033[93m[i] Nothing to check (no installed apps).\033[0m")
                 sys.exit(0)
             else:
-                registry = fetch_registry()
+                registry = load_registry()
                 ok = True
                 if action == "install" and app_id:
                     ok = install_app(app_id, registry)

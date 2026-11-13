@@ -11,7 +11,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - **OTA 自动更新**：支持 root 管理器的 `updateJson` 更新规范，可直接在管理器 App 内检测并一键升级模块。
 - **开机自动维护**：内置引导服务，每次开机时自动修复容器 DNS 配置与关键文件权限，保证环境稳定性。
 - **交互式变量注入**：在安装工具时自动提示输入所需的环境变量（如 API 密钥、自定义中转端），并安全地注入到运行包装器中。
-- **动态云端注册表**：工具的安装、更新和卸载逻辑由托管在 GitHub 上的 JSON 注册表动态解析，支持通过提交 Pull Request 扩展生态。
+- **模块内置应用目录**：工具的安装、更新和卸载逻辑由模块内置的 JSON 注册表描述；版本检查直接访问各工具的官方发布接口。
 - **命令行转义与代理直通**：通过 Python 内置网络库直连，绕过 ADB 命令行转义字符（如 `|`, `--`）被剥离的 bug；需要代理的工具使用 Android 系统代理，DeepSeek Harness（`dsh`）使用直连模式，避免旧代理缓存导致连接失败。
 - **PRoot 系统调用稳定性修补**：自动规避 Android 内核对 `io_uring` 和 `epoll` 翻译残缺导致的 Event Loop 阻塞死锁问题，确保基于 Node.js / Bun 的现代终端应用（如 MiMo 和 Claude Code）能够完美接收键盘的 Raw TTY 交互事件，不卡顿、不乱码。
 - **物理键盘输入法支持**：初始化自动安装 `fcitx5` 及 `fcitx5-chinese-addons`（中文拼音/五笔等），并在环境配置中自动向容器导出输入法环境变量（`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`），以解决部分用户在安卓设备上外接物理键盘（蓝牙/有线键盘）时，在终端 TUI 应用（如 Aider, MiMo 等）中无法直接输入中文或其他非英文字符的问题。
@@ -31,7 +31,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - Antigravity CLI 的全局规则入口是 `/root/.gemini/AGENTS.md`，AnCLI 会把它链接到同一份容器运行时记忆。
 
 ## 支持的工具生态
-*(由云端注册表动态下发)*
+*(由模块内置注册表提供)*
 
 | 工具 | 运行时 | 安装与运行后端 |
 | :--- | :--- | :--- |
@@ -65,7 +65,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.603.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.604.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。
@@ -157,9 +157,9 @@ AnCLI 不再"猜"版本号：对每个已安装的工具，它会
 | OpenCode | GitHub Releases（`anomalyco/opencode`） |
 | Grok CLI | 官方通道指针（`x.ai/cli/stable`，失败时回落 GCS 镜像） |
 
-结果缓存 6 小时（`/data/local/tmp/ancli/.update_cache.json`），所以 WebUI 打开很快、离线也能看；
-WebUI 顶部有 **检查更新 (check)** 按钮可随时联网刷新，缓存过期（>6 小时）时打开页面也会自动检查；
-单次查询失败时窗口为 15 分钟，并保留上一次已知版本。
+结果保存在（`/data/local/tmp/ancli/.update_cache.json`）中，WebUI 离线时仍可显示上次结果；
+每次登录 WebUI 都会按各工具自己的官方发布地址检查已安装工具，顶部的 **检查更新** 按钮也可手动执行同一检查；
+单个地址查询失败时保留上一次已知版本，并在对应条目显示失败状态。
 
 ```bash
 ancli check            # 联网刷新"本地版本 + 官方最新版本"
@@ -304,4 +304,4 @@ export ANCLI_MIRROR="mirrors.ustc.edu.cn"
 
 ## 技术架构
 
-关于双重注入免重启原理、PRoot 挂载细节及云端配置协议，请参阅 [技术架构详细文档](ARCHITECTURE.md)。关于 Android 15/16 下 Node.js 和 Bun 的兼容性技术边界，请参阅 [兼容性 white paper](COMPATIBILITY.md)。
+关于双重注入免重启原理、PRoot 挂载细节及应用目录格式，请参阅 [技术架构详细文档](ARCHITECTURE.md)。关于 Android 15/16 下 Node.js 和 Bun 的兼容性技术边界，请参阅 [兼容性 white paper](COMPATIBILITY.md)。

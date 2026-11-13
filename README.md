@@ -11,7 +11,7 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 - **OTA Updates**: Integrates with the root manager's `updateJson` mechanism for automated updates.
 - **Boot Service**: Automatically restores DNS configurations and file permissions on every boot.
 - **Dynamic Configuration Injection**: Configure API keys and custom endpoints anytime via `ancli config <app_id>`. Credentials are stored in per-tool secrets files (mode 0600) and sourced by the wrapper at runtime — never embedded in world-readable wrapper scripts.
-- **Cloud Registry**: Applications and installation steps are resolved dynamically from a GitHub-hosted registry.
+- **Bundled application catalog**: Applications and installation steps are defined by the registry shipped with the module.
 - **Escaping & Proxy Passthrough**: Bypasses ADB character escaping bugs via Python urllib direct downloads, forwards the Android system proxy to tools that need it, and keeps DeepSeek Harness (`dsh`) in direct-network mode so stale proxy state does not break its connection.
 - **PRoot Syscall Stabilization**: Automatically mitigates Android kernel `io_uring` and `epoll` translation bugs, ensuring modern Node.js and Bun interactive TUIs (like MiMo and Claude Code) can process raw keyboard input flawlessly without event loop blocking.
 - **Physical Keyboard Input Method Support**: Pre-installs `fcitx5` and `fcitx5-chinese-addons` during the container bootstrap phase, and automatically exports standard input variables (`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`) to solve the issue where users using external physical keyboards (Bluetooth/USB) on Android tablets/phones cannot input Chinese or non-English characters directly in terminal-based TUI tools (like Aider, MiMo).
@@ -34,7 +34,7 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 - Antigravity CLI also discovers the same generated context through `/root/.gemini/AGENTS.md`, which AnCLI links to the canonical file.
 
 ## Supported Applications
-*(Fetched dynamically from the cloud registry)*
+*(Read from the registry bundled with the module)*
 
 | App | Runtime | Installation Method |
 | :--- | :--- | :--- |
@@ -90,7 +90,7 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.603.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.604.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -191,11 +191,11 @@ latest one:
 | OpenCode | GitHub Releases (`anomalyco/opencode`) |
 | Grok CLI | Vendor channel pointer (`x.ai/cli/stable`, GCS mirror as fallback) |
 
-Results are cached for 6 hours in `/data/local/tmp/ancli/.update_cache.json`, so the
-WebUI stays fast and works offline, and a highlighted **检查更新 (check)** button
-refreshes them on demand. The WebUI also checks automatically when the cache is
-older than 6 hours (15 minutes after a failed run, keeping the last known version
-instead of falling back to the registry's declared one).
+Results are cached in `/data/local/tmp/ancli/.update_cache.json`, so the WebUI can
+show the last known result while offline. On every WebUI login, AnCLI checks the
+installed tools against their official release endpoints; the highlighted
+**检查更新 (check)** button runs the same check on demand. A failed lookup keeps
+the previous known version and records the error for that app.
 
 ```bash
 ancli check            # refresh installed + official versions (network)
@@ -372,7 +372,7 @@ export ANCLI_MIRROR="archive.ubuntu.com"
 
 ## Execution backend
 
-All official registry tools run through the single Ubuntu PRoot backend. This keeps glibc, Python, Node/npm, proxy, DNS, browser hand-off, and app-data behavior consistent across tools.
+All catalog tools run through the single Ubuntu PRoot backend. This keeps glibc, Python, Node/npm, proxy, DNS, browser hand-off, and app-data behavior consistent across tools.
 
 ## Troubleshooting
 
@@ -419,7 +419,7 @@ This is separate from **tool** updates inside the module: the module OTA upgrade
 
 ### TLS & package-source trade-offs (known)
 
-- Registry fetches and installer-script downloads verify TLS certificates first, and fall back to an **unverified** retry only when certificate validation fails (the proot container may ship an incomplete CA store). Downloads of third-party installer scripts then execute them with `bash` — review what you install.
+- Official version checks and installer-script downloads verify TLS certificates first, and fall back to an **unverified** retry only when certificate validation fails (the proot container may ship an incomplete CA store). Downloads of third-party installer scripts then execute them with `bash` — review what you install.
 - `customize.sh` installs APT packages with `--allow-unauthenticated` (the rootfs ships with a minimal keyring) and downloads `ubuntu-base` without a checksum. Both are pragmatic trade-offs for a bootstrap that must work offline-first; do not extend this pattern to user-supplied inputs.
 
 ## Technical Details

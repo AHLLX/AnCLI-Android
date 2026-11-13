@@ -54,7 +54,7 @@ AnCLI is packaged as a standard Magisk/KernelSU/APatch module.
 
 ---
 
-## 3. Dynamic Registry System
+## 3. Bundled Application Catalog
 
 The registry schema defines the metadata and installation scripts for supported tools.
 
@@ -82,13 +82,13 @@ newer upstream release (see CHANGELOG: "WebUI could not detect official versions
 ### 3.1 Update detection pipeline
 
 ```
-ancli check ─┬─ fetch_registry()            → refreshes /root/.ancli-registry.json
+ancli check ─┬─ load_registry()             → reads the module-bundled catalog
              ├─ _probe_installed_version()  → `version_cmd` per installed tool (container)
              ├─ _latest_version()           → official API per registry `latest` spec
              └─ _save_update_cache()        → /data/local/tmp/ancli/.update_cache.json
                                                 {"ts": epoch, "latest": {app: {...}}}
 
-ancli list --json / WebUI  ← reads local registry + update cache only (no network)
+ancli list --json / WebUI  ← reads bundled registry + update cache only
 ```
 
 `latest.source` values supported by `_latest_version()`:
@@ -104,9 +104,8 @@ ancli list --json / WebUI  ← reads local registry + update cache only (no netw
 | `none` | – | detection unavailable by design; the UI says so instead of guessing |
 
 Failures are per app and never fatal: the error is recorded in the cache and shown
-in the WebUI, **the previously resolved version is kept**, and the auto-check window
-drops to 15 minutes (`CHECK_TTL_FAILED`) so a transient outage is retried instead of
-freezing the loss for 6 hours. Upstream lookups reuse the proxy exported by
+in the WebUI, and **the previously resolved version is kept**. WebUI login and the
+manual check button both run the official endpoint checks. Upstream lookups reuse the proxy exported by
 `ancli_env.sh`, so they work behind the same Android system proxy as the installers.
 
 Persistence is merge-based on purpose: a check can run for minutes while the WebUI
@@ -115,8 +114,8 @@ are merged field-by-field into a freshly re-read `installed.json`
 (`_merge_installed_fields`) rather than written back from the snapshot taken at the
 start of the run.
 
-The WebUI triggers `ancli check` itself when `last_check` in the list payload is
-older than `check_ttl` (6 h, or 15 min after failures), which also migrates legacy
+The WebUI triggers `ancli check` on every login when at least one tool is installed.
+The cache hint remains in the payload for older clients; a check also migrates legacy
 install records that still hold the AnCLI framework version and decodes config values
 that older WebUI builds stored percent-encoded.
 

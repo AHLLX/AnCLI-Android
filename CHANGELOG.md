@@ -1,3 +1,11 @@
+## v1.2.604 (2026-11-13)
+
+### bundled catalog and login version checks
+
+- Remove the remote AnCLI registry URL and load the application catalog only from the flashed module.
+- Check each installed tool's official release endpoint automatically when the WebUI opens, while retaining the cached result for offline display.
+- Remove obsolete registry fetch/cache code, tests, and documentation; keep the app installer and version schema local and explicit.
+
 ## v1.2.603 (2026-11-13)
 
 - Bind Agent wrappers to the launching terminal parent so abandoned PRoot and Agent processes are stopped when a terminal app is removed.

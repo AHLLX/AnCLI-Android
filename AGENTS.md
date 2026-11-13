@@ -6,7 +6,7 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-13, v1.2.603)
+## Current handoff (2026-11-13, v1.2.604)
 
 - Keep the single `proot-ubuntu` backend. The old native execution branch and host-mode shims are removed.
 - Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
@@ -14,10 +14,10 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - WebUI task logs are stored as `.webui_*.log` plus metadata under `/data/local/tmp/ancli`. Keep the newest completed task logs up to 10 MB total, do not expire them by age, and expose the history in Settings so a reopened page can select and read old output. Running task logs are never removed by retention.
 - Settings also provides a destructive factory reset. It requires `RESET`, deletes installed app payloads, secrets, global config, Agent memory, shared skills, generated root-home files, and all WebUI logs, then regenerates the module template context. Preserve the Ubuntu rootfs and immutable module payload; do not add compatibility loading for pre-reset legacy logs. The optional reinstall mode records app IDs before clearing state and reinstalls them afterward without restoring secrets or proxy settings.
 - The WebUI theme is stored locally in the page; the language is persisted through AnCLI global config. Do not add a second settings store.
-- `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode intentionally reads the bundled or available registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
+- `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode reads the bundled registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
 - `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
 - Agent wrappers record the launching terminal parent PID and kernel start time. A watchdog stops the PRoot child when that parent disappears, so swiping away or force-stopping the terminal does not leave a live Agent behind; merely backgrounding the terminal keeps the Agent running. The `ancli reset` launcher also kills known Agent/PRoot processes before removing their files.
-- Release `v1.2.603` uses `versionCode=15`; keep the tag, `update.json`, module asset, and changelog aligned.
+- Release `v1.2.604` uses `versionCode=16`; keep the tag, `update.json`, module asset, and changelog aligned.
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
@@ -28,7 +28,7 @@ You must understand these three pillars before writing any code:
    - Bootstraps APT dependencies (`python3`, `nodejs`, `npm`) during the flash process.
 2. **`src/ancli-core.py` (The Package Manager Brain)**: 
    - Runs *inside* the Proot Ubuntu container.
-   - Fetches `registry.json` from the cloud.
+   - Loads the registry bundled with the module.
    - Generates Bash wrappers and injects them into the Android host.
    - `ancli check` resolves each installed tool's *real* version (`version_cmd`) and the
      vendor's *official* latest version (`latest` in the registry), caching both in
@@ -143,7 +143,7 @@ the bundled docs. Aider-style tools with no skill system use `CONVENTIONS.md` / 
 - **Never probe a TUI agent by hand.** `su -c 'mimo --version'` ignores the flag, opens the interactive UI and blocks forever (looks like a hung device; it cost a real debugging round). Use `ancli list --json` / `ancli check`, which probe inside the container with `PROBE_TIMEOUT` and never inherit the terminal.
 - **After flashing the module, run `ancli repair`.** The flash replaces the module directory with the ZIP contents, so `system/bin/<tool>` loses every wrapper `ancli install` had added (the tools keep working through `/data/adb/ksu/bin`, but dual-injection is incomplete until repair regenerates them). The same repair re-applies the dsh cookie patch. Also expect a harmless `cp: can't create …/bin/proot: Text file busy` in the flash log when a proot process is alive: the running binary is the same version and the reboot settles it.
 - **The WebUI can be rendered and reviewed without a device.** `.webui-preview/build.js` stubs `window.ksu` with `list --json` / `status --json` payloads captured from the device and writes `preview-*.html`; screenshot them with `chrome --headless --virtual-time-budget=4000 --window-size=412,900 --screenshot=… file:///…`. Without `--virtual-time-budget` the shot stops mid-load (skeleton cards); the harness disables CSS transitions because virtual time does not advance them (see `.webui-preview/README.md`). After any `webroot/index.html` change: render locally, then deploy through `scripts/device_deploy_helper.py` and open the page in the manager.
-- **WebUI JSON calls must stay quiet and parseable.** `status --json` is dispatched *before* the registry fetch (a registry retry prints to stdout and breaks `JSON.parse` — observed on device). Internal payload calls go through `ancli(cmd, true)` so the output panel shows user actions rather than raw JSON.
+- **WebUI JSON calls must stay quiet and parseable.** `status --json` is dispatched *before* catalog and official-version work so diagnostics cannot break `JSON.parse`. Internal payload calls go through `ancli(cmd, true)` so the output panel shows user actions rather than raw JSON.
 
 ## 8. Network Proxy & VPN Constraints (CRITICAL)
 - **VPN Bypass**: Android VPNs in TUN mode (e.g. Clash, v2rayNG) bypass Root (UID 0) traffic by default. If a Python or curl script runs as root and the proxy is not explicitly set, it will ignore the VPN and fail to connect to domains like `github.com`.
@@ -168,7 +168,7 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
 | GitHub Release asset | `ancli-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.603` is the current small release after `v1.2.602`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.603` selects the next code; pass an explicit second argument only when a different increasing code is required.
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.604` is the current small release after `v1.2.602`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.604` selects the next code; pass an explicit second argument only when a different increasing code is required.
 
 Release procedure (copy-paste, in order):
 

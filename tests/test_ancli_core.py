@@ -7,9 +7,7 @@ reads config files that don't exist on a dev machine.
 import json
 import os
 import re
-import ssl
 import sys
-import urllib.error
 
 import pytest
 
@@ -28,8 +26,8 @@ def _no_real_network(monkeypatch):
 
     Cases that need upstream behaviour patch `_http_json` / `_http_text`
     themselves, and their patch is applied after this fixture, so it wins.
-    `urlopen` is covered too, so the lower-level fetch helpers cannot silently
-    reach the network either."""
+    `urlopen` is covered too, so official version checks cannot silently reach
+    the network either."""
     def boom(*args, **kwargs):
         raise AssertionError("test attempted a real network request")
 
@@ -143,56 +141,20 @@ class TestWriteSecretsFile:
 
 
 # ---------------------------------------------------------------------------
-# TLS verification fallback
+# Bundled application catalog
 # ---------------------------------------------------------------------------
 
-class TestRegistryTLS:
-    def test_falls_back_to_unverified_only_on_cert_error(self, monkeypatch):
-        calls = []
-        class FakeResp:
-            def read(self):
-                return b'{"apps": {}}'
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                return False
+class TestBundledCatalog:
+    def test_loads_the_module_owned_catalog_without_network(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
+        catalog = tmp_path / "ancli" / "registry.json"
+        catalog.parent.mkdir(parents=True)
+        catalog.write_text(json.dumps({"version": "test", "apps": {"foo": {}}}), encoding="utf-8")
+        assert core.load_registry()["apps"]["foo"] == {}
 
-        class FakeURLOpen:
-            def __init__(self, fail_first):
-                self._fail_first = fail_first
-            def __call__(self, req, timeout=15, context=None):
-                calls.append((timeout, context))
-                if self._fail_first and context is None:
-                    raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "cert"))
-                return FakeResp()
-
-        monkeypatch.setattr(core.urllib.request, "urlopen", FakeURLOpen(True))
-        data = core._fetch_registry_once(object())
-        assert data == {"apps": {}}
-        # First call verified (context None), second unverified
-        assert calls[0][1] is None
-        assert calls[1][1] is not None
-
-    def test_network_error_propagates(self, monkeypatch):
-        def boom(req, timeout=15, context=None):
-            raise urllib.error.URLError("connection refused")
-
-        monkeypatch.setattr(core.urllib.request, "urlopen", boom)
-        with pytest.raises(urllib.error.URLError):
-            core._fetch_registry_once(object())
-
-    def test_protocol_error_does_not_trigger_unverified_fallback(self, monkeypatch):
-        """Handshake/protocol SSL errors must NOT downgrade to unverified TLS."""
-        calls = []
-
-        def boom(req, timeout=15, context=None):
-            calls.append(context)
-            raise ssl.SSLError("WRONG_VERSION_NUMBER")
-
-        monkeypatch.setattr(core.urllib.request, "urlopen", boom)
-        with pytest.raises(ssl.SSLError):
-            core._fetch_registry_once(object())
-        assert calls == [None]  # only one attempt, always verified
+    def test_missing_catalog_can_be_reported_without_exiting(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "missing"))
+        assert core.load_registry(required=False) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -358,9 +320,8 @@ class TestWebUIJsonAPI:
                         "optional_env_vars": ["HTTP_PROXY"]},
             },
         }
-        reg_path = tmp_path / "registry.json"
+        reg_path = tmp_path / "ancli" / "registry.json"
         reg_path.write_text(json.dumps(reg), encoding="utf-8")
-        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(reg_path))
         return reg
 
     def test_list_apps_json_clean_output(self, tmp_path, monkeypatch, capsys):
@@ -655,10 +616,9 @@ class TestVersionProbe:
     def test_probe_without_version_cmd_is_none(self):
         assert core._probe_installed_version({}) is None
 
-    def test_probe_allows_its_own_executable_without_registry_cache(self, tmp_path, monkeypatch):
-        """A fresh/offline install has no cache; the probe must still be allowed."""
+    def test_probe_allows_its_own_executable_without_catalog(self, tmp_path, monkeypatch):
+        """A probe stays valid even when the bundled catalog is unavailable."""
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
-        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(tmp_path / "missing.json"))
         seen = {}
 
         def fake(cmd, prefixes=None, timeout=60, merge_stderr=False):
@@ -728,9 +688,8 @@ class TestUpdateCheckFlow:
                             "latest": {"source": "github", "repo": "anthropics/claude-code"},
                             "version": "2.1.283"},
         }}
-        reg_path = tmp_path / "registry.json"
+        reg_path = tmp_path / "ancli" / "registry.json"
         reg_path.write_text(json.dumps(registry), encoding="utf-8")
-        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(reg_path))
         return registry
 
     def test_check_updates_probes_installed_and_caches_official(self, tmp_path, monkeypatch, capsys):
@@ -757,7 +716,7 @@ class TestUpdateCheckFlow:
         registry = self._env(tmp_path, monkeypatch)
         core.save_installed({"claude-code": {"name": "Claude Code", "executable": "claude",
                                              "installed_version": "2.1.226", "env": {}}})
-        monkeypatch.setattr(core, 'fetch_registry', lambda: registry)
+        monkeypatch.setattr(core, 'load_registry', lambda: registry)
         monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.226')
         monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
 
@@ -871,20 +830,6 @@ class TestUpdateCheckFlow:
         app = json.loads(capsys.readouterr().out)['apps'][0]
         assert 'releases/latest/download/claude-linux-arm64.tar.gz' in app['update_cmd']
 
-    def test_registry_cache_prefers_newest_file(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
-        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(tmp_path / "fetched.json"))
-        os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
-        (tmp_path / "fetched.json").write_text(json.dumps({"version": "old", "apps": {}}), encoding="utf-8")
-        (tmp_path / "ancli" / "bin" / "registry.json").write_text(json.dumps({"version": "new", "apps": {}}), encoding="utf-8")
-        (tmp_path / "ancli" / "registry.json").write_text(json.dumps({"version": "middle", "apps": {}}), encoding="utf-8")
-        os.utime(tmp_path / "fetched.json", (1000, 1000))
-        os.utime(tmp_path / "ancli" / "bin" / "registry.json", (3000, 3000))
-        os.utime(tmp_path / "ancli" / "registry.json", (2000, 2000))
-
-        assert core._load_local_registry_cache()['version'] == 'new'
-
-
 # ---------------------------------------------------------------------------
 # Registry schema: every app must be updatable by construction
 # ---------------------------------------------------------------------------
@@ -922,7 +867,6 @@ def _core_paths(tmp_path, monkeypatch, apps=None):
     monkeypatch.setattr(core, "SECRETS_DIR", str(tmp_path / "secrets"))
     monkeypatch.setattr(core, "INSTALLED_FILE", str(tmp_path / "ancli" / "installed.json"))
     monkeypatch.setattr(core, "UPDATE_CACHE", str(tmp_path / "ancli" / ".update_cache.json"))
-    monkeypatch.setattr(core, "LOCAL_REGISTRY", str(tmp_path / "registry-cache.json"))
     os.makedirs(tmp_path / "ancli" / "bin", exist_ok=True)
     os.makedirs(tmp_path / "rootfs" / "usr" / "local" / "bin", exist_ok=True)
     return {"version": "1.2.3", "apps": apps if apps is not None else {
@@ -1123,7 +1067,7 @@ class TestCheckFailureHandling:
         registry = _core_paths(tmp_path, monkeypatch)
         core.save_installed({"claude-code": {"executable": "claude",
                                              "installed_version": "2.1.226", "env": {}}})
-        monkeypatch.setattr(core, 'fetch_registry', lambda: registry)
+        monkeypatch.setattr(core, 'load_registry', lambda: registry)
         monkeypatch.setattr(core, '_probe_installed_version', lambda app, reg=None: '2.1.226')
         monkeypatch.setattr(core, '_http_json', lambda url, timeout=15: {'tag_name': 'v2.1.283'})
 
@@ -1782,7 +1726,6 @@ class TestReviewRegressions:
         monkeypatch.setattr(core, "SECRETS_DIR", str(ancli_dir / "secrets"))
         monkeypatch.setattr(core, "UPDATE_CACHE", str(ancli_dir / ".update_cache.json"))
         monkeypatch.setattr(core, "DNS_CACHE", str(ancli_dir / ".dns_cache"))
-        monkeypatch.setattr(core, "LOCAL_REGISTRY", str(ancli_dir / ".ancli-registry.json"))
         monkeypatch.setattr(core, "SHARED_SKILL_DIR", str(root_home / ".agents" / "skills"))
         monkeypatch.setattr(core, "SKILL_LINK_DIRS", (str(root_home / ".claude" / "skills"),))
         monkeypatch.setattr(core, "KSU_BIN", str(tmp_path / "ksu"))
@@ -1804,7 +1747,7 @@ class TestReviewRegressions:
         (rootfs / "usr" / "local" / "lib").mkdir(parents=True)
         (rootfs / "usr" / "local" / "lib" / "node_modules").mkdir()
         reinstalled = []
-        monkeypatch.setattr(core, "fetch_registry", lambda: {"apps": {"fake": {"executable": "fake"}}})
+        monkeypatch.setattr(core, "load_registry", lambda: {"apps": {"fake": {"executable": "fake"}}})
         monkeypatch.setattr(core, "install_app", lambda app_id, registry: reinstalled.append(app_id) or True)
 
         result = core.reset_environment(keep_log=str(current_log), reinstall=True, verbose=False)
