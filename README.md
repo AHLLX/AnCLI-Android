@@ -80,13 +80,13 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 AnCLI 保留在自己的公开 GitHub 仓库中，KernelSU Modules 负责校验并索引不可变 Release。首次提交前，在 GitHub 仓库开启 **Settings → General → Releases → Enable release immutability**，然后在 [KernelSU Developer Portal](https://developers.kernelsu.org/) 中执行 **预检 → 预览 → 提交收录**。模块 ID 固定为 `ancli`。
 
-后续升级只需提高 `versionCode`，运行 `python scripts/prepare_release.py` 和 `python scripts/build_module.py`，提交 `v*` 标签并推送；仓库内的 [KernelSU 发布工作流](.github/workflows/kernelsu-release.yml) 会构建并发布不可变 Release。官方资产名称为 `ancli-<versionCode>-<version>.zip`，例如 `ancli-19-v1.2.607.zip`。完整维护步骤见 [KernelSU 官方目录维护](docs/KERNELSU-MAINTENANCE.md)。
+后续升级只需提高 `versionCode`，运行 `python scripts/prepare_release.py` 和 `python scripts/build_module.py`，提交 `v*` 标签并推送；仓库内的 [KernelSU 发布工作流](.github/workflows/kernelsu-release.yml) 会构建并发布不可变 Release。官方资产名称为 `ancli-<versionCode>-<version>.zip`，当前资产为 `ancli-20-v1.2.608.zip`。完整维护步骤见 [KernelSU 官方目录维护](docs/KERNELSU-MAINTENANCE.md)。
 
 ## 安装方法
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（例如 `ancli-19-v1.2.607.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI/releases) 页面下载 `ancli-<versionCode>-<版本号>.zip` 模块包（当前为 `ancli-20-v1.2.608.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。
@@ -274,6 +274,12 @@ AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，�
 写回这台设备独有的文件，并删除首次确认协议；不会写入密钥。已有的项目 `AGENTS.md` 会保留。
 模板位于 `src/runtime-context/AGENTS.md`；`ancli reset --yes` 会恢复带首次确认协议的原版，
 `ancli agent-init --refresh` 也会用它替换当前生成文件。
+
+AGY 的远程命令执行器有时会在进入 Ubuntu 容器前直接调用宿主 `bash -c`。Android 默认只有
+`/system/bin/sh`，所以模块会在 `/data/adb/ksu/bin/bash` 或 `/data/adb/ap/bin/bash` 提供一个
+仅转发 POSIX 命令的兼容入口。它不提供 GNU Bash 语法，也不启动第二个 PRoot；需要 Bash
+专有语法时仍在容器内使用 `/bin/bash`。`ancli doctor --json` 会报告这个入口是否存在，
+`ancli repair` 可以重新部署。
 
 ```bash
 ancli agent-init

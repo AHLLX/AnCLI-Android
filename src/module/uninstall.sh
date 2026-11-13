@@ -25,6 +25,10 @@ fi
 if [ "$KEEP_DATA" -eq 1 ]; then
     # Only clean up the dynamic host-side executable components, keeping rootfs and installed.json database intact
     rm -rf "$ANCLI_DIR/bin"
+    # The AGY host bash compatibility file is generated beside bin/ so that
+    # `ancli repair` can redeploy it; it is module-owned and safe to remove on
+    # a normal uninstall. User-provided host bash files are handled below.
+    rm -f "$ANCLI_DIR/bash-host-compat"
 else
     # Fully delete everything
     rm -rf "$ANCLI_DIR"
@@ -39,5 +43,11 @@ for BIN_DIR in /data/adb/ksu/bin /data/adb/ap/bin; do
         # xdg-open host helper deployed by 'ancli repair' — its content does
         # not reference ANCLI_DIR, so the grep above cannot catch it.
         rm -f "$BIN_DIR/xdg-open" 2>/dev/null || true
+        # Remove only AnCLI's marked compatibility script; preserve a real
+        # user-provided host bash binary.
+        if [ -f "$BIN_DIR/bash" ] && head -n 8 "$BIN_DIR/bash" 2>/dev/null \
+            | grep -q 'AnCLI AGY host bash compatibility'; then
+            rm -f "$BIN_DIR/bash" 2>/dev/null || true
+        fi
     fi
 done

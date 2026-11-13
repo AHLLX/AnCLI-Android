@@ -6,6 +6,7 @@
 
 ANCLI_DIR="/data/local/tmp/ancli"
 ROOTFS="${ANCLI_DIR}/rootfs"
+MODULE_DIR="${MODDIR:-/data/adb/modules/ancli}"
 
 # 1. Ensure DNS is configured (resolv.conf may be reset by system on reboot).
 #    Prefer the real DNS of the current network: getprop net.dns1/2 is empty on
@@ -95,12 +96,32 @@ if [ ! -f "$ANCLI_DIR/hosts" ]; then
 fi
 chmod 644 "$ANCLI_DIR/hosts" 2>/dev/null || true
 
+# 5.1 AGY may invoke `bash -c` from its Android-host command runner before the
+#     process enters Ubuntu. Android normally ships only /system/bin/sh. Install
+#     the marked POSIX compatibility entrypoint in dynamic root paths, while
+#     preserving a real user-provided bash binary and never touching /system/bin.
+if [ -f "$MODULE_DIR/ancli/bash-host-compat" ]; then
+    for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
+        [ -d "$INSTANT_BIN" ] || continue
+        host_bash="$INSTANT_BIN/bash"
+        replace_host_bash=0
+        if [ ! -e "$host_bash" ]; then
+            replace_host_bash=1
+        elif head -n 8 "$host_bash" 2>/dev/null | grep -q 'AnCLI AGY host bash compatibility\|AnCLI proot shim'; then
+            replace_host_bash=1
+        fi
+        if [ "$replace_host_bash" -eq 1 ]; then
+            cp -f "$MODULE_DIR/ancli/bash-host-compat" "$host_bash" 2>/dev/null || true
+            chmod 755 "$host_bash" 2>/dev/null || true
+        fi
+    done
+fi
+
 # 6. Sync app wrappers from ANCLI_DIR/bin/ to KSU/AP instant-access bin on every boot.
 #    This ensures tools installed via 'ancli install' are globally reachable without
 #    a module reinstall, and that wrapper updates take effect after reboot.
-#    NOTE: git/bash/curl are host-side *shims* deployed by 'ancli repair' for
-#    container tools; they must NOT be copied into the root PATH, where they would
-#    hijack those commands for every module and root script on the device.
+#    NOTE: the AGY host bash compatibility entrypoint is handled separately
+#    above. It must not be copied as an application wrapper.
 for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
     [ -d "$INSTANT_BIN" ] || continue
     for wrapper in "$ANCLI_DIR/bin/"*; do
@@ -114,9 +135,9 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
         [ -f "$wrapper" ] || continue
         cp -f "$wrapper" "$INSTANT_BIN/$name" 2>/dev/null || true
     done
-    # Remove shims an older AnCLI version may have copied there (they shadow the
-    # real commands for every root shell until removed).
-    for shim in git bash curl; do
+    # Remove only the old broad git/curl/proot shims. Keep the new marked bash
+    # compatibility entrypoint because AGY's host runner depends on it.
+    for shim in git curl; do
         if [ -f "$INSTANT_BIN/$shim" ] && head -n 2 "$INSTANT_BIN/$shim" 2>/dev/null | grep -q "AnCLI proot shim"; then
             rm -f "$INSTANT_BIN/$shim" 2>/dev/null || true
         fi

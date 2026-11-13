@@ -193,6 +193,14 @@ cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
+# Keep the host-side AGY command runner usable on Android. This is a narrow
+# POSIX `bash -c` compatibility entrypoint; it is not a native backend and it
+# never overlays /system/bin or starts a nested PRoot.
+if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
+    cp "$MODPATH/ancli/bash-host-compat" "$ANCLI_DIR/bash-host-compat"
+    chmod 755 "$ANCLI_DIR/bash-host-compat"
+fi
+
 # Default runtime context template. The live AGENTS.md is generated in the
 # guest-global /root/.agents directory by `ancli agent-init` / `ancli repair`;
 # this copy is only the immutable release template and is never written over a
@@ -220,6 +228,24 @@ REGISTRY_FILE="$MODPATH/ancli/registry.json"
 
 for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
     [ -d "$INSTANT_BIN" ] || continue
+
+    # AGY's remote executor starts on the Android host and may invoke `bash -c`
+    # before AnCLI enters PRoot. Install only the marked compatibility script;
+    # preserve a real user-provided bash binary.
+    if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
+        host_bash="$INSTANT_BIN/bash"
+        replace_host_bash=0
+        if [ ! -e "$host_bash" ]; then
+            replace_host_bash=1
+        elif head -n 8 "$host_bash" 2>/dev/null | grep -q 'AnCLI AGY host bash compatibility\|AnCLI proot shim'; then
+            replace_host_bash=1
+        fi
+        if [ "$replace_host_bash" -eq 1 ]; then
+            cp -f "$MODPATH/ancli/bash-host-compat" "$host_bash"
+            chmod 755 "$host_bash"
+            ui_print ">> AGY host bash compatibility: $host_bash"
+        fi
+    fi
 
     # Inject main ancli command
     cp "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"

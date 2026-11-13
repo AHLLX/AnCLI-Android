@@ -28,7 +28,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.607"
+VERSION = "1.2.608"
 
 # 2026-11-13: Keep the application catalog in the flashed module. Official
 # release checks use each app's own `latest` entry and never fetch a second
@@ -903,6 +903,76 @@ def remove_wrapper(executable):
         except Exception:
             pass
 
+
+def _deploy_agy_host_bash_compat(verbose=True):
+    """Install AGY's narrow Android-host ``bash -c`` compatibility entrypoint.
+
+    AGY can ask its remote command runner to start ``bash`` before the request
+    reaches the Ubuntu guest. Android normally has only ``/system/bin/sh``.
+    The bundled script forwards POSIX-compatible arguments to that shell; it is
+    intentionally not a second execution backend and never starts PRoot.
+    Existing non-AnCLI ``bash`` files are preserved.
+    """
+    source = f"{ANCLI_DIR}/bash-host-compat"
+    if not os.path.isfile(source):
+        if verbose:
+            print("\033[90m[i] AGY host bash compatibility file is not bundled.\033[0m")
+        return []
+
+    deployed = []
+    tmp_file = f"{ANCLI_DIR}/bin/.bash-host-compat.tmp"
+    try:
+        with open(source, "r", encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+        if "AnCLI AGY host bash compatibility" not in content:
+            if verbose:
+                print("\033[93m[!] Refusing an unmarked AGY host compatibility file.\033[0m")
+            return []
+        with open(tmp_file, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(content)
+        os.chmod(tmp_file, 0o755)
+
+        for instant_bin in (KSU_BIN, AP_BIN):
+            if not os.path.isdir(instant_bin):
+                continue
+            target = f"{instant_bin}/bash"
+            replace = not os.path.lexists(target)
+            if not replace:
+                try:
+                    with open(target, "r", encoding="utf-8", errors="replace") as fh:
+                        current = fh.read(512)
+                    replace = (
+                        "AnCLI AGY host bash compatibility" in current
+                        or "AnCLI proot shim" in current
+                    )
+                except OSError:
+                    # A real, unreadable user binary is safer to preserve.
+                    replace = False
+            if not replace:
+                if verbose:
+                    print(f"\033[90m[i] Preserved existing host bash: {target}\033[0m")
+                continue
+            rc = os.system(
+                f"cp -f {shlex.quote(tmp_file)} {shlex.quote(target)} "
+                f">/dev/null 2>&1 && chmod 755 {shlex.quote(target)} >/dev/null 2>&1"
+            )
+            if rc == 0:
+                deployed.append(target)
+                if verbose:
+                    print(f"\033[92m[OK] AGY host bash compatibility: {target}\033[0m")
+            elif verbose:
+                print(f"\033[93m[!] Could not deploy AGY host bash compatibility: {target}\033[0m")
+    except OSError as e:
+        if verbose:
+            print(f"\033[93m[!] Could not prepare AGY host bash compatibility: {e}\033[0m")
+    finally:
+        try:
+            if os.path.exists(tmp_file):
+                os.remove(tmp_file)
+        except OSError:
+            pass
+    return deployed
+
 # ---------------------------------------------------------------------------
 # Security
 # ---------------------------------------------------------------------------
@@ -1365,6 +1435,14 @@ def _runtime_context_probe():
             "shared_skills": SHARED_SKILL_DIR,
             "data_channel": ANDROID_DATA_MNT,
         },
+        "host_compatibility": {
+            "bash": {
+                "paths": [f"{KSU_BIN}/bash", f"{AP_BIN}/bash"],
+                "installed": any(
+                    os.path.isfile(f"{path}/bash") for path in (KSU_BIN, AP_BIN)
+                ),
+            },
+        },
         "commands": commands,
         "android_paths": android_paths,
         "host_commands": host_commands,
@@ -1410,6 +1488,10 @@ def _render_runtime_context_probe(probe):
         else:
             label = "未发现"
         lines.append(f"- {name}：{state['path']}，{label}")
+    compat = probe.get("host_compatibility", {}).get("bash", {})
+    compat_label = "已部署" if compat.get("installed") else "未发现"
+    lines.extend(["", "### AGY 宿主兼容入口"])
+    lines.append(f"- bash：{compat_label}；候选路径：{', '.join(compat.get('paths', []))}")
     lines.extend(["", "### 已安装工具"])
     if probe["installed_apps"]:
         for app in probe["installed_apps"]:
@@ -1790,7 +1872,12 @@ def repair_env(registry):
     print("\033[96m[*] Setting up the default Agent memory file...\033[0m")
     setup_runtime_context(refresh=True)
 
-    # 2.3 Android app-data channel: the real /data without the app namespace's
+    # 2.3 AGY's remote command runner can invoke `bash -c` on Android before
+    # entering the Ubuntu guest. Install the narrow host compatibility entrypoint
+    # without restoring the removed native backend or any broad command shim.
+    _deploy_agy_host_bash_compat()
+
+    # 2.4 Android app-data channel: the real /data without the app namespace's
     #     /data/data mask (no-op when it is already mounted or we lack root).
     print("\033[96m[*] Checking the Android app-data channel...\033[0m")
     try:
@@ -2958,6 +3045,9 @@ def status_json():
             "proot_deployed": os.path.exists(f"{ANCLI_DIR}/bin/proot"),
             "installed_count": len(load_installed()),
             "android_data": _android_data_mounted(),
+            "host_bash_compat": any(
+                os.path.isfile(f"{path}/bash") for path in (KSU_BIN, AP_BIN)
+            ),
         }
     print(json.dumps(payload, ensure_ascii=False))
 

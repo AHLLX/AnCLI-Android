@@ -1,0 +1,23 @@
+#!/system/bin/sh
+# AnCLI AGY host bash compatibility (2026-11-13).
+#
+# AGY's remote command runner may start `bash -c` before it enters the Ubuntu
+# PRoot. Android provides /system/bin/sh but normally has no host-side bash.
+# Keep this entrypoint deliberately narrow: it forwards POSIX-compatible
+# command execution to Android's shell and never starts a second PRoot.
+# GNU Bash-only syntax still belongs inside the container's /bin/bash.
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --noprofile|--norc)
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+exec /system/bin/sh "$@"

@@ -22,6 +22,7 @@ mkdir -p "$MODULE_DIR/ancli"
 cp "$SCRIPT_DIR/src/ancli-core.py" "$MODULE_DIR/ancli/ancli-core.py"
 cp "$SCRIPT_DIR/src/registry.json" "$MODULE_DIR/ancli/registry.json"
 cp "$SCRIPT_DIR/src/module/ancli_env.sh" "$MODULE_DIR/ancli/ancli_env.sh"
+cp "$SCRIPT_DIR/src/bash-host-compat" "$MODULE_DIR/ancli/bash-host-compat"
 mkdir -p "$MODULE_DIR/ancli/runtime-context"
 cp "$SCRIPT_DIR/src/runtime-context/AGENTS.md" "$MODULE_DIR/ancli/runtime-context/AGENTS.md"
 

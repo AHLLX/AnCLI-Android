@@ -105,13 +105,13 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 
 AnCLI stays in its public GitHub repository while KernelSU Modules validates and indexes immutable Releases. Before the first submission, enable **Settings → General → Releases → Enable release immutability** in GitHub, then use the [KernelSU Developer Portal](https://developers.kernelsu.org/) in this order: **Precheck → Preview → Submit**. The registered module ID is `ancli`.
 
-For later upgrades, increase `versionCode`, run `python scripts/prepare_release.py` and `python scripts/build_module.py`, then push the `v*` tag. The repository [KernelSU release workflow](.github/workflows/kernelsu-release.yml) builds and publishes the immutable Release. Official assets use `ancli-<versionCode>-<version>.zip`, for example `ancli-19-v1.2.607.zip`. See [KernelSU maintenance](docs/KERNELSU-MAINTENANCE.md) for the complete runbook.
+For later upgrades, increase `versionCode`, run `python scripts/prepare_release.py` and `python scripts/build_module.py`, then push the `v*` tag. The repository [KernelSU release workflow](.github/workflows/kernelsu-release.yml) builds and publishes the immutable Release. Official assets use `ancli-<versionCode>-<version>.zip`; the current asset is `ancli-20-v1.2.608.zip`. See [KernelSU maintenance](docs/KERNELSU-MAINTENANCE.md) for the complete runbook.
 
 ## Installation
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-<versionCode>-<version>.zip`, e.g. `ancli-19-v1.2.607.zip`) from the [Releases](https://github.com/AHLLX/AnCLI/releases) page.
+1. Download the module ZIP (`ancli-<versionCode>-<version>.zip`, currently `ancli-20-v1.2.608.zip`) from the [Releases](https://github.com/AHLLX/AnCLI/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -334,6 +334,12 @@ commands, installed tools, and operation boundaries back into that device's file
 protocol. It never writes secrets. An existing project `AGENTS.md` is kept. The source template is
 `src/runtime-context/AGENTS.md`; `ancli reset --yes` restores the original pending protocol, while
 `ancli agent-init --refresh` replaces the current generated context with it.
+
+AGY's remote command runner can invoke `bash -c` on the Android host before entering Ubuntu.
+Because Android normally provides `/system/bin/sh` but no host-side Bash, AnCLI installs a marked
+POSIX forwarding entrypoint at `/data/adb/ksu/bin/bash` or `/data/adb/ap/bin/bash`. It is not GNU
+Bash and it never starts a second PRoot; use the guest `/bin/bash` for Bash-specific syntax.
+`ancli doctor --json` reports the compatibility entrypoint and `ancli repair` can restore it.
 
 ```bash
 ancli agent-init

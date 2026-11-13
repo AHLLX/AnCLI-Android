@@ -1,3 +1,11 @@
+## v1.2.608 (2026-11-13)
+
+### Antigravity host command compatibility
+
+- Add a narrow POSIX `bash -c` compatibility entrypoint for AGY remote commands that start on the Android host before entering Ubuntu PRoot.
+- Deploy the entrypoint during module installation, at boot, and from `ancli repair` without overlaying `/system/bin` or restoring the removed native backend.
+- Report the host compatibility state through `ancli doctor --json` and the first-run runtime memory.
+
 ## v1.2.607 (2026-11-13)
 
 ### KernelSU official module maintenance

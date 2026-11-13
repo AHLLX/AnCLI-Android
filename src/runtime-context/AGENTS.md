@@ -24,7 +24,7 @@ AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/
 
 根据探测结果补充本文件的“本设备实测环境”内容，写入真实路径、绑定关系、可用命令、工具版本和操作边界；不要写入 API key、cookie、token、代理地址或其他密钥。完成后执行 `ancli agent-init --finalize`，由 AnCLI 将探测结果写回本文件并删除本节。以后以实测内容为准，仍需在环境变化时重新运行探测。
 
-工具通过宿主 wrapper 进入单层 Ubuntu PRoot。wrapper 会继承 Android 系统代理和 DNS，设置 `TMPDIR=/tmp`、`TERM`、locale、`BROWSER=/usr/local/bin/xdg-open`，并绑定 `/sdcard`、`/storage`、`/mnt`、`/data` 等 Android 路径。
+工具通过宿主 wrapper 进入单层 Ubuntu PRoot。wrapper 会继承 Android 系统代理和 DNS，设置 `TMPDIR=/tmp`、`TERM`、locale、`BROWSER=/usr/local/bin/xdg-open`，并绑定 `/sdcard`、`/storage`、`/mnt`、`/data` 等 Android 路径。AGY 的远程命令执行器可能在进入容器前先调用宿主 `bash -c`；AnCLI 会在 `/data/adb/ksu/bin/bash` 或 `/data/adb/ap/bin/bash` 提供一个仅转发 POSIX 命令到 `/system/bin/sh` 的兼容入口。它不是 GNU Bash，也不是第二套运行后端；需要 Bash 专有语法时仍应在容器内使用 `/bin/bash`。
 
 ## 设备观察（版本和路径可能变化）
 
@@ -32,7 +32,7 @@ AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/
 
 - Android 版本、内核和架构会随设备变化；容器通常是 Ubuntu 24.04 arm64。先用 `uname -a`、`getprop ro.build.version.release` 和 `ancli doctor --json` 复核，不要把模板中的版本当成当前事实。`/root` 是容器 HOME，通常不是项目仓库，先进入目标项目再工作。
 - `/data` 通常比共享存储更适合缓存和编译；`/sdcard` 及其底层挂载在不同 Android 版本上性能不同。临时文件、构建缓存和大文件优先放 `/data/local/tmp/build_cache` 或其他 `/data` 路径，最终用户文件再放共享存储。
-- 启动前先确认工具是否存在。镜像可能提供 `bash`、`sh`、Python、git、Node.js/npm、Java、`strings`、`readelf`、`objdump`、`nm`、`protoc`、`zip`、`unzip`、`wget`、`curl` 和 apt；`rg`、`fd`、`jq`、`gh`、Docker、编辑器和其他工具不应默认假定存在。
+- 启动前先确认工具是否存在。容器镜像可能提供 `bash`、`sh`、Python、git、Node.js/npm、Java、`strings`、`readelf`、`objdump`、`nm`、`protoc`、`zip`、`unzip`、`wget`、`curl` 和 apt；`rg`、`fd`、`jq`、`gh`、Docker、编辑器和其他工具不应默认假定存在。宿主侧的 `bash` 兼容入口只支持 POSIX 命令转发，不要把它当作容器内 GNU Bash。
 - Python 包按当前 registry 和项目约束安装；优先使用 venv 或 AnCLI 的安装入口，不要假设 PEP 668、镜像或 apt 参数在每台设备都相同。大型分析依赖优先放 venv。
 - 部分 aarch64 PRoot 上 `bash -c 'test -x <file>'` 可能因 `faccessat2` 映射问题误报，`sh` 的 `test -x` 也可能误报。因此不要把 `test -x` 当作可执行性证明，改用 `command -v`、Python `os.access(..., os.X_OK)`、直接调用程序，或显式 `java -cp`。从压缩包解出的启动文件需要先 `chmod +x`。
 - APK 静态分析的建议目录是 `/workspace/apk`（解包）和 `/workspace/out`（报告/源码）。`agy`、`grok` 等工具在当前设备走 PRoot；不要假设它们能作为 Android 原生 ELF 直接执行。

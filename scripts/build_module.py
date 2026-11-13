@@ -16,6 +16,7 @@ SYNC = [
     ("src/ancli-core.py", "ancli/ancli-core.py"),
     ("src/registry.json", "ancli/registry.json"),
     ("src/module/ancli_env.sh", "ancli/ancli_env.sh"),
+    ("src/bash-host-compat", "ancli/bash-host-compat"),
     ("src/runtime-context/AGENTS.md", "ancli/runtime-context/AGENTS.md"),
 ]
 SKIP_DIRS = {".git", "__MACOSX", "__pycache__"}

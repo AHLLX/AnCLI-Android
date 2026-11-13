@@ -6,9 +6,9 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-13, v1.2.607)
+## Current handoff (2026-11-13, v1.2.608)
 
-- Keep the single `proot-ubuntu` backend. The old native execution branch and host-mode shims are removed.
+- Keep the single `proot-ubuntu` backend. The old native execution branch and broad host-mode shims are removed. A narrowly scoped `/data/adb/ksu/bin/bash` or `/data/adb/ap/bin/bash` POSIX compatibility entrypoint is allowed only for AGY's host-side `bash -c` launcher and must never start a second PRoot.
 - Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
 - The WebUI settings dialog is the visual editor for `lang`, `default_cwd`, `proxy_mode`, and `proxy_url`. It also shows the active backend, Android data channel, effective directory, and proxy mode.
 - WebUI task logs are stored as `.webui_*.log` plus metadata under `/data/local/tmp/ancli`. Keep the newest completed task logs up to 10 MB total, do not expire them by age, and expose the history in Settings so a reopened page can select and read old output. Running task logs are never removed by retention.
@@ -17,7 +17,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode reads the bundled registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
 - `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
 - Agent wrappers record the launching terminal parent PID and kernel start time. A watchdog stops the PRoot child when that parent disappears, so swiping away or force-stopping the terminal does not leave a live Agent behind; merely backgrounding the terminal keeps the Agent running. The `ancli reset` launcher also kills known Agent/PRoot processes before removing their files.
-- Release `v1.2.607` uses `versionCode=19`; the KernelSU official catalog workflow publishes the immutable asset `ancli-19-v1.2.607.zip`.
+- Release `v1.2.608` uses `versionCode=20`; the KernelSU official catalog workflow publishes the immutable asset `ancli-20-v1.2.608.zip`.
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
@@ -78,6 +78,7 @@ When debugging paths or writing cleanup logic, refer to this exact physical mapp
 - **App-data channel**: `/mnt/ancli-data` (host bind of the real `/data`, visible in the container as `/mnt/ancli-data/data/<pkg>`)
 - **Global settings (2026-11-13)**: `/root/.ancli-config.json` accepts `lang`, `default_cwd`, `proxy_mode` (`system|manual|direct`) and `proxy_url`. `ancli config` with no app id prints/updates them; `ancli config --json` reports the supported keys. Wrappers read `default_cwd` and proxy settings at launch, so changing them needs no wrapper regeneration. The WebUI's Settings dialog is the visual editor for the same file and shows the backend, data channel, effective directory, and proxy mode.
 - **Runtime context**: `ancli agent-init` renders the bundled `src/runtime-context/AGENTS.md` template into the guest-wide `/root/.agents/AGENTS.md`; the fresh file requires the first Agent session to probe the device and run `ancli agent-init --finalize`, which writes measured paths and capabilities back and removes the prompt. `ancli reset --yes` restores that pending template. `ancli repair`, `ancli skills`, and successful installs ensure it too. It links both `/root/.gemini/AGENTS.md` and `/root/.gemini/GEMINI.md` for Antigravity, because deployed builds use either filename. Existing project `AGENTS.md` files are kept. The generated global `AGENTS.md` contains environment paths and guidance, never secret values.
+- **AGY host command compatibility**: Android normally has `/system/bin/sh` but no host-side `bash`. The module may install a marked POSIX forwarding script at `/data/adb/ksu/bin/bash` and `/data/adb/ap/bin/bash` so AGY's remote `bash -c` probe can start. It supports only POSIX syntax, preserves a real user-provided bash, never overlays `/system/bin`, and never re-enters PRoot. `ancli doctor --json` reports `host_compatibility.bash`; `ancli repair` restores the entrypoint when it is missing.
 
 **Why `/data/data` can look empty.** An `su` started from an app (Termius, an SSH-server app) runs in
 that app's mount namespace, where Android masks `/data/data` with a tmpfs (`mode 751`, only the app's
@@ -168,7 +169,7 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
 | GitHub Release asset | `<id>-<versionCode>-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.607` is the current small release after `v1.2.606`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.607 19` synchronizes the five version sources and the official KernelSU asset name.
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.608` is the current small release after `v1.2.607`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.608 20` synchronizes the five version sources and the official KernelSU asset name.
 
 Release procedure (copy-paste, in order):
 
