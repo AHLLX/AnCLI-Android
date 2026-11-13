@@ -350,6 +350,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
 .settings-danger .setting-card-head { margin-bottom: 6px; }
 .settings-danger .setting-icon { color: var(--danger); background: var(--surface); }
 .settings-danger p { margin: 0 0 9px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.reset-reinstall { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; }
+.reset-reinstall input { width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--accent); }
+.reset-reinstall label { display: block; margin: 0; font-size: 12px; font-weight: 600; }
+.reset-reinstall small { display: block; margin-top: 3px; color: var(--faint); font-size: 10.5px; line-height: 1.45; font-weight: 400; }
 .adv { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 12px; }
 .adv summary {
   cursor: pointer; list-style: none; color: var(--muted); font-size: 12px; font-weight: 600;
@@ -582,6 +586,10 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
     </div>
     <div class="dlg-body">
       <div class="note" data-i18n="factoryResetWarning">此操作不可恢复。它会删除容器中的应用、密钥、配置、skills、Agent 记忆和全部旧日志；Ubuntu rootfs 和 AnCLI 模块文件会保留。</div>
+      <div class="reset-reinstall">
+        <input id="resetReinstall" type="checkbox">
+        <div><label for="resetReinstall" data-i18n="factoryResetReinstall">清除后重新配置环境</label><small data-i18n="factoryResetReinstallHint">保留清理前的应用清单，在干净 PRoot 中重新安装；不会恢复 API key、代理和应用配置。</small></div>
+      </div>
       <div class="field">
         <label data-i18n="factoryResetConfirmLabel">输入 RESET 继续</label>
         <input id="resetConfirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="RESET">
@@ -1273,7 +1281,8 @@ const UI_TEXT = {
     factoryReset: '完全初始化环境', factoryResetTitle: '恢复模块自带的干净 Agent 环境',
     factoryResetHint: '删除已安装应用、密钥、配置、skills、记忆文件和日志，保留 Ubuntu rootfs 与模块本体。操作完成后需要重新安装应用。',
     factoryResetWarning: '此操作不可恢复。它会删除容器中的应用、密钥、配置、skills、Agent 记忆和全部旧日志；Ubuntu rootfs 和 AnCLI 模块文件会保留。',
-    factoryResetConfirmLabel: '输入 RESET 继续', factoryResetAction: '完全初始化', resetStarting: '正在初始化环境…', resetInvalid: '请输入 RESET 才能继续', resetDone: '环境已初始化，请重新安装需要的应用' },
+    factoryResetReinstall: '清除后重新配置环境', factoryResetReinstallHint: '保留清理前的应用清单，在干净 PRoot 中重新安装；不会恢复 API key、代理和应用配置。',
+    factoryResetConfirmLabel: '输入 RESET 继续', factoryResetAction: '完全初始化', resetStarting: '正在初始化环境…', resetInvalid: '请输入 RESET 才能继续', resetDone: '环境已初始化，请重新安装需要的应用', resetDoneReinstall: '环境已清理并重新安装原应用，密钥和代理未恢复' },
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
     copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed', cancel: 'Cancel', save: 'Save', close: 'Close', footer: 'AnCLI · Android CLI environment manager',
@@ -1291,7 +1300,8 @@ const UI_TEXT = {
     factoryReset: 'Factory reset environment', factoryResetTitle: 'Restore the clean Agent environment from the module',
     factoryResetHint: 'Delete installed apps, secrets, config, skills, memory and logs while keeping the Ubuntu rootfs and module payload. Reinstall tools after the reset.',
     factoryResetWarning: 'This cannot be undone. It deletes container apps, secrets, config, skills, Agent memory and all old logs; the Ubuntu rootfs and AnCLI module files remain.',
-    factoryResetConfirmLabel: 'Type RESET to continue', factoryResetAction: 'Factory reset', resetStarting: 'Resetting environment…', resetInvalid: 'Type RESET to continue', resetDone: 'Environment reset; reinstall the tools you need' }
+    factoryResetReinstall: 'Reinstall the previous environment', factoryResetReinstallHint: 'Keep the pre-reset app list and reinstall it in the clean PRoot; API keys, proxy settings and app config are not restored.',
+    factoryResetConfirmLabel: 'Type RESET to continue', factoryResetAction: 'Factory reset', resetStarting: 'Resetting environment…', resetInvalid: 'Type RESET to continue', resetDone: 'Environment reset; reinstall the tools you need', resetDoneReinstall: 'Environment reset and previous apps reinstalled; secrets and proxy settings were not restored' }
 };
 let uiLang = 'zh';
 function uiText(key) { return (UI_TEXT[uiLang] && UI_TEXT[uiLang][key]) || UI_TEXT.zh[key] || key; }
@@ -1818,6 +1828,8 @@ function openReset() {
   }
   const input = document.getElementById('resetConfirm');
   if (input) input.value = '';
+  const reinstall = document.getElementById('resetReinstall');
+  if (reinstall) reinstall.checked = false;
   const ov = document.getElementById('resetOverlay');
   ov.classList.add('show');
   ov.setAttribute('aria-hidden', 'false');
@@ -1838,12 +1850,14 @@ async function performReset() {
     toast(uiText('resetInvalid'), 'err');
     return;
   }
+  const reinstall = Boolean(document.getElementById('resetReinstall') && document.getElementById('resetReinstall').checked);
   closeReset();
   closeSettings();
   setBusy(true, uiText('resetStarting'));
   let resetTask = null;
   try {
-    resetTask = await runBackground(ANCLI + ' reset --yes', uiText('resetStarting'), { keepLog: true });
+    const command = ANCLI + ' reset --yes' + (reinstall ? ' --reinstall' : '');
+    resetTask = await runBackground(command, uiText('resetStarting'), { keepLog: true });
   } finally {
     // The reset command intentionally deletes all previous task metadata. Keep
     // only the reset operation itself in the in-memory tab list as well.
@@ -1859,7 +1873,7 @@ async function performReset() {
     setBusy(false);
     await loadStatus();
     await loadApps();
-    toast(uiText('resetDone'));
+    toast(uiText(reinstall ? 'resetDoneReinstall' : 'resetDone'));
   }
 }
 

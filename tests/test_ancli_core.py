@@ -1794,10 +1794,15 @@ class TestReviewRegressions:
         (rootfs / "usr" / "local" / "bin" / "fake").write_text("binary", encoding="utf-8")
         (rootfs / "usr" / "local" / "lib").mkdir(parents=True)
         (rootfs / "usr" / "local" / "lib" / "node_modules").mkdir()
+        reinstalled = []
+        monkeypatch.setattr(core, "fetch_registry", lambda: {"apps": {"fake": {"executable": "fake"}}})
+        monkeypatch.setattr(core, "install_app", lambda app_id, registry: reinstalled.append(app_id) or True)
 
-        result = core.reset_environment(keep_log=str(current_log), verbose=False)
+        result = core.reset_environment(keep_log=str(current_log), reinstall=True, verbose=False)
 
         assert result["status"] == "ok"
+        assert reinstalled == ["fake"]
+        assert result["reinstalled_apps"] == ["fake"]
         assert not (ancli_dir / "installed.json").exists()
         assert not (ancli_dir / "secrets" / "fake.env").exists()
         assert not (ancli_dir / ".webui_old.log").exists()
