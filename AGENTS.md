@@ -6,7 +6,7 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
-## Current handoff (2026-11-13, v1.2.602)
+## Current handoff (2026-11-13, v1.2.603)
 
 - Keep the single `proot-ubuntu` backend. The old native execution branch and host-mode shims are removed.
 - Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
@@ -16,7 +16,8 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - The WebUI theme is stored locally in the page; the language is persisted through AnCLI global config. Do not add a second settings store.
 - `ancli reset --yes` is the offline factory-reset path used by the WebUI. It keeps the rootfs and module payload, clears app state and user data inside the container, deletes all WebUI logs, and regenerates the bundled runtime context. Keep the explicit flag. The optional `--reinstall` mode intentionally reads the bundled or available registry after cleanup so the pre-reset app list can be installed again; it never restores old secrets, proxy settings, or app config.
 - `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
-- Release `v1.2.602` uses `versionCode=14`; keep the tag, `update.json`, module asset, and changelog aligned.
+- Agent wrappers record the launching terminal parent PID and kernel start time. A watchdog stops the PRoot child when that parent disappears, so swiping away or force-stopping the terminal does not leave a live Agent behind; merely backgrounding the terminal keeps the Agent running. The `ancli reset` launcher also kills known Agent/PRoot processes before removing their files.
+- Release `v1.2.603` uses `versionCode=15`; keep the tag, `update.json`, module asset, and changelog aligned.
 
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
@@ -167,7 +168,7 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
 | GitHub Release asset | `ancli-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.602` is the current small release after `v1.2.601`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.602` selects the next code; pass an explicit second argument only when a different increasing code is required.
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.603` is the current small release after `v1.2.602`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.603` selects the next code; pass an explicit second argument only when a different increasing code is required.
 
 Release procedure (copy-paste, in order):
 

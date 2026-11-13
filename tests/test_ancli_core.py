@@ -318,6 +318,11 @@ class TestWrapperGeneration:
         assert "for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system" in wrapper
         assert 'ANCLI_BIND_ARGS="$ANCLI_BIND_ARGS -b $_ancli_bind"' in wrapper
         assert "$ANCLI_BIND_ARGS" in wrapper
+        # The Android-side launcher and generated app wrappers both bind the
+        # Agent lifetime to the original terminal parent.
+        assert 'ANCLI_PARENT_PID="$PPID"' in wrapper
+        assert 'kill -TERM "$ANCLI_CHILD_PID"' in wrapper
+        assert 'wait "$ANCLI_CHILD_PID"' in wrapper
         # env bootstrap + per-tool secrets sourcing
         assert "ancli_env.sh" in wrapper
         assert "secrets/mimo.env" in wrapper

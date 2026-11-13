@@ -34,6 +34,17 @@ if [ "$PROOT_CWD" = "/" ]; then
     fi
 fi
 : "${PROOT_CWD:=/root}"
+# 2026-11-13: reset must stop existing Agent processes before deleting their
+# files. A root shell can outlive the Termius tab that launched it, so perform
+# this preflight on the Android side, before entering PRoot.
+if [ "${1:-}" = "reset" ] && [ "$(id -u 2>/dev/null)" = "0" ]; then
+    _ancli_agent_re='(/data/adb/(ksu|ap)/bin|/usr/local/bin)/(aider|mimo|agy|dsh|claude|opencode|grok)'
+    /system/bin/toybox pkill -TERM -f "$_ancli_agent_re" 2>/dev/null || true
+    /system/bin/toybox pkill -TERM -f "proot.*\/data\/local\/tmp\/ancli\/rootfs" 2>/dev/null || true
+    /system/bin/sleep 1
+    /system/bin/toybox pkill -KILL -f "$_ancli_agent_re" 2>/dev/null || true
+    /system/bin/toybox pkill -KILL -f "proot.*\/data\/local\/tmp\/ancli\/rootfs" 2>/dev/null || true
+fi
 # Provide /dev/shm: Android's /dev has no shm, and Node/Bun workers plus some
 # libraries require shared memory. Bound only when the dir is usable.
 SHM_BIND=""

@@ -1,3 +1,8 @@
+## v1.2.603 (2026-11-13)
+
+- Bind Agent wrappers to the launching terminal parent so abandoned PRoot and Agent processes are stopped when a terminal app is removed.
+- Stop known Agent and PRoot processes in the Android-side reset preflight before deleting their files.
+
 ## v1.2.602 (2026-11-13)
 
 - Replace the module and WebUI branding with the black terminal and Android robot logo.

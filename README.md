@@ -23,6 +23,7 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 - **Shared Agent Skills**: one global skills directory (`~/.agents/skills` inside the container) is symlinked into every agent CLI's own skills path, so a `SKILL.md` written once is picked up by Claude Code, MiMo, Antigravity, Grok, OpenCode and DeepSeek Harness. Run `ancli skills` (or the WebUI's 修复环境) to create the layout.
 - **Reliable dsh WebUI launch**: the AnCLI WebUI waits for dsh's token URL before opening the browser and reuses an already listening dsh service instead of starting a second copy on port 3080.
 - **Android robot and CLI branding**: the module icon and WebUI header use the bundled black terminal/Android robot mark.
+- **Terminal lifecycle binding**: Agent wrappers stop their PRoot child when the terminal parent disappears, while ordinary backgrounding keeps the Agent running. A full reset stops known Agent and PRoot processes before clearing their files.
 - **Persistent WebUI task logs**: installs, updates, checks, repairs, and uninstalls run in separate log tabs. The tabs and card logs are restored after reopening the WebUI, and completed task logs are retained up to 10 MB total without a time-based expiry. Settings → Log history lists, opens, and clears completed task logs.
 - **Factory reset**: Settings → Factory reset removes installed tools, credentials, global configuration, Agent memory, shared skills, task logs, and generated app files. It keeps the Ubuntu rootfs and module payload, then regenerates the module's runtime context. The reset requires typing `RESET` and does not migrate pre-reset logs. An optional reinstall checkbox repeats the pre-reset app list in the clean PRoot without restoring secrets, proxy settings, or app configuration.
 
@@ -89,7 +90,7 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.602.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.603.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -382,6 +383,8 @@ All Node/Bun-based TUIs (mimo, opencode, claude) scan the current directory's fi
 The wrappers redirect launches from `/` or another path that is not visible inside the container to the container HOME (`/root`). This keeps TUI startup focused on a small working directory. The wrapper binds every common Android tree that exists in the current root namespace; if that namespace has no `/sdcard` alias, it skips that alias and continues with `/storage`, `/mnt`, `/data`, and the other available trees.
 
 The dsh directory picker therefore starts at `/root` when launched from `/`. Dot directories such as `.dsh` and `.agents` are tool state; enable hidden files to see them. Set `default_cwd` to `/sdcard` or `/sdcard/code` when phone storage should be the starting location.
+
+Agent commands started from Termius remain active while the Termius session stays alive in the background. If the terminal app is swiped away or force-stopped, the wrapper watchdog sees the original parent disappear and stops the PRoot child. A detached service is not created for interactive tools; use a dedicated service manager for a web-only process if it must survive the terminal app.
 
 If you want to work on a project instead, `cd` into it first:
 

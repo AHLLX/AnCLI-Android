@@ -22,6 +22,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - **多重安全加固**：实现命令白名单校验、Shell 链式操作符过滤、环境变量转义和路径遍历防护。
 - **稳定的 dsh WebUI 启动**：AnCLI WebUI 等待 dsh 生成带 token 的地址后打开浏览器；3080 已有服务时复用该服务。
 - **统一品牌图标**：模块图标和 WebUI 顶部使用黑底终端与安卓机器人图标。
+- **终端生命周期绑定**：Agent wrapper 会绑定启动它的终端父进程；终端正常切到后台时继续运行，终端被划掉或强制停止时自动结束 PRoot 和 Agent。完全初始化前也会先清理已知 Agent 进程。
 
 ## 项目指导文件
 
@@ -64,7 +65,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.602.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.603.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。

@@ -26,7 +26,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.602"
+VERSION = "1.2.603"
 
 REGISTRY_URL   = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -843,11 +843,45 @@ for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system; do
         ANCLI_BIND_ARGS="$ANCLI_BIND_ARGS -b $_ancli_bind"
     fi
 done
+# 2026-11-13: Tie the Agent lifetime to the terminal session that launched it.
+# Android may reparent a root shell to PID 1 after Termius is swiped away,
+# leaving the PRoot and Agent alive with a dead PTY. Remember the original
+# parent PID and its kernel start time, then stop the PRoot child if that parent
+# disappears or the PID is reused. Backgrounding the terminal keeps the parent
+# alive and therefore keeps the Agent alive as expected.
+ANCLI_PARENT_PID="$PPID"
+ANCLI_PARENT_START=""
+if [ -r "/proc/$ANCLI_PARENT_PID/stat" ]; then
+    ANCLI_PARENT_START=$(sed 's/.*) //' "/proc/$ANCLI_PARENT_PID/stat" 2>/dev/null | cut -d' ' -f20)
+fi
+ancli_parent_alive() {{
+    [ -r "/proc/$ANCLI_PARENT_PID/stat" ] || return 1
+    if [ -n "$ANCLI_PARENT_START" ]; then
+        [ "$(sed 's/.*) //' "/proc/$ANCLI_PARENT_PID/stat" 2>/dev/null | cut -d' ' -f20)" = "$ANCLI_PARENT_START" ] || return 1
+    fi
+    return 0
+}}
 {ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
 $ANCLI_BIND_ARGS \\
 -b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
--w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
+-w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@" &
+ANCLI_CHILD_PID=$!
+(
+    while kill -0 "$ANCLI_CHILD_PID" 2>/dev/null; do
+        if ! ancli_parent_alive; then
+            kill -TERM "$ANCLI_CHILD_PID" 2>/dev/null
+            sleep 1
+            kill -KILL "$ANCLI_CHILD_PID" 2>/dev/null
+            break
+        fi
+        sleep 1
+    done
+) &
+ANCLI_WATCHDOG_PID=$!
+wait "$ANCLI_CHILD_PID"
 _ancli_rc=$?
+kill "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
+wait "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
 ancli_restore_tty
 exit $_ancli_rc
 """
