@@ -1,3 +1,11 @@
+## v1.2.606 (2026-11-13)
+
+### device-specific runtime memory
+
+- Add a first-run protocol that requires the first Agent session to probe the device and run `ancli agent-init --finalize`.
+- Write measured paths, Android host command availability, container tools, installed apps, and operation boundaries into the device-local runtime memory without secrets.
+- Restore the pending module template after `ancli reset --yes`, while preserving finalized memory during ordinary repair and upgrades.
+
 ## v1.2.605 (2026-11-13)
 
 ### terminal input and Antigravity memory compatibility

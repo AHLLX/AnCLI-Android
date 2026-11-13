@@ -17,6 +17,13 @@
 
 AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`。AnCLI 将两个名称都链接到本文件；通用入口仍是 `/root/.agents/AGENTS.md`。如果某个 Agent 报告没有加载记忆，先检查它自己的官方发现路径和 `readlink -f` 结果。
 
+<!-- ancli:first-run:pending -->
+## 首次环境确认（仅首次运行）
+
+第一次读取本文件时，先在当前容器内执行 `pwd`、`ancli doctor --json`、`ancli status --json`、`ancli list --json`，再用 `command -v` 和实际命令结果复核要使用的工具。检查 `/system`、`/data`、`/sdcard`、`/storage`、`/mnt`、`/apex`、`/linkerconfig`、`/data/adb` 和 `/mnt/ancli-data` 的存在性、挂载关系与读写能力，确认可用的 Android 宿主命令（例如 `getprop`、`pm`、`dumpsys`、`cmd`、`am`）。
+
+根据探测结果补充本文件的“本设备实测环境”内容，写入真实路径、绑定关系、可用命令、工具版本和操作边界；不要写入 API key、cookie、token、代理地址或其他密钥。完成后执行 `ancli agent-init --finalize`，由 AnCLI 将探测结果写回本文件并删除本节。以后以实测内容为准，仍需在环境变化时重新运行探测。
+
 工具通过宿主 wrapper 进入单层 Ubuntu PRoot。wrapper 会继承 Android 系统代理和 DNS，设置 `TMPDIR=/tmp`、`TERM`、locale、`BROWSER=/usr/local/bin/xdg-open`，并绑定 `/sdcard`、`/storage`、`/mnt`、`/data` 等 Android 路径。
 
 ## 设备观察（版本和路径可能变化）

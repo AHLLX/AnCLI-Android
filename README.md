@@ -1,4 +1,10 @@
-# AnCLI
+<div align="right">[简体中文](README.zh.md) · English</div>
+
+<div align="center">
+  <img src="src/module/webroot/logo.png" alt="AnCLI logo" width="128">
+  <h1>AnCLI</h1>
+  <p>Unified CLI environment manager for rooted Android devices</p>
+</div>
 
 AnCLI is a unified, systemless environment manager and plugin-based installer for rooted Android devices. It runs supported GNU/Linux command-line tools inside one Ubuntu glibc PRoot container while exposing controlled Android paths, proxy handling, browser hand-off, and root-manager wrappers.
 
@@ -32,6 +38,15 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 - [AGENTS.md](AGENTS.md) is the development and maintenance handoff for this repository. Read it before changing module scripts, registry entries, wrapper generation, release assets, or device-deployment code.
 - `src/runtime-context/AGENTS.md` is the template for Agents running inside the phone container. It is rendered to `/root/.agents/AGENTS.md`; it is separate from the repository's development guidance.
 - Antigravity CLI also discovers the same generated context through `/root/.gemini/AGENTS.md` and `/root/.gemini/GEMINI.md`; AnCLI links both names to the canonical file.
+
+## Screenshots
+
+<div align="center">
+  <p><strong>KernelSU WebUI on a tablet</strong></p>
+  <img src="Pad.jpg" alt="AnCLI WebUI on a tablet" width="820">
+  <p><strong>Terminal and Agent UI on a phone</strong></p>
+  <img src="Phone.jpg" alt="AnCLI terminal and Agent UI on a phone" width="360">
+</div>
 
 ## Supported Applications
 *(Read from the registry bundled with the module)*
@@ -90,7 +105,7 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.605.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.606.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -307,17 +322,18 @@ installation. With the built-in setting the working directory is `/root`; after
 `ancli config --set default_cwd=/sdcard/projects`, only tool launches from `/` use that directory.
 The runtime context remains global at `/root/.agents/AGENTS.md`.
 
-The generated file records the current AnCLI version, container and Android data paths, proxy/DNS
-and browser hand-off contract, installed tool names, configured environment-variable names (never
-their values), the shared skills path, and safe operating guidance for agents. It is deliberately
-not a secret store. An existing project `AGENTS.md` is kept. The source template is
-`src/runtime-context/AGENTS.md`, and the generated device context can be refreshed with
-`ancli agent-init --refresh`.
+The fresh file contains a first-run protocol. The first Agent session must probe the current
+device, then run `ancli agent-init --finalize`. AnCLI writes the measured paths, bindings, available
+commands, installed tools, and operation boundaries back into that device's file and removes the
+protocol. It never writes secrets. An existing project `AGENTS.md` is kept. The source template is
+`src/runtime-context/AGENTS.md`; `ancli reset --yes` restores the original pending protocol, while
+`ancli agent-init --refresh` replaces the current generated context with it.
 
 ```bash
 ancli agent-init
 ancli agent-init --json
 ancli agent-init --refresh
+ancli agent-init --finalize
 ```
 
 ## Other apps' data (`/data/data` can look empty)

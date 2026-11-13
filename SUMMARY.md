@@ -4,7 +4,7 @@
 
 ## 当前基线
 
-- 当前仓库版本：`v1.2.605`，模块 `versionCode=17`。
+- 当前仓库版本：`v1.2.606`，模块 `versionCode=18`。
 - 运行后端：Android 宿主 wrapper → 单层 PRoot → Ubuntu 24.04 arm64 glibc rootfs。
 - 核心：[`src/ancli-core.py`](src/ancli-core.py)，只使用 Python 标准库。
 - registry：[`src/registry.json`](src/registry.json)，安装、卸载、版本探测和官方 latest 来源都由数据定义。
@@ -27,7 +27,7 @@ WebUI 设置窗口可视化编辑 `lang`、主题、`default_cwd`、`proxy_mode`
 | 官方版本缓存 | `/data/local/tmp/ancli/.update_cache.json` |
 | 默认配置 | rootfs 内 `/root/.ancli-config.json` |
 | 共享 skills | rootfs 内 `/root/.agents/skills` |
-| 默认运行时上下文模板 | `src/runtime-context/AGENTS.md` |
+| 默认运行时上下文模板 | `src/runtime-context/AGENTS.md`；首次探测后用 `ancli agent-init --finalize` 写回设备实测内容 |
 
 刷入时 `customize.sh` 准备 rootfs、APT 基础工具、core、registry、环境脚本和 Agent 记忆模板。安装工具时，core 在主 PRoot 中直接执行 registry 命令，生成 wrapper，记录安装状态并探测工具自身版本。模块管理器卸载默认只清理宿主动态组件；只有 `/data/local/tmp/ancli_force_purge` 存在时才删除整个 AnCLI 数据目录。
 
@@ -36,7 +36,7 @@ WebUI 设置窗口可视化编辑 `lang`、主题、`default_cwd`、`proxy_mode`
 - 不写真实 Android `/system/bin`；wrapper 写入模块 overlay、KSU/APatch 即时路径和 `/data/local/tmp/ancli/bin` 调试路径。
 - 写 wrapper 前先删除旧 inode；KSU/APatch 路径从临时文件通过 `cp -f` 覆盖。
 - 不嵌套 PRoot；完整绑定 `/dev`、`/proc`、`/sys`、`/sdcard`、`/storage`、`/mnt`、`/data`、`/apex`、`/linkerconfig`、`/system` 和 `/data/adb`。
-- wrapper 不能 `exec` PRoot：必须保存并恢复 TTY，避免 TUI 退出后破坏调用者终端。
+- wrapper 不能 `exec` 或后台运行 PRoot：必须让 PRoot 保持前台以接收 TUI 按键，同时由 watchdog 监控启动终端并在父进程消失时结束 PRoot；还要保存并恢复 TTY，避免 TUI 退出后破坏调用者终端。
 - 宿主侧维护 Android 代理、DNS、`/mnt/ancli-data` 和浏览器 URL 队列；容器默认不依赖 Android bionic 命令。若 `/system/bin` 已暴露，`getprop`、`pm`、`dumpsys`、`cmd` 可作为只读能力按需探测，`am` 仍由宿主桥接。
 
 ## 默认工作目录和 Agent 记忆

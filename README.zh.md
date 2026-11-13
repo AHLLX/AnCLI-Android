@@ -1,4 +1,10 @@
-# AnCLI
+<div align="right">简体中文 · [English](README.md)</div>
+
+<div align="center">
+  <img src="src/module/webroot/logo.png" alt="AnCLI 徽标" width="128">
+  <h1>AnCLI</h1>
+  <p>面向 Root 安卓设备的统一 CLI 环境管理器</p>
+</div>
 
 AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Systemless）的命令行环境管理器与插件式安装器。当前所有受支持的工具统一运行在一个 Ubuntu glibc PRoot 容器中，同时提供受控的 Android 路径映射、代理处理、浏览器跳转和 Root 管理器 wrapper。
 
@@ -29,6 +35,15 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - [AGENTS.md](AGENTS.md) 是本地开发、模块维护、设备验证和发布流程的项目交接入口。修改核心脚本、registry、wrapper 或发布资产前先阅读它。
 - `src/runtime-context/AGENTS.md` 是手机容器内 Agent 使用的模板，安装后渲染到 `/root/.agents/AGENTS.md`，与项目开发指导文件分开维护。
 - Antigravity CLI 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`，AnCLI 会把两个名称都链接到同一份容器运行时记忆。
+
+## 界面效果
+
+<div align="center">
+  <p><strong>平板上的 KernelSU WebUI</strong></p>
+  <img src="Pad.jpg" alt="平板上的 AnCLI WebUI" width="820">
+  <p><strong>手机上的终端与 Agent 界面</strong></p>
+  <img src="Phone.jpg" alt="手机上的 AnCLI 终端与 Agent 界面" width="360">
+</div>
 
 ## 支持的工具生态
 *(由模块内置注册表提供)*
@@ -65,7 +80,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.605.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.606.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。
@@ -248,15 +263,17 @@ AnCLI 会在容器全局目录 `/root/.agents/AGENTS.md` 维护一份简短的�
 AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，运行时上下文始终位于
 `/root/.agents/AGENTS.md`。
 
-文件包含当前 AnCLI 版本、容器与 Android 数据路径、代理/DNS 和浏览器接力约定、已安装工具、
-已配置的环境变量名（绝不写入变量值）、共享 skills 路径以及 Agent 操作边界。它不是密钥存储，
-不要把 API key、cookie 或 token 写进去。已有的项目 `AGENTS.md` 会保留；模板位于
-`src/runtime-context/AGENTS.md`，设备运行时文件可用 `ancli agent-init --refresh` 刷新。
+新文件包含首次环境确认协议。第一个读取它的 Agent 必须先探测当前设备，再运行
+`ancli agent-init --finalize`。AnCLI 会把实测路径、绑定关系、可用命令、已安装工具和操作边界
+写回这台设备独有的文件，并删除首次确认协议；不会写入密钥。已有的项目 `AGENTS.md` 会保留。
+模板位于 `src/runtime-context/AGENTS.md`；`ancli reset --yes` 会恢复带首次确认协议的原版，
+`ancli agent-init --refresh` 也会用它替换当前生成文件。
 
 ```bash
 ancli agent-init
 ancli agent-init --json
 ancli agent-init --refresh
+ancli agent-init --finalize
 ```
 
 ## 跨 App 数据（为什么有时看不到 `/data/data`）

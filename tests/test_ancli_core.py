@@ -1499,6 +1499,35 @@ class TestAgentMemory:
         assert result["status"] == "refreshed"
         assert core.RUNTIME_CONTEXT_MARKER in memory.read_text(encoding="utf-8")
 
+    def test_finalizes_first_run_context_with_secret_free_probe(self, tmp_path, monkeypatch):
+        target, memory = self._target(tmp_path, monkeypatch)
+        template = (
+            core.RUNTIME_CONTEXT_MARKER + "\n"
+            "当前环境\n"
+            "工具通过宿主 wrapper 进入容器。\n"
+        )
+        memory.write_text(template, encoding="utf-8")
+        memory.write_text(
+            core._inject_runtime_context_bootstrap(template), encoding="utf-8"
+        )
+        monkeypatch.setattr(core, "_android_data_mounted", lambda: True)
+        monkeypatch.setattr(core, "load_installed", lambda: {
+            "agy": {
+                "name": "Antigravity CLI", "executable": "agy",
+                "installed_version": "1.5.7", "env": {"GEMINI_API_KEY": "secret"},
+            }
+        })
+
+        result = core.finalize_runtime_context(verbose=False)
+        text = memory.read_text(encoding="utf-8")
+
+        assert result["status"] == "finalized"
+        assert core.RUNTIME_CONTEXT_FINALIZED_MARKER in text
+        assert core.RUNTIME_CONTEXT_PENDING_MARKER not in text
+        assert "本设备实测环境" in text
+        assert "Antigravity CLI" in text
+        assert "GEMINI_API_KEY" not in text
+
     def test_refresh_only_replaces_ancli_generated_memory(self, tmp_path, monkeypatch):
         _, memory = self._target(tmp_path, monkeypatch)
         memory.write_text(core.RUNTIME_CONTEXT_MARKER + "\nold\n", encoding="utf-8")
@@ -1743,7 +1772,12 @@ class TestReviewRegressions:
                      rootfs / "usr" / "local" / "bin", module_dir / "system" / "bin"]:
             path.mkdir(parents=True, exist_ok=True)
         (ancli_dir / "runtime-context").mkdir(parents=True)
-        template = "<!-- ancli:runtime-context v1 -->\napps={{INSTALLED_APPS}}\n"
+        template = (
+            "<!-- ancli:runtime-context v1 -->\n"
+            "apps={{INSTALLED_APPS}}\n"
+            "<!-- ancli:first-run:pending -->\n"
+            "工具通过宿主 wrapper 进入容器。\n"
+        )
         (ancli_dir / "runtime-context" / "AGENTS.md").write_text(template, encoding="utf-8")
         (ancli_dir / "registry.json").write_text(
             json.dumps({"apps": {"fake": {"executable": "fake"}}}), encoding="utf-8")
@@ -1793,4 +1827,6 @@ class TestReviewRegressions:
         context = root_home / ".agents" / "AGENTS.md"
         assert context.exists()
         assert "apps=无（尚未安装工具）" in context.read_text(encoding="utf-8")
+        assert core.RUNTIME_CONTEXT_PENDING_MARKER in context.read_text(encoding="utf-8")
+        assert core.RUNTIME_CONTEXT_FINALIZED_MARKER not in context.read_text(encoding="utf-8")
         assert (rootfs / "usr" / "local" / "bin" / "xdg-open").exists()
