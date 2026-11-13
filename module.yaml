@@ -3,8 +3,8 @@ schemaVersion: 1
 id: ancli
 name: AnCLI 安卓 Linux 命令行环境
 summary: 在 Root 安卓设备上运行 Ubuntu Linux 命令行工具和 AI Agent。
-description: 面向 Root 安卓设备的 Ubuntu Linux 命令行环境与 AI Agent 管理器。
-icon: assets/ancli-logo.svg
+description: README.md
+icon: assets/ancli-logo.png
 license: MIT
 homepage: https://github.com/AHLLX/AnCLI-Android
 support: https://github.com/AHLLX/AnCLI-Android/issues
