@@ -22,6 +22,7 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 - **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 - **Shared Agent Skills**: one global skills directory (`~/.agents/skills` inside the container) is symlinked into every agent CLI's own skills path, so a `SKILL.md` written once is picked up by Claude Code, MiMo, Antigravity, Grok, OpenCode and DeepSeek Harness. Run `ancli skills` (or the WebUI's 修复环境) to create the layout.
 - **Reliable dsh WebUI launch**: the AnCLI WebUI waits for dsh's token URL before opening the browser and reuses an already listening dsh service instead of starting a second copy on port 3080.
+- **Persistent WebUI task logs**: installs, updates, checks, repairs, and uninstalls run in separate log tabs. The tabs and card logs are restored after reopening the WebUI, and completed task logs are retained up to 10 MB total without a time-based expiry. Settings → Log history lists, opens, and clears completed task logs.
 
 ## Project guidance
 

@@ -320,6 +320,29 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
   display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; font-size: 11.5px; font-weight: 600;
 }
+.settings-log {
+  padding: 10px; margin-bottom: 13px; border: 1px solid var(--border);
+  border-radius: var(--r); background: var(--surface-2);
+}
+.setting-section-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.setting-section-head b { font-size: 12px; font-weight: 650; }
+.setting-section-head span { color: var(--faint); font-size: 10.5px; }
+.setting-log-actions { display: flex; gap: 7px; margin-bottom: 8px; }
+.history-list { display: grid; gap: 5px; max-height: 210px; overflow: auto; }
+.history-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 9px;
+  color: var(--text); text-align: left; border: 1px solid var(--border);
+  border-radius: var(--r-sm); background: var(--surface); cursor: pointer;
+}
+.history-row:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.history-main { min-width: 0; flex: 1; }
+.history-main b, .history-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-main b { font-size: 11.5px; font-weight: 600; }
+.history-main small { margin-top: 2px; color: var(--faint); font-size: 10.5px; }
+.history-state { flex: none; color: var(--muted); font-size: 10.5px; }
+.history-state.running { color: var(--accent); }
+.history-state.done { color: var(--ok); }
+.history-state.failed { color: var(--danger); }
 .adv { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 12px; }
 .adv summary {
   cursor: pointer; list-style: none; color: var(--muted); font-size: 12px; font-weight: 600;
@@ -497,6 +520,18 @@ body.ime-open .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; ba
         <div><span data-i18n="effectiveCwd">生效目录</span><b id="setEffectiveCwd">—</b></div>
         <div><span data-i18n="proxyStatus">代理状态</span><b id="setProxyStatus">—</b></div>
       </div>
+      <section class="settings-log">
+        <div class="setting-section-head">
+          <b data-i18n="logHistory">日志历史</b>
+          <span id="setLogUsage">0 B / 10 MB</span>
+        </div>
+        <div class="setting-log-actions">
+          <button class="btn xs" id="btnLogHistoryRefresh" data-i18n="refresh">刷新</button>
+          <button class="btn xs quiet danger" id="btnLogHistoryClear" data-i18n="clearHistory">清理历史</button>
+        </div>
+        <div class="history-list" id="setLogHistory" aria-live="polite"></div>
+        <div class="hint" data-i18n="logHistoryHint">任务日志最多保留 10 MB，不按时间自动删除。</div>
+      </section>
       <div class="fields">
         <div class="field">
           <label data-i18n="defaultCwd">默认工作目录</label>
@@ -637,6 +672,8 @@ let logLines = 0;
 let logFollow = true;
 let activeTaskId = 'session';
 const taskTabs = new Map();
+// 2026-11-13: Keep card-level task logs open across task refreshes and page reloads.
+const expandedAppLogs = new Set();
 const logEl = () => document.getElementById('log');
 
 function updateLogCount() {
@@ -714,6 +751,35 @@ function renderTaskTabs() {
     }
     tabs.appendChild(b);
   }
+  renderSettingsHistory();
+}
+
+function revealAppLog(id) {
+  const pane = document.getElementById('app-log-' + id);
+  const button = Array.from(document.querySelectorAll('#apps [data-log-id]'))
+    .find(el => el.dataset.logId === id);
+  if (!pane || !button) return;
+  pane.hidden = false;
+  button.setAttribute('aria-expanded', 'true');
+  button.textContent = logToggleText(true);
+  const tasks = Array.from(taskTabs.values()).filter(task => task.scope === id);
+  const task = tasks[tasks.length - 1];
+  if (!task) return;
+  const cached = task.output || [];
+  if (cached.length) {
+    pane.textContent = cached.join('\n');
+    pane.scrollTop = pane.scrollHeight;
+    return;
+  }
+  // Restored tasks do not keep their output in memory. Read the persisted file
+  // when the card is reopened so page reloads do not show an empty pane.
+  pane.textContent = uiText('logHistoryLoading');
+  void execCmd('cat ' + shQuote(task.logFile) + ' 2>/dev/null').then(r => {
+    if (!pane.hidden) {
+      pane.textContent = strip(r.stdout || '');
+      pane.scrollTop = pane.scrollHeight;
+    }
+  }).catch(() => { pane.textContent = uiText('historyEmpty'); });
 }
 
 async function closeTask(id) {
@@ -758,7 +824,8 @@ function setBusy(on, label) {
   document.body.classList.toggle('busy', busy > 0);
   document.getElementById('busySpin').hidden = busy === 0;
   ['btnCheck', 'btnRefresh', 'btnRepair'].forEach(id => { document.getElementById(id).disabled = busy > 0; });
-  document.querySelectorAll('#apps button[data-act]').forEach(b => { b.disabled = busy > 0; });
+  // Keep read-only log controls usable while an install/update runs.
+  document.querySelectorAll('#apps button[data-act]:not([data-act="toggle-log"])').forEach(b => { b.disabled = busy > 0; });
   if (on && label) logLine(label, 'dim');
 }
 
@@ -800,9 +867,16 @@ async function runBackground(cmd, preface) {
   const scoped = cmd.match(/\bancli\s+(?:install|update|uninstall|config)\s+([^\s]+)/);
   const task = { id: tag, label: cmd.replace(/^.*ancli\s+/, ''), command: cmd, scope: scoped ? scoped[1] : '', logFile, exitFile, metaFile, status: 'running' };
   taskTabs.set(task.id, task);
+  if (task.scope) {
+    expandedAppLogs.add(task.scope);
+    // An install task belongs to an app that is not installed yet, so render
+    // its card log before the first output chunk arrives.
+    renderApps(currentApps);
+  }
   activeTaskId = task.id;
   logFollow = true;
   renderTaskTabs();
+  if (task.scope) revealAppLog(task.scope);
   clearLogView();
   if (preface) appendLogRow(preface, 'dim');
   appendLogRow('$ ' + cmd + '  （后台执行）', 'cmd');
@@ -849,6 +923,88 @@ async function runBackground(cmd, preface) {
   }
 }
 
+// 2026-11-13: Keep task history by size, not age, so a useful old run remains
+// available after the page or the phone has been offline for a while.
+const LOG_HISTORY_LIMIT_BYTES = 10 * 1024 * 1024;
+function logHistoryShell(deleteOld) {
+  const limit = String(LOG_HISTORY_LIMIT_BYTES);
+  const remove = deleteOld ?
+    'if [ ! -f "$f.exit" ] && [ ! -f "$f.meta" ]; then if [ $((total + n)) -le ' + limit + ' ]; then total=$((total+n)); else rm -f "$f"; fi; elif [ ! -f "$f.exit" ] || [ $((total + n)) -le ' + limit + ' ]; then total=$((total+n)); else rm -f "$f" "$f.exit" "$f.meta"; fi' :
+    'total=$((total+n))';
+  return 'total=0; for f in $(ls -1t /data/local/tmp/ancli/.webui_*.log 2>/dev/null); do case "$f" in *\/.webui_launch_*) continue;; esac; [ -f "$f" ] || continue; n=$(wc -c < "$f" 2>/dev/null || echo 0); case "$n" in *[!0-9]*|"") continue;; esac; ' + remove + '; done; echo "$total"';
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function taskTime(id) {
+  const m = String(id || '').match(/^(\d{13})_/);
+  if (!m) return '';
+  try {
+    return new Date(Number(m[1])).toLocaleString(uiLang === 'en' ? 'en-US' : 'zh-CN', {
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+  } catch (e) { return ''; }
+}
+
+function renderSettingsHistory() {
+  const wrap = document.getElementById('setLogHistory');
+  if (!wrap) return;
+  const tasks = Array.from(taskTabs.values());
+  if (!tasks.length) {
+    wrap.innerHTML = '<div class="empty">' + esc(uiText('historyEmpty')) + '</div>';
+    return;
+  }
+  wrap.innerHTML = tasks.map(task => {
+    const state = task.status === 'running' ? 'running' : task.status === 'done' ? 'done' : 'failed';
+    const stateText = task.status === 'running' ? uiText('historyRunning') : task.status === 'done' ? uiText('historyDone') : uiText('historyFailed');
+    return '<button type="button" class="history-row" data-history-id="' + esc(task.id) + '" title="' + esc(uiText('historyView')) + '">' +
+      '<span class="history-main"><b>' + esc(task.label || task.command || task.id) + '</b><small>' + esc(taskTime(task.id)) + '</small></span>' +
+      '<span class="history-state ' + state + '">' + esc(stateText) + '</span></button>';
+  }).join('');
+}
+
+async function refreshLogHistory() {
+  const usage = document.getElementById('setLogUsage');
+  if (usage) usage.textContent = uiText('logHistoryLoading');
+  try {
+    const r = await execCmd('sh -c ' + shQuote(logHistoryShell(false)));
+    const bytes = Number.parseInt(strip(r.stdout || '0').trim(), 10) || 0;
+    if (usage) usage.textContent = formatBytes(bytes) + ' / 10 MB';
+  } catch (e) {
+    if (usage) usage.textContent = '— / 10 MB';
+  }
+  renderSettingsHistory();
+}
+
+async function trimTaskLogs() {
+  try { await execCmd('sh -c ' + shQuote(logHistoryShell(true))); }
+  catch (e) { /* log retention must never block page startup */ }
+}
+
+async function clearHistoryLogs() {
+  const completed = Array.from(taskTabs.values()).filter(task => task.status !== 'running');
+  if (!completed.length) { toast(uiText('historyNothingToClear')); return; }
+  for (const task of completed) {
+    try { await execCmd('rm -f ' + [task.logFile, task.exitFile, task.metaFile].map(shQuote).join(' ')); }
+    catch (e) { /* continue clearing the remaining entries */ }
+    taskTabs.delete(task.id);
+  }
+  if (activeTaskId !== 'session' && !taskTabs.has(activeTaskId)) {
+    const next = taskTabs.values().next().value;
+    if (next) await selectTask(next.id);
+    else { activeTaskId = 'session'; clearLogView(); }
+  }
+  renderTaskTabs();
+  renderApps(currentApps);
+  await refreshLogHistory();
+  toast(uiText('historyCleared'));
+}
+
 async function proxyDownloadNote(app) {
   try {
     const cfg = JSON.parse(await ancli('config --json', true));
@@ -875,7 +1031,27 @@ async function restoreTasks() {
         const exit = await execCmd('[ -f ' + shQuote(task.exitFile) + ' ] && cat ' + shQuote(task.exitFile) + ' || true');
         task.status = strip(exit.stdout || '').trim() === '' ? 'running' : (strip(exit.stdout || '').trim() === '0' ? 'done' : 'failed');
         taskTabs.set(task.id, task);
+        if (task.scope) expandedAppLogs.add(task.scope);
       } catch (e) { /* ignore malformed or concurrently removed task */ }
+    }
+    // v1.2.601 and earlier used log files without metadata. Keep those files
+    // readable in Settings instead of silently losing the user's history.
+    const known = new Set(Array.from(taskTabs.values()).map(task => task.logFile));
+    const legacy = await execCmd("ls -t /data/local/tmp/ancli/.webui_*.log 2>/dev/null || true");
+    for (const path of strip(legacy.stdout || '').split(/\r?\n/).filter(Boolean)) {
+      if (path.includes('/.webui_launch_') || known.has(path)) continue;
+      const idMatch = path.match(/\/\.webui_(\d+_\d+)\.log$/);
+      if (!idMatch || taskTabs.has(idMatch[1])) continue;
+      let status = 'done';
+      try {
+        const exit = await execCmd('[ -f ' + shQuote(path + '.exit') + ' ] && cat ' + shQuote(path + '.exit') + ' || true');
+        const code = strip(exit.stdout || '').trim();
+        if (code && code !== '0') status = 'failed';
+      } catch (e) { /* legacy output is still viewable when its exit marker is missing */ }
+      taskTabs.set(idMatch[1], {
+        id: idMatch[1], label: uiLang === 'en' ? 'Legacy task log' : '历史任务日志', command: '', scope: '',
+        logFile: path, exitFile: path + '.exit', metaFile: path + '.meta', status, legacy: true
+      });
     }
     renderTaskTabs();
     const first = taskTabs.values().next().value;
@@ -1067,7 +1243,10 @@ const UI_TEXT = {
     systemProxy: '系统自动探测', manualProxy: '手动指定', directProxy: '直连',
     autoTheme: '自动', lightTheme: '浅色', darkTheme: '深色',
     prootBackend: 'Ubuntu / PRoot', ready: '就绪', unavailable: '不可用', notMounted: '未挂载', unknown: '未知',
-    settingsSaved: '设置已保存', settingsFailed: '设置保存失败，见输出', savingSettings: '保存设置…', invalidProxy: '请输入有效的 HTTP/HTTPS 代理地址' },
+    settingsSaved: '设置已保存', settingsFailed: '设置保存失败，见输出', savingSettings: '保存设置…', invalidProxy: '请输入有效的 HTTP/HTTPS 代理地址',
+    logHistory: '日志历史', logHistoryHint: '任务日志最多保留 10 MB，不按时间自动删除。', clearHistory: '清理历史',
+    historyEmpty: '暂无历史任务', historyView: '查看日志', historyRunning: '运行中', historyDone: '已完成', historyFailed: '失败',
+    historyCleared: '历史日志已清理', historyNothingToClear: '没有可清理的历史日志', logHistoryLoading: '正在读取日志历史…' },
   en: { check: 'Check updates', refresh: 'Refresh', repair: 'Repair', settings: 'Settings', tools: 'Tools', output: 'Output', proxy: 'Proxy',
     copyAll: 'Copy all', clear: 'Clear output', follow: 'Follow output', notChecked: 'Not checked', install: 'Install', update: 'Update',
     config: 'Configure', uninstall: 'Uninstall', openWeb: 'Open Web UI', copyCommand: 'Copy command', running: 'Running', done: 'Done', failed: 'Failed', cancel: 'Cancel', save: 'Save', close: 'Close', footer: 'AnCLI · Android CLI environment manager',
@@ -1078,7 +1257,10 @@ const UI_TEXT = {
     systemProxy: 'System detection', manualProxy: 'Manual', directProxy: 'Direct',
     autoTheme: 'Auto', lightTheme: 'Light', darkTheme: 'Dark',
     prootBackend: 'Ubuntu / PRoot', ready: 'Ready', unavailable: 'Unavailable', notMounted: 'Not mounted', unknown: 'Unknown',
-    settingsSaved: 'Settings saved', settingsFailed: 'Could not save settings; see output', savingSettings: 'Saving settings…', invalidProxy: 'Enter a valid HTTP/HTTPS proxy URL' }
+    settingsSaved: 'Settings saved', settingsFailed: 'Could not save settings; see output', savingSettings: 'Saving settings…', invalidProxy: 'Enter a valid HTTP/HTTPS proxy URL',
+    logHistory: 'Log history', logHistoryHint: 'Task logs are kept up to 10 MB total; no time based expiry.', clearHistory: 'Clear history',
+    historyEmpty: 'No task history', historyView: 'View log', historyRunning: 'Running', historyDone: 'Completed', historyFailed: 'Failed',
+    historyCleared: 'Task history cleared', historyNothingToClear: 'No completed logs to clear', logHistoryLoading: 'Reading log history…' }
 };
 let uiLang = 'zh';
 function uiText(key) { return (UI_TEXT[uiLang] && UI_TEXT[uiLang][key]) || UI_TEXT.zh[key] || key; }
@@ -1197,9 +1379,15 @@ function renderApps(apps) {
                (details.length ? '<div class="detail">' + details.join('<br>') + '</div>' : '') +
              '</div>' +
              '<div class="app-actions">' + btns.join('') + '</div>' +
-             (a.installed ? '<div class="app-log-wrap"><button class="app-log-toggle" data-act="toggle-log" aria-expanded="false" data-log-id="' + esc(a.id) + '">' + esc(logToggleText(false)) + '</button><pre class="app-log" id="app-log-' + esc(a.id) + '" hidden></pre></div>' : '') +
+             ((a.installed || Array.from(taskTabs.values()).some(task => task.scope === a.id)) ? '<div class="app-log-wrap"><button class="app-log-toggle" data-act="toggle-log" aria-expanded="false" data-log-id="' + esc(a.id) + '">' + esc(logToggleText(false)) + '</button><pre class="app-log" id="app-log-' + esc(a.id) + '" hidden></pre></div>' : '') +
            '</div>';
   }).join('');
+  for (const id of expandedAppLogs) revealAppLog(id);
+  // Re-rendering the cards while a task starts must not re-enable destructive
+  // actions; the log toggle remains intentionally available.
+  if (busy > 0) {
+    document.querySelectorAll('#apps button[data-act]:not([data-act="toggle-log"])').forEach(b => { b.disabled = true; });
+  }
 }
 
 async function toggleAppLog(id, button) {
@@ -1207,6 +1395,8 @@ async function toggleAppLog(id, button) {
   if (!pane) return;
   const open = !pane.hidden;
   pane.hidden = open;
+  if (open) expandedAppLogs.delete(id);
+  else expandedAppLogs.add(id);
   button.setAttribute('aria-expanded', String(!open));
   button.textContent = logToggleText(!open);
   if (open) return;
@@ -1223,10 +1413,12 @@ async function toggleAppLog(id, button) {
 // ---------- 动作 ----------
 async function doInstall(id) {
   const app = currentApps.find(a => a.id === id) || { name: id };
-  if (!confirm('安装 ' + app.name + '？\n首次安装需要下载依赖，耗时较长（后台执行，可继续浏览）。')) return;
+  // 2026-11-13: Start installs directly; browser confirm dialogs can be hidden
+  // by the KernelSU WebUI host and look like a dead install button.
+  toast('开始安装 ' + app.name + '，日志已打开');
   setBusy(true, '开始安装 ' + app.name);
   try { await runBackground(ANCLI + ' install ' + id, await proxyDownloadNote(app)); }
-  finally { setBusy(false); await loadApps(); await loadStatus(); }
+  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
 }
 
 async function doUpdate(id) {
@@ -1236,16 +1428,16 @@ async function doUpdate(id) {
   }
   setBusy(true, '开始更新 ' + app.name);
   try { await runBackground(ANCLI + ' update ' + id, await proxyDownloadNote(app)); }
-  finally { setBusy(false); await loadApps(); await loadStatus(); }
+  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
 }
 
 async function doUninstall(id) {
   const app = currentApps.find(a => a.id === id) || { name: id };
   if (!confirm('卸载 ' + app.name + '？\n（用户数据与密钥会保留，只有再安装时才会用到）')) return;
-  setBusy(true);
-  try { await ancli('uninstall ' + id); }
+  setBusy(true, '开始卸载 ' + app.name);
+  try { await runBackground(ANCLI + ' uninstall ' + id, '卸载任务已开始，日志已打开'); }
   catch (e) { /* 已在输出面板记录 */ }
-  finally { setBusy(false); await loadApps(); await loadStatus(); }
+  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
 }
 
 async function doLaunch(id) {
@@ -1298,14 +1490,14 @@ async function doCheck() {
   if (!supportsCheck) { toast('当前模块版本不支持版本检查，请先更新 AnCLI 模块', 'err'); return; }
   setBusy(true, '查询官方最新版本…');
   try { await runBackground(ANCLI + ' check'); }
-  finally { setBusy(false); await loadApps(); await loadStatus(); }
+  finally { await trimTaskLogs(); setBusy(false); await loadApps(); await loadStatus(); }
 }
 
 async function doRepair() {
   if (!confirm('运行环境修复？\n会重写 DNS、权限、wrapper，并统一全局 skills 目录。')) return;
   setBusy(true, '修复环境中…');
   try { await runBackground(ANCLI + ' repair'); }
-  finally { setBusy(false); await loadStatus(); await loadApps(); }
+  finally { await trimTaskLogs(); setBusy(false); await loadStatus(); await loadApps(); }
 }
 
 async function maybeAutoCheck() {
@@ -1317,7 +1509,7 @@ async function maybeAutoCheck() {
   logLine('官方版本信息已过期（' + (lastCheck ? fmtAge(age) + '前' : '从未检查') + '），自动检查…', 'dim');
   setBusy(true);
   try { await runBackground(ANCLI + ' check'); }
-  finally { setBusy(false); await loadApps(); }
+  finally { await trimTaskLogs(); setBusy(false); await loadApps(); }
 }
 
 // ---------- 服务商预置 ----------
@@ -1531,6 +1723,8 @@ async function openSettings() {
   ov.classList.add('show');
   ov.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
+  renderSettingsHistory();
+  void refreshLogHistory();
   try {
     const [cfg, runtime] = await Promise.all([
       ancli('config --json', true).then(JSON.parse),
@@ -1589,12 +1783,16 @@ async function saveSettings() {
 /* ================= 事件绑定 ================= */
 document.getElementById('apps').addEventListener('click', e => {
   const btn = e.target.closest('button[data-act]');
-  if (!btn || busy > 0) return;
+  if (!btn) return;
   const host = btn.closest('.app');
   if (!host) return;
   const id = host.dataset.id;
   const act = btn.dataset.act;
   if (act === 'toggle-log') { toggleAppLog(id, btn); return; }
+  if (busy > 0) {
+    toast(uiLang === 'en' ? 'Wait for the current task to finish; its log is still available.' : '当前任务仍在运行，可先展开日志查看进度。', 'err');
+    return;
+  }
   if (act === 'install') doInstall(id);
   else if (act === 'update') doUpdate(id);
   else if (act === 'config') openConfig(id);
@@ -1618,6 +1816,14 @@ document.getElementById('btnSettings').onclick = openSettings;
 document.getElementById('setCancel').onclick = closeSettings;
 document.getElementById('setClose').onclick = closeSettings;
 document.getElementById('setSave').onclick = saveSettings;
+document.getElementById('btnLogHistoryRefresh').onclick = () => { void refreshLogHistory(); };
+document.getElementById('btnLogHistoryClear').onclick = () => { void clearHistoryLogs(); };
+document.getElementById('setLogHistory').addEventListener('click', e => {
+  const button = e.target.closest('[data-history-id]');
+  if (!button) return;
+  closeSettings();
+  void selectTask(button.dataset.historyId);
+});
 document.getElementById('setOverlay').addEventListener('click', e => {
   if (e.target.id === 'setOverlay') closeSettings();
 });
@@ -1714,10 +1920,10 @@ if (window.matchMedia) {
   let savedLang = 'zh';
   try { savedLang = localStorage.getItem('ancli_lang') || 'zh'; } catch (e) { /* ignore */ }
   applyLanguage(savedLang);
-  // 清理上次页面被关闭/任务中断时残留的单次日志（2 小时前）
-  try { execCmd("find /data/local/tmp/ancli -maxdepth 1 -name '.webui_*.log*' -mmin +1440 -delete 2>/dev/null"); }
-  catch (e) { /* ignore */ }
   ANCLI = await findAncli();
+  // Keep history until the shared 10 MB budget is reached; do not expire it
+  // merely because the user was away from the device.
+  await trimTaskLogs();
   try { const cfg = JSON.parse(await ancli('config --json', true)); applyLanguage(cfg.lang || savedLang); } catch (e) { /* keep local language */ }
   await restoreTasks();
   await loadStatus();

@@ -11,6 +11,7 @@ Because Android uses the Bionic C library, native Linux binaries often crash. An
 - Keep the single `proot-ubuntu` backend. The old native execution branch and host-mode shims are removed.
 - Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
 - The WebUI settings dialog is the visual editor for `lang`, `default_cwd`, `proxy_mode`, and `proxy_url`. It also shows the active backend, Android data channel, effective directory, and proxy mode.
+- WebUI task logs are stored as `.webui_*.log` plus metadata under `/data/local/tmp/ancli`. Keep the newest completed task logs up to 10 MB total, do not expire them by age, and expose the history in Settings so a reopened page can select and read old output. Running task logs are never removed by retention.
 - The WebUI theme is stored locally in the page; the language is persisted through AnCLI global config. Do not add a second settings store.
 - `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
 - Release `v1.2.601` uses `versionCode=13`; keep the tag, `update.json`, module asset, and changelog aligned.
