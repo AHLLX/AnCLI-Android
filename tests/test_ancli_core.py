@@ -283,8 +283,13 @@ class TestWrapperGeneration:
         # The Android-side launcher and generated app wrappers both bind the
         # Agent lifetime to the original terminal parent.
         assert 'ANCLI_PARENT_PID="$PPID"' in wrapper
-        assert 'kill -TERM "$ANCLI_CHILD_PID"' in wrapper
-        assert 'wait "$ANCLI_CHILD_PID"' in wrapper
+        assert 'ANCLI_WRAPPER_PID="$$"' in wrapper
+        assert 'pgrep -P "$ANCLI_WRAPPER_PID"' in wrapper
+        assert 'kill -TERM "$_ancli_pid"' in wrapper
+        assert 'wait "$ANCLI_WATCHDOG_PID"' in wrapper
+        # Keep the PRoot command in the foreground so TUI input stays attached
+        # to the terminal's foreground process group.
+        assert not re.search(r'BROWSER=/usr/local/bin/xdg-open mimo "\$@" &', wrapper)
         # env bootstrap + per-tool secrets sourcing
         assert "ancli_env.sh" in wrapper
         assert "secrets/mimo.env" in wrapper
@@ -1485,6 +1490,15 @@ class TestAgentMemory:
         assert result["status"] == "kept"
         assert memory.read_text(encoding="utf-8") == "# User instructions\nkeep me\n"
 
+    def test_replaces_empty_legacy_memory_placeholder(self, tmp_path, monkeypatch):
+        _, memory = self._target(tmp_path, monkeypatch)
+        memory.write_text("", encoding="utf-8")
+
+        result = core.setup_runtime_context(verbose=False)
+
+        assert result["status"] == "refreshed"
+        assert core.RUNTIME_CONTEXT_MARKER in memory.read_text(encoding="utf-8")
+
     def test_refresh_only_replaces_ancli_generated_memory(self, tmp_path, monkeypatch):
         _, memory = self._target(tmp_path, monkeypatch)
         memory.write_text(core.RUNTIME_CONTEXT_MARKER + "\nold\n", encoding="utf-8")
@@ -1498,7 +1512,22 @@ class TestAgentMemory:
         memory.write_text("# User instructions\n", encoding="utf-8")
         result = core.setup_runtime_context(verbose=False, refresh=True)
         assert result["status"] == "kept"
-        assert memory.read_text(encoding="utf-8") == "# User instructions\n"
+
+    def test_links_both_antigravity_global_memory_names(self, tmp_path, monkeypatch):
+        _, memory = self._target(tmp_path, monkeypatch)
+        gemini_dir = tmp_path / ".gemini"
+        monkeypatch.setattr(
+            core, "_runtime_context_compat_targets",
+            lambda: [str(gemini_dir / "AGENTS.md"), str(gemini_dir / "GEMINI.md")],
+        )
+
+        result = core.setup_runtime_context(verbose=False)
+
+        assert [item["status"] for item in result["compatibility"]] == ["linked", "linked"]
+        assert (gemini_dir / "AGENTS.md").is_symlink()
+        assert (gemini_dir / "GEMINI.md").is_symlink()
+        assert os.readlink(gemini_dir / "AGENTS.md") == "../.agents/AGENTS.md"
+        assert os.readlink(gemini_dir / "GEMINI.md") == "../.agents/AGENTS.md"
 
     def test_changing_default_cwd_reports_memory_initialization(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setattr(core, "CONFIG_FILE", str(tmp_path / "cfg.json"))

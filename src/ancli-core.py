@@ -26,7 +26,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-VERSION = "1.2.604"
+VERSION = "1.2.605"
 
 # 2026-11-13: Keep the application catalog in the flashed module. Official
 # release checks use each app's own `latest` entry and never fetch a second
@@ -775,10 +775,10 @@ for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system; do
 done
 # 2026-11-13: Tie the Agent lifetime to the terminal session that launched it.
 # Android may reparent a root shell to PID 1 after Termius is swiped away,
-# leaving the PRoot and Agent alive with a dead PTY. Remember the original
-# parent PID and its kernel start time, then stop the PRoot child if that parent
-# disappears or the PID is reused. Backgrounding the terminal keeps the parent
-# alive and therefore keeps the Agent alive as expected.
+# leaving the PRoot and Agent alive with a dead PTY. Keep PRoot in the foreground
+# so TUI programs retain the terminal's foreground process group, and use a
+# side watchdog to terminate its direct children when the original parent
+# disappears or the PID is reused.
 ANCLI_PARENT_PID="$PPID"
 ANCLI_PARENT_START=""
 if [ -r "/proc/$ANCLI_PARENT_PID/stat" ]; then
@@ -791,24 +791,26 @@ ancli_parent_alive() {{
     fi
     return 0
 }}
-{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
-$ANCLI_BIND_ARGS \\
--b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
--w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@" &
-ANCLI_CHILD_PID=$!
+ANCLI_WRAPPER_PID="$$"
 (
-    while kill -0 "$ANCLI_CHILD_PID" 2>/dev/null; do
-        if ! ancli_parent_alive; then
-            kill -TERM "$ANCLI_CHILD_PID" 2>/dev/null
-            sleep 1
-            kill -KILL "$ANCLI_CHILD_PID" 2>/dev/null
-            break
-        fi
+    while ancli_parent_alive; do
         sleep 1
+    done
+    # The foreground PRoot is a direct child of this wrapper. Kill it and the
+    # watchdog itself without putting the interactive child in the background.
+    for _ancli_pid in $(pgrep -P "$ANCLI_WRAPPER_PID" 2>/dev/null); do
+        kill -TERM "$_ancli_pid" 2>/dev/null
+    done
+    sleep 1
+    for _ancli_pid in $(pgrep -P "$ANCLI_WRAPPER_PID" 2>/dev/null); do
+        kill -KILL "$_ancli_pid" 2>/dev/null
     done
 ) &
 ANCLI_WATCHDOG_PID=$!
-wait "$ANCLI_CHILD_PID"
+{ANCLI_DIR}/bin/proot -r {ROOTFS} -b /dev -b /proc -b /sys -b {ANCLI_DIR} \\
+$ANCLI_BIND_ARGS \\
+-b {ANCLI_DIR}/hosts:/etc/hosts -b /data/adb $SHM_BIND \\
+-w "$PROOT_CWD" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/bash BROWSER=/usr/local/bin/xdg-open {executable} "$@"
 _ancli_rc=$?
 kill "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
 wait "$ANCLI_WATCHDOG_PID" 2>/dev/null || true
@@ -1202,7 +1204,14 @@ def _runtime_context_target():
 
 def _runtime_context_compat_targets():
     """Return vendor-specific discovery paths backed by the canonical context."""
-    return [os.path.join(ROOTFS, "root", ".gemini", RUNTIME_CONTEXT_NAME)]
+    gemini_dir = os.path.join(ROOTFS, "root", ".gemini")
+    # 2026-11-13: Antigravity builds in the field have used both names. Keep
+    # both documented global entries pointed at the same AnCLI context so a
+    # clean install and an upgraded container load identical guidance.
+    return [
+        os.path.join(gemini_dir, "AGENTS.md"),
+        os.path.join(gemini_dir, "GEMINI.md"),
+    ]
 
 
 def _sync_runtime_context_compat(target_file, refresh=False):
@@ -1318,7 +1327,16 @@ def setup_runtime_context(verbose=True, refresh=False):
         _remove_legacy_runtime_contexts()
         os.makedirs(target_dir, exist_ok=True)
         exists = os.path.lexists(target_file)
-        if exists and not refresh:
+        # 2026-11-13: Older installs left an empty placeholder at the global
+        # memory path. It contains no user guidance, so replace it with the
+        # rendered runtime context instead of treating it as authoritative.
+        empty_placeholder = (
+            exists
+            and os.path.isfile(target_file)
+            and not os.path.islink(target_file)
+            and os.path.getsize(target_file) == 0
+        )
+        if exists and not refresh and not empty_placeholder:
             result["status"] = "kept"
             result["reason"] = "目标文件已存在，保留用户内容"
             result["compatibility"] = _sync_runtime_context_compat(target_file, refresh=False)
@@ -1337,11 +1355,12 @@ def setup_runtime_context(verbose=True, refresh=False):
                 return result
             with open(target_file, "r", encoding="utf-8", errors="replace") as fh:
                 if RUNTIME_CONTEXT_MARKER not in fh.read():
-                    result["status"] = "kept"
-                    result["reason"] = "目标文件不是 AnCLI 生成文件，未覆盖"
-                    if verbose:
-                        print(f"\033[93m[i] 已保留用户自己的 Agent 记忆文件：{target_file}\033[0m")
-                    return result
+                    if not empty_placeholder:
+                        result["status"] = "kept"
+                        result["reason"] = "目标文件不是 AnCLI 生成文件，未覆盖"
+                        if verbose:
+                            print(f"\033[93m[i] 已保留用户自己的 Agent 记忆文件：{target_file}\033[0m")
+                        return result
 
         tmp_file = f"{target_file}.ancli.tmp"
         if os.path.exists(tmp_file):

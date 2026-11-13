@@ -1,3 +1,10 @@
+## v1.2.605 (2026-11-13)
+
+### terminal input and Antigravity memory compatibility
+
+- Keep PRoot in the foreground so MiMo and other full-screen terminal tools receive arrow keys through the active TTY; the lifecycle watchdog now terminates the foreground child when its launching terminal disappears.
+- Link both `/root/.gemini/AGENTS.md` and `/root/.gemini/GEMINI.md` to the canonical runtime context, and replace empty legacy memory placeholders during repair.
+
 ## v1.2.604 (2026-11-13)
 
 ### bundled catalog and login version checks

@@ -28,7 +28,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 
 - [AGENTS.md](AGENTS.md) 是本地开发、模块维护、设备验证和发布流程的项目交接入口。修改核心脚本、registry、wrapper 或发布资产前先阅读它。
 - `src/runtime-context/AGENTS.md` 是手机容器内 Agent 使用的模板，安装后渲染到 `/root/.agents/AGENTS.md`，与项目开发指导文件分开维护。
-- Antigravity CLI 的全局规则入口是 `/root/.gemini/AGENTS.md`，AnCLI 会把它链接到同一份容器运行时记忆。
+- Antigravity CLI 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`，AnCLI 会把两个名称都链接到同一份容器运行时记忆。
 
 ## 支持的工具生态
 *(由模块内置注册表提供)*
@@ -65,7 +65,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.604.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.605.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。

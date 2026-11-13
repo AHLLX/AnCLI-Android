@@ -15,7 +15,7 @@
 - 当前已安装工具：`{{INSTALLED_APPS}}`
 - 已保存的配置变量名（不含值）：`{{CONFIGURED_ENV}}`
 
-AGY 的全局规则入口是 `/root/.gemini/AGENTS.md`。AnCLI 将它链接到本文件；通用入口仍是 `/root/.agents/AGENTS.md`。如果某个 Agent 报告没有加载记忆，先检查它自己的官方发现路径和 `readlink -f` 结果。
+AGY 的全局规则入口可能是 `/root/.gemini/AGENTS.md` 或 `/root/.gemini/GEMINI.md`。AnCLI 将两个名称都链接到本文件；通用入口仍是 `/root/.agents/AGENTS.md`。如果某个 Agent 报告没有加载记忆，先检查它自己的官方发现路径和 `readlink -f` 结果。
 
 工具通过宿主 wrapper 进入单层 Ubuntu PRoot。wrapper 会继承 Android 系统代理和 DNS，设置 `TMPDIR=/tmp`、`TERM`、locale、`BROWSER=/usr/local/bin/xdg-open`，并绑定 `/sdcard`、`/storage`、`/mnt`、`/data` 等 Android 路径。
 

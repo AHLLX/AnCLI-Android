@@ -31,7 +31,7 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 
 - [AGENTS.md](AGENTS.md) is the development and maintenance handoff for this repository. Read it before changing module scripts, registry entries, wrapper generation, release assets, or device-deployment code.
 - `src/runtime-context/AGENTS.md` is the template for Agents running inside the phone container. It is rendered to `/root/.agents/AGENTS.md`; it is separate from the repository's development guidance.
-- Antigravity CLI also discovers the same generated context through `/root/.gemini/AGENTS.md`, which AnCLI links to the canonical file.
+- Antigravity CLI also discovers the same generated context through `/root/.gemini/AGENTS.md` and `/root/.gemini/GEMINI.md`; AnCLI links both names to the canonical file.
 
 ## Supported Applications
 *(Read from the registry bundled with the module)*
@@ -90,7 +90,7 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.604.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.605.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
