@@ -1131,19 +1131,6 @@ def _runtime_context_bootstrap_section():
 
 根据探测结果补充本文件的“本设备实测环境”内容，写入真实路径、绑定关系、可用命令、工具版本和操作边界；不要写入 API key、cookie、token、代理地址或其他密钥。完成后执行 `ancli agent-init --finalize`，由 AnCLI 将探测结果写回本文件并删除本节。以后以实测内容为准，仍需在环境变化时重新运行探测。
 """
-RUNTIME_CONTEXT_PENDING_MARKER = "<!-- ancli:first-run:pending -->"
-RUNTIME_CONTEXT_FINALIZED_MARKER = "<!-- ancli:first-run:finalized"
-
-
-def _runtime_context_bootstrap_section():
-    """Return the first-run protocol inserted into a fresh device context."""
-    return f"""{RUNTIME_CONTEXT_PENDING_MARKER}
-## 首次环境确认（仅首次运行）
-
-第一次读取本文件时，先在当前容器内执行 `pwd`、`ancli doctor --json`、`ancli status --json`、`ancli list --json`，再用 `command -v` 和实际命令结果复核要使用的工具。检查 `/system`、`/data`、`/sdcard`、`/storage`、`/mnt`、`/apex`、`/linkerconfig`、`/data/adb` 和 `/mnt/ancli-data` 的存在性、挂载关系与读写能力，确认可用的 Android 宿主命令（例如 `getprop`、`pm`、`dumpsys`、`cmd`、`am`）。
-
-根据探测结果补充本文件的“本设备实测环境”内容，写入真实路径、绑定关系、可用命令、工具版本和操作边界；不要写入 API key、cookie、token、代理地址或其他密钥。完成后执行 `ancli agent-init --finalize`，由 AnCLI 将探测结果写回本文件并删除本节。以后以实测内容为准，仍需在环境变化时重新运行探测。
-"""
 
 
 def setup_skill_dirs(verbose=True):
