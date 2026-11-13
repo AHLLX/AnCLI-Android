@@ -82,8 +82,9 @@ const trailer = (scenario, theme, dialog, settings) => `
 `;
 
 let html = fs.readFileSync(src, 'utf8');
-// Inject the mock before the page's own script so findBridge() sees it.
-html = html.replace('<script>\n/* ====', mock + '<script>\n/* ====');
+// 2026-11-13: Accept LF and CRLF source files; the preview harness must not
+// depend on the editor's line-ending choice when injecting the bridge mock.
+html = html.replace(/<script>\r?\n\/\* =+/, mock + '<script>\n/* ====');
 if (!html.includes('window.ksu')) throw new Error('mock injection failed');
 
 const targets = [

@@ -343,8 +343,8 @@ class TestWebUIJsonAPI:
         reg = {
             "version": "1.0",
             "apps": {
-                "mimo": {"name": "MiMo Code", "executable": "mimo", "native": False},
-                "agy": {"name": "Antigravity", "executable": "agy", "native": False,
+                "mimo": {"name": "MiMo Code", "executable": "mimo"},
+                "agy": {"name": "Antigravity", "executable": "agy",
                         "version": "2.0", "env_vars": ["GEMINI_API_KEY"],
                         "optional_env_vars": ["HTTP_PROXY"]},
             },
@@ -366,7 +366,8 @@ class TestWebUIJsonAPI:
         apps = {a["id"]: a for a in data["apps"]}
         assert apps["mimo"]["installed"] is True and apps["mimo"]["active"] is True
         assert apps["mimo"]["configured_keys"] == ["OPENAI_API_KEY"]
-        assert apps["agy"]["installed"] is False and apps["agy"]["native"] is False
+        assert apps["agy"]["installed"] is False
+        assert "native" not in apps["agy"]
         assert apps["agy"]["update_available"] is False  # not installed
         assert "GEMINI_API_KEY" in apps["agy"]["required_env_vars"]
         assert "HTTP_PROXY" in apps["agy"]["optional_env_vars"]
@@ -1468,6 +1469,7 @@ class TestDefaultWorkingDirectory:
         payload = json.loads(capsys.readouterr().out)
         assert payload["effective_cwd"] == core.DEFAULT_CWD
         assert payload["default_cwd"] == ""
+        assert payload["supported_keys"] == ["default_cwd", "lang", "proxy_mode", "proxy_url"]
 
     def test_proot_wrapper_uses_the_configured_directory(self, tmp_path, monkeypatch):
         monkeypatch.setattr(core, "ANCLI_DIR", str(tmp_path / "ancli"))
@@ -1486,7 +1488,7 @@ class TestDefaultWorkingDirectory:
 
 
 class TestAgentMemory:
-    """The generated default-cwd memory file is informative and non-destructive."""
+    """The generated guest-global memory file is informative and non-destructive."""
 
     def _target(self, tmp_path, monkeypatch):
         target = tmp_path / "default-cwd"
@@ -1515,7 +1517,7 @@ class TestAgentMemory:
         assert "DEEPSEEK_API_KEY" in text
         assert "secret" not in text
         assert "ancli status --json" in text
-        assert "sdcardfs" in text
+        assert "共享存储" in text
         assert "/data/local/tmp/build_cache" in text
         assert "faccessat2" in text
         assert "os.access(..., os.X_OK)" in text

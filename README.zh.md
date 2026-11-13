@@ -15,8 +15,10 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 - **命令行转义与代理直通**：通过 Python 内置网络库直连，绕过 ADB 命令行转义字符（如 `|`, `--`）被剥离的 bug；需要代理的工具使用 Android 系统代理，DeepSeek Harness（`dsh`）使用直连模式，避免旧代理缓存导致连接失败。
 - **PRoot 系统调用稳定性修补**：自动规避 Android 内核对 `io_uring` 和 `epoll` 翻译残缺导致的 Event Loop 阻塞死锁问题，确保基于 Node.js / Bun 的现代终端应用（如 MiMo 和 Claude Code）能够完美接收键盘的 Raw TTY 交互事件，不卡顿、不乱码。
 - **物理键盘输入法支持**：初始化自动安装 `fcitx5` 及 `fcitx5-chinese-addons`（中文拼音/五笔等），并在环境配置中自动向容器导出输入法环境变量（`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`），以解决部分用户在安卓设备上外接物理键盘（蓝牙/有线键盘）时，在终端 TUI 应用（如 Aider, MiMo 等）中无法直接输入中文或其他非英文字符的问题。
-- **跨沙箱浏览器自动跳转（网页授权登录）**：彻底解决 PRoot 容器沙箱内没有图形界面导致开发套件（如 `grok login`, `agy auth login` 等）无法拉起浏览器进行 OAuth 设备授权认证的问题。通过宿主端中转配合劫持翻译 Go 语言的 `statx` 物理路径系统调用，自动将容器内打开网页的请求传递给宿主机安卓端，直接拉起手机默认浏览器完成登录。
-- **多语言商店偏好 (zh/en)**：支持直接在 `ancli` 应用商店主菜单进行中英文一键切换，并持久保存您的语言偏好配置。
+- **跨沙箱浏览器自动跳转（网页授权登录）**：容器把需要打开的 URL 写入宿主队列，由 wrapper 调用 Android 浏览器；无法自动跳转时会把完整 URL 回显到终端，便于手动打开。
+- **多语言界面 (zh/en)**：CLI 和 WebUI 共用持久化的语言配置。
+- **WebUI 可视化设置**：设置窗口可编辑语言、主题、默认工作目录、代理模式和手动代理地址，并显示当前后端、Android 数据通道、生效目录和代理模式。
+- **简洁的 CLI 输出**：交互菜单和状态行只保留必要信息，命令细节通过 `ancli --help`、JSON 输出和日志查看。
 - **多重安全加固**：实现命令白名单校验、Shell 链式操作符过滤、环境变量转义和路径遍历防护。
 - **稳定的 dsh WebUI 启动**：AnCLI WebUI 等待 dsh 生成带 token 的地址后打开浏览器；3080 已有服务时复用该服务。
 
@@ -44,7 +46,7 @@ AnCLI 是一个为已 Root 安卓设备打造的统一、免系统修改（Syste
 `dsh` 是唯一从 **npm** 安装的工具（它的启动器要解析 80 多个插件 bundle 包），因此注册表条目会先引导一个现代 Node，再从官方源安装 CLI：
 
 ```bash
-ancli install dsh        # apt xz-utils → npm i -g n → n lts → npm i -g @deepseek-ai/dsh
+ancli install dsh        # 下载 Node LTS → npm i -g @deepseek-ai/dsh
 dsh --version            # 运行时版本（也是 ancli check 探测的值）
 dsh web                  # Web UI 监听 http://127.0.0.1:3080，并通过 AnCLI 的 xdg-open 桥接直接拉起手机浏览器
 dsh web --no-open        # 或者只打印 URL，不自动开浏览器
@@ -61,7 +63,7 @@ dsh headless "总结这个仓库"   # 一次性任务，打印结果后退出
 
 ### 方式 A：通过 Root 管理器刷入 (推荐)
 
-1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.6.zip`）。
+1. 从 [Releases](https://github.com/AHLLX/AnCLI-Android/releases) 页面下载 `ancli-v<版本号>.zip` 模块包（文件名与 Release 标签一致，例如 `ancli-v1.2.601.zip`）。
 2. 打开你的 Magisk、KernelSU 或 APatch 管理器应用。
 3. 进入 **模块** -> **从存储安装**，选择下载的 ZIP 文件。
 4. 安装并完成初始化后，在任意 root 终端输入 `ancli` 即可启动。
@@ -99,6 +101,33 @@ ancli repair                   # 检测并修复环境问题
 ancli --help                   # 显示帮助信息
 ancli --version                # 显示版本号
 ```
+
+### 可配置项
+
+全局配置保存在容器内的 `/root/.ancli-config.json`。当前只接受以下四个键：
+
+| 配置键 | 可用值 | 作用 |
+| :--- | :--- | :--- |
+| `default_cwd` | 绝对路径或空值 | 从 `/` 启动工具时使用的目录；留空恢复 `/root`。 |
+| `lang` | `zh`、`en` | AnCLI 命令输出和 WebUI 的语言偏好。 |
+| `proxy_mode` | `system`、`manual`、`direct` | 使用 Android 系统探测、手动代理或直连。 |
+| `proxy_url` | `http://host:port` 或 `https://host:port` | 手动代理地址，仅在 `manual` 模式使用。 |
+
+```bash
+ancli config --json
+ancli config --help
+ancli config --set lang=zh
+ancli config --set default_cwd=/sdcard/projects
+ancli config --set proxy_mode=manual --set proxy_url=http://192.168.1.10:7890
+ancli config --set proxy_mode=direct
+```
+
+工具自己的环境变量由 `src/registry.json` 声明，可用 `ancli list --json` 查看；
+使用 `ancli config <app_id> --set KEY=VALUE` 写入，密钥只保存在容器的 secrets 文件中，
+不会嵌入 wrapper。当前 Claude Code 支持 `ANTHROPIC_API_KEY`、
+`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL`；DeepSeek Harness
+支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`；所有工具都可选配置
+`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`。
 
 ### 运行已安装的工具
 工具安装完成后，可直接在终端中调用，无需添加 `ancli` 前缀：
@@ -201,7 +230,9 @@ ancli config --set default_cwd=/sdcard/projects  # 从 / 启动时落到这里
 ancli config --set default_cwd=                  # 留空 = 恢复内置默认 /root
 ```
 
-WebUI 里点「设置」也能改（同一份配置，存在容器 `/root/.ancli-config.json`）。
+WebUI 里点「设置」也能改（同一份配置，存在容器 `/root/.ancli-config.json`）。设置窗口还可以编辑
+`lang`、`proxy_mode` 和 `proxy_url`；主题偏好保存在当前 WebUI。状态卡片会显示当前 Ubuntu/PRoot
+后端、`/mnt/ancli-data` 数据通道、生效目录和代理模式。
 
 修改 `default_cwd` 不会移动运行时上下文。AnCLI 统一维护容器全局的
 `/root/.agents/AGENTS.md`，需要重建时运行 `ancli agent-init`。
@@ -217,8 +248,8 @@ AnCLI 自己生成的文件。默认工作目录只影响工具启动位置，�
 
 文件包含当前 AnCLI 版本、容器与 Android 数据路径、代理/DNS 和浏览器接力约定、已安装工具、
 已配置的环境变量名（绝不写入变量值）、共享 skills 路径以及 Agent 操作边界。它不是密钥存储，
-不要把 API key、cookie 或 token 写进去。已有的项目 `AGENTS.md` 会保留，`AGENTS.md`
-是可以由 AnCLI 刷新的设备运行时上下文文件。
+不要把 API key、cookie 或 token 写进去。已有的项目 `AGENTS.md` 会保留；模板位于
+`src/runtime-context/AGENTS.md`，设备运行时文件可用 `ancli agent-init --refresh` 刷新。
 
 ```bash
 ancli agent-init

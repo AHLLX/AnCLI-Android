@@ -6,11 +6,20 @@ Welcome, fellow AI Assistant. If you are reading this, you have been tasked with
 AnCLI is a unified, systemless environment manager and plugin-based installer designed to bring full Linux command-line tools (like Node.js, Go, or Python-based AI agents) to rooted Android devices.
 Because Android uses the Bionic C library, native Linux binaries often crash. AnCLI solves this by using `proot` to run a pure Ubuntu `glibc` base system transparently on Android.
 
+## Current handoff (2026-11-13, v1.2.601)
+
+- Keep the single `proot-ubuntu` backend. The old native execution branch and host-mode shims are removed.
+- Keep terminal menu labels short. Put command details in `ancli --help`, structured output, and logs.
+- The WebUI settings dialog is the visual editor for `lang`, `default_cwd`, `proxy_mode`, and `proxy_url`. It also shows the active backend, Android data channel, effective directory, and proxy mode.
+- The WebUI theme is stored locally in the page; the language is persisted through AnCLI global config. Do not add a second settings store.
+- `dsh` keeps direct-network mode in the registry. Other tools use the wrapper's system or manually configured proxy. Download actions show the selected proxy path before starting.
+- Release `v1.2.601` uses `versionCode=13`; keep the tag, `update.json`, module asset, and changelog aligned.
+
 ## 2. Core Architecture
 You must understand these three pillars before writing any code:
 
 1. **`src/module/customize.sh` (The Magisk Module Installer)**: 
-   - Replaces the old `install.sh`. This script is executed by the Android Root Manager (Magisk/KernelSU) when the module ZIP is flashed.
+   - This is the module flash hook executed by Magisk/KernelSU/APatch when the ZIP is installed. `src/install.sh` remains a separate optional bootstrap that downloads the ZIP; it is not called by the manager.
    - Downloads PRoot and a minimal `ubuntu-base` tarball, extracting it to `/data/local/tmp/ancli/rootfs`.
    - Bootstraps APT dependencies (`python3`, `nodejs`, `npm`) during the flash process.
 2. **`src/ancli-core.py` (The Package Manager Brain)**: 
@@ -63,7 +72,7 @@ When debugging paths or writing cleanup logic, refer to this exact physical mapp
 - **Shared Skills**: `/root/.agents/skills` inside the container (i.e. `$ROOTFS/root/.agents/skills`); `ancli skills` / `ancli repair` create it and symlink each tool's own path (`~/.claude/skills`, `~/.grok/skills`, `~/.mimocode/skills`, `~/.config/opencode/skills`, `~/.dsh/skills`) to it
 - **Magisk Module**: `/data/adb/modules/ancli/`
 - **App-data channel**: `/mnt/ancli-data` (host bind of the real `/data`, visible in the container as `/mnt/ancli-data/data/<pkg>`)
-- **Global settings**: `/root/.ancli-config.json` (`lang`, `default_cwd`); `ancli config` with no app id prints/updates them. Wrappers read `default_cwd` at launch (sed, when the caller's cwd is `/`) and fall back to `/root`, so changing it needs no wrapper regeneration. The WebUI's 设置 dialog writes the same file.
+- **Global settings (2026-11-13)**: `/root/.ancli-config.json` accepts `lang`, `default_cwd`, `proxy_mode` (`system|manual|direct`) and `proxy_url`. `ancli config` with no app id prints/updates them; `ancli config --json` reports the supported keys. Wrappers read `default_cwd` and proxy settings at launch, so changing them needs no wrapper regeneration. The WebUI's Settings dialog is the visual editor for the same file and shows the backend, data channel, effective directory, and proxy mode.
 - **Runtime context**: `ancli agent-init` renders the bundled `src/runtime-context/AGENTS.md` template into the guest-wide `/root/.agents/AGENTS.md`; `ancli repair`, `ancli skills`, and successful installs ensure it too. Existing project `AGENTS.md` files are kept. The generated global `AGENTS.md` contains environment paths and guidance, never secret values.
 
 **Why `/data/data` can look empty.** An `su` started from an app (Termius, an SSH-server app) runs in
@@ -135,7 +144,7 @@ the bundled docs. Aider-style tools with no skill system use `CONVENTIONS.md` / 
 ## 8. Network Proxy & VPN Constraints (CRITICAL)
 - **VPN Bypass**: Android VPNs in TUN mode (e.g. Clash, v2rayNG) bypass Root (UID 0) traffic by default. If a Python or curl script runs as root and the proxy is not explicitly set, it will ignore the VPN and fail to connect to domains like `github.com`.
 - **Proxy Override**: Always parse the Android system proxy via `dumpsys connectivity`. Extract the `HttpProxy` IP and port. `ancli_env.sh` caches the result for 30 s, keeps the last successful value in `.proxy_cache_last` (used when the probe comes back empty, instead of silently going direct), and exports `no_proxy=localhost,127.0.0.1,::1` so local model servers/MCP endpoints are never tunnelled.
-- **DNS inheritance**: the core runs in the glibc guest and **cannot execute Android's `getprop`/`dumpsys` at all** (bionic binaries are not runnable there — verified on device), and `getprop net.dns1/2` is empty on modern Android anyway. So the host-side `ancli_env.sh` probes the resolvers (props, then `dumpsys connectivity` → `DnsAddresses`) and caches them in `/data/local/tmp/ancli/.dns_cache` (refreshed hourly); `_get_android_dns()` reads that cache first. `service.sh` does the same probe at boot with absolute `/system/bin/...` paths, writes public fallbacks immediately (the network is often not up yet at `late_start`) and **retries in a background subshell** for up to 5 minutes, rewriting the file with the real resolvers once they appear. Never lead `resolv.conf` with 8.8.8.8 — it is blocked or poisoned on many networks.
+- **DNS inheritance (2026-11-13)**: the host-side `ancli_env.sh` remains the source of truth for proxy and DNS discovery. It probes Android resolvers (properties, then `dumpsys connectivity` → `DnsAddresses`) and caches them in `/data/local/tmp/ancli/.dns_cache` (refreshed hourly); `_get_android_dns()` reads that cache first. A container may run `/system/bin/getprop` or `/system/bin/dumpsys` when the wrapper exposes them and SELinux permits it, but the core must not depend on that optional path. `service.sh` performs the boot-time probe with absolute paths, writes safe fallbacks, and retries asynchronously for up to 5 minutes. Never lead `resolv.conf` with 8.8.8.8 — it is blocked or poisoned on many networks.
 - **Browser hand-off (xdg-open)**: Android's own binaries cannot execute inside the glibc guest — `/system/bin/am` fails with `cmd: inaccessible or not found` — so a container-side `xdg-open` that calls `am` looks successful (exit 0) while opening nothing. The container shim (`$ROOTFS/usr/local/bin/xdg-open`, also at `/usr/bin` + `/bin`, plus `sensible-browser`) therefore only appends URLs to `/data/local/tmp/ancli/.open_url`; the generated wrapper runs a watcher that drains that queue with `am start` on the host and prints the URL back to stderr if that fails. **The wrapper must export `BROWSER=/usr/local/bin/xdg-open`**: the npm `open` package (used by `dsh web`) prefers its own vendored freedesktop `xdg-open` over PATH and otherwise ends in `xdg-open: no method available for opening 'http://…'` (rc 3, verified on device). Re-check with `scripts/probe_open_package.py` after a dsh upgrade. The drain also prefers a real browser over the chooser (`am start -p <pkg>`, Chrome first): with no default browser set, `am start` raises "Open with", and a WebView-based pick (Via and friends) does not carry the auth cookie.
 - **`dsh web` on Android needs `SameSite=Lax`** (patched by `patch_dsh_web_cookie()`, re-applied by `ancli repair` and after installing/updating dsh). dsh authenticates by setting an HttpOnly `SameSite=Strict` cookie on the token URL and redirecting to `/`; Chrome treats a navigation started by an external app — exactly what an Android Intent is — as cross-site, drops the Strict cookie on that redirect, and the UI answers "dsh web authentication required". Typing the URL or launching from a desktop browser works, which is why upstream does not see it. The patch edits the one packaged file that carries the attribute (`…/@deepseek-ai/dsh-client-connection/lib/index.js`) and is idempotent. If a future dsh release renders differently, `scripts/probe_dsh_web_page.py` replays the token/cookie exchange against a live server.
 - **DO NOT hardcode 127.0.0.1**: Android users often run proxy software on other devices (e.g. PC at `192.168.1.x`) and set the Android proxy to that IP. Always use the IP dynamically returned by `dumpsys`.
@@ -155,7 +164,7 @@ Releases are consumed by Magisk/KernelSU/APatch managers through `update.json`, 
 | `update.json` | `version` / `versionCode` / `zipUrl` / `changelog` | same version, and `zipUrl` must point at the **exact** asset name of the new Release |
 | GitHub Release asset | `ancli-<version>.zip` | file name must equal the basename in `zipUrl` (case included) |
 
-Use a three-part version with an unrestricted numeric patch segment. `v1.2.601` is a valid small release after `v1.2.6`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. For example, `python scripts/prepare_release.py v1.2.601 601` writes the package version and module code together.
+Use a three-part version with an unrestricted numeric patch segment. `v1.2.601` is a valid small release after `v1.2.6`. Keep `versionCode` as a separate monotonically increasing integer for KernelSU and Magisk comparisons. `python scripts/prepare_release.py v1.2.601` selects the next code; pass an explicit second argument only when a different increasing code is required.
 
 Release procedure (copy-paste, in order):
 

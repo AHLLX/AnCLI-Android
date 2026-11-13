@@ -15,8 +15,10 @@ The current runtime has one execution backend, `proot-ubuntu`. Android `/system`
 - **Escaping & Proxy Passthrough**: Bypasses ADB character escaping bugs via Python urllib direct downloads, forwards the Android system proxy to tools that need it, and keeps DeepSeek Harness (`dsh`) in direct-network mode so stale proxy state does not break its connection.
 - **PRoot Syscall Stabilization**: Automatically mitigates Android kernel `io_uring` and `epoll` translation bugs, ensuring modern Node.js and Bun interactive TUIs (like MiMo and Claude Code) can process raw keyboard input flawlessly without event loop blocking.
 - **Physical Keyboard Input Method Support**: Pre-installs `fcitx5` and `fcitx5-chinese-addons` during the container bootstrap phase, and automatically exports standard input variables (`GTK_IM_MODULE=fcitx`, `QT_IM_MODULE=fcitx`, `XMODIFIERS=@im=fcitx`) to solve the issue where users using external physical keyboards (Bluetooth/USB) on Android tablets/phones cannot input Chinese or non-English characters directly in terminal-based TUI tools (like Aider, MiMo).
-- **Cross-Sandbox Browser Redirect (OAuth login)**: Solves the headless virtualization restriction where terminal agents (like `grok login`, `agy auth login`) fail to open a browser for device flow authentication. We map host-side wrappers and translate Golang's `statx` pathing system calls, automatically launching your host Android's default web browser when tools try to open URLs inside the guest container.
-- **Multi-language Support (zh/en)**: Features an interactive language hot-toggle directly in the `ancli` menu, saving your locale preferences persistently.
+- **Cross-Sandbox Browser Redirect (OAuth login)**: Solves the headless virtualization restriction where terminal agents (like `grok login`, `agy auth login`) cannot open a browser from the guest. The container queues the URL and the host wrapper launches Android's browser, with the URL echoed for manual fallback.
+- **Multi-language Support (zh/en)**: The CLI and WebUI share a persistent language setting.
+- **Visual WebUI Settings**: The Settings dialog edits language, theme, default working directory, proxy mode, and manual proxy URL, and shows the active backend, Android data channel, effective directory, and proxy mode.
+- **Short CLI Output**: Interactive labels and status lines stay compact; command details remain available through `ancli --help`, JSON output, and logs.
 - **Security Hardened**: Command whitelist validation, shell operator blocking, input sanitization, and path traversal guards.
 - **Shared Agent Skills**: one global skills directory (`~/.agents/skills` inside the container) is symlinked into every agent CLI's own skills path, so a `SKILL.md` written once is picked up by Claude Code, MiMo, Antigravity, Grok, OpenCode and DeepSeek Harness. Run `ancli skills` (or the WebUI's 修复环境) to create the layout.
 - **Reliable dsh WebUI launch**: the AnCLI WebUI waits for dsh's token URL before opening the browser and reuses an already listening dsh service instead of starting a second copy on port 3080.
@@ -48,7 +50,7 @@ Node first (the container's apt Node is 18; `dsh` requires `^22.19 || >=24`) and
 CLI from the official registry:
 
 ```bash
-ancli install dsh        # apt xz-utils → npm i -g n → n lts → npm i -g @deepseek-ai/dsh
+ancli install dsh        # download Node LTS → npm i -g @deepseek-ai/dsh
 dsh --version            # runtime version (also what `ancli check` probes)
 dsh web                  # Web UI on http://127.0.0.1:3080 — opens the phone's browser via AnCLI's xdg-open bridge
 dsh web --no-open        # …or just print the URL
@@ -84,7 +86,7 @@ dsh headless "summarize this repo"   # one-shot task, prints the answer and exit
 
 ### Method A: Flashing via Root Manager (Recommended)
 
-1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.6.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
+1. Download the module ZIP (`ancli-v<version>.zip`, e.g. `ancli-v1.2.601.zip`) from the [Releases](https://github.com/AHLLX/AnCLI-Android/releases) page.
 2. Open your Magisk, KernelSU, or APatch Manager app.
 3. Navigate to **Modules** → **Install from storage** and select the ZIP file.
 4. After bootstrap finishes, open any root terminal and run `ancli`.
@@ -131,6 +133,41 @@ opencode
 mimo
 agy
 ```
+
+### Configuration
+
+Global settings are stored in `/root/.ancli-config.json` inside the container.
+The command accepts exactly these keys:
+
+| Key | Values | Effect |
+| :--- | :--- | :--- |
+| `default_cwd` | absolute path or empty | Directory used when a tool is launched from `/`; empty restores `/root`. |
+| `lang` | `zh`, `en` | Language used by the AnCLI interactive output and WebUI preference. |
+| `proxy_mode` | `system`, `manual`, `direct` | Android system detection, configured proxy, or no proxy. |
+| `proxy_url` | `http://host:port` or `https://host:port` | Manual proxy address; used when `proxy_mode=manual`. |
+
+```bash
+ancli config --json
+ancli config --help
+ancli config --set lang=zh
+ancli config --set default_cwd=/sdcard/projects
+ancli config --set proxy_mode=manual --set proxy_url=http://192.168.1.10:7890
+ancli config --set proxy_mode=direct
+```
+
+Per-tool variables are declared by `src/registry.json` and can be listed with
+`ancli list --json`. Set them without embedding secrets in wrappers:
+
+```bash
+ancli config claude-code --set ANTHROPIC_BASE_URL=https://example.invalid
+ancli config dsh --set DEEPSEEK_BASE_URL=https://example.invalid
+```
+
+The current registry exposes provider variables for Claude Code (`ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) and DeepSeek Harness
+(`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`). All supported tools also expose the optional
+`HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` variables; Aider, MiMo, OpenCode, Antigravity,
+and Grok currently have no additional provider variables.
 
 ### Update Detection (official versions)
 
@@ -245,6 +282,10 @@ ancli config --set default_cwd=                  # empty = back to /root
 The WebUI's **Settings** button edits the same value (stored in the container at
 `/root/.ancli-config.json`).
 
+The same dialog also edits `lang`, `proxy_mode`, and `proxy_url`. The theme is a local WebUI
+preference. Its status card reports the active Ubuntu/PRoot backend, `/mnt/ancli-data` readiness,
+the effective launch directory, and the selected proxy mode.
+
 Changing `default_cwd` no longer moves the runtime context. AnCLI keeps the generated global
 context at `/root/.agents/AGENTS.md`; use `ancli agent-init` to regenerate it explicitly.
 
@@ -263,8 +304,9 @@ The runtime context remains global at `/root/.agents/AGENTS.md`.
 The generated file records the current AnCLI version, container and Android data paths, proxy/DNS
 and browser hand-off contract, installed tool names, configured environment-variable names (never
 their values), the shared skills path, and safe operating guidance for agents. It is deliberately
-not a secret store. An existing project `AGENTS.md` is kept. `AGENTS.md` is the generated
-device context file and can be refreshed with `ancli agent-init --refresh`.
+not a secret store. An existing project `AGENTS.md` is kept. The source template is
+`src/runtime-context/AGENTS.md`, and the generated device context can be refreshed with
+`ancli agent-init --refresh`.
 
 ```bash
 ancli agent-init
@@ -352,7 +394,7 @@ The wrapper also avoids repeating slow setup on every launch: the system proxy i
 
 ### `bash -c 'test -x <file>'` 在容器内总是失败（faccessat2）
 
-已知问题：官方 proot（5.4.0）在 aarch64 上未映射 `faccessat2` syscall（glibc 2.39 的 `bash` `[ -x ]` 依赖它），导致权限检测可能误报 `false`；这台手机的运行时审定还观察到 `sh` 的 `test -x` 也会误报，因此不要把 `test -x` 当作可执行性证明。影响 jadx 等 Java 工具启动脚本里的 `JAVA_HOME`/`-x` 检测。
+已知问题：官方 proot（5.4.0）在部分 aarch64 环境上未映射 `faccessat2` syscall（glibc 2.39 的 `bash` `[ -x ]` 依赖它），导致权限检测可能误报 `false`；部分 Android shell 的 `test -x` 也可能误报，因此不要把 `test -x` 当作可执行性证明。影响 jadx 等 Java 工具启动脚本里的 `JAVA_HOME`/`-x` 检测。
 
 **绕法**（mimo 已验证）：
 - 用 Python `os.access(path, os.X_OK)`、`command -v` 或直接调用程序判断可执行性。

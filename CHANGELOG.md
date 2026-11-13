@@ -1,51 +1,15 @@
-## v1.2.6 (prepared, not published)
+## v1.2.601 (2026-11-13)
 
-This release is prepared in the repository and has not been published as a GitHub Release yet.
-
-- Route AGY's global rule discovery through `/root/.gemini/AGENTS.md`, linked to the canonical `/root/.agents/AGENTS.md` runtime context.
-- Keep dsh WebUI launches idempotent by waiting for the authenticated URL and reusing an existing port-3080 service.
-- Persist WebUI task logs as selectable terminal tabs, restore them after reopening the page, and keep automatic scrolling from overriding manual log navigation.
-- Added a Chinese and English language switcher to the WebUI and removed wrapper working-directory hints from its diagnostic output.
-- Refresh the KernelSU Modules metadata and project documentation for the current PRoot runtime.
-
-## Unreleased (reviewed 2026-11-09)
-
-### dsh WebUI launch recovery
-
-- The WebUI now starts `dsh web --no-open`, waits for the authenticated URL, opens it through the Android bridge, and reuses the existing port-3080 instance on repeated clicks. This avoids blank or stuck browser tabs followed by `EADDRINUSE`.
-
-### Default Agent memory and documentation cleanup
-
-- Added a bundled `src/runtime-context/AGENTS.md` template and `ancli agent-init`. It renders the
-  current default working directory, AnCLI paths, Android data channel, installed tools, configured
-  variable names, shared skills location, proxy/DNS/browser behavior, and operating boundaries into
-  the effective default directory (`/root` or configured `default_cwd`). It never writes secret
-  values and preserves an existing user-authored `AGENTS.md`; `--refresh` only updates files carrying
-  AnCLI's generation marker.
-- `ancli repair`, `ancli skills`, and successful app installs now ensure the default memory file exists.
-  The module build and device deploy helper carry the template with the core payload.
-- Integrated the stable Android 16/aarch64, sdcardfs/ext4, APK-toolchain, PRoot `test -x`,
-  and `dsh web` guidance recovered from the phone's existing memory files. The existing
-  `/sdcard/AGENTS.md` was preserved and received an explicitly marked supplement; secrets,
-  proxy addresses, tokens, account details, and transient audit measurements were excluded.
-- Refreshed the WebUI preview fixtures from the current device and made the harness read its
-  captured status instead of carrying an installed-count literal. Simplified the live update
-  smoke script so it no longer replays a dated device snapshot.
-- Replaced the direct `rm -rf` full-purge instructions with the one-shot
-  `/data/local/tmp/ancli_force_purge` marker consumed by `uninstall.sh`, and made the live module
-  manifest follow v1.2.5/versionCode 11 during device consistency repair.
-- Removed the unused native execution backend and its host-mode environment and toolchain shims.
-  Official registry entries now share one PRoot wrapper path. Legacy `native` fields remain readable
-  in records and are reported as the single supported backend.
-- Added `ancli doctor --json` for read-only path, mount, backend, command, and configured-variable
-  diagnostics. Installation metadata now persists configured variable names while keeping values in
-  per-tool secrets files. Existing legacy records are accepted and are rewritten without env values
-  on the next state save.
-- Corrected the architecture document's stale uninstall description and stale `exec` wrapper example;
-  the current implementation preserves user data by default and keeps the wrapper alive to restore
-  TTY state.
-- Replaced the obsolete v1.0.x `SUMMARY.md` with a current v1.2.5 handoff index so old TTY,
-  uninstall, ownership and dynamic-CWD claims are no longer presented as active behavior.
+- Keep one Ubuntu/PRoot execution backend and remove the unused native wrapper path.
+- Add visual WebUI settings for language, theme, default working directory, proxy mode, and manual proxy URL.
+- Show the active backend, Android data channel, effective directory, and proxy mode in the settings dialog.
+- Keep the WebUI settings and `ancli config` on the same global keys: `lang`, `default_cwd`, `proxy_mode`, and `proxy_url`.
+- Simplify terminal menu labels and status text, while leaving command details in `ancli --help` and logs.
+- Preserve WebUI task logs as selectable terminal tabs and restore them after reopening the page.
+- Start `dsh web` with `--no-open`, wait for its authenticated URL, reuse an existing port-3080 service, and show a proxy preflight before downloads.
+- Generate the guest-global runtime context at `/root/.agents/AGENTS.md`; keep project development rules in the repository `AGENTS.md`.
+- Keep Android data access through `/mnt/ancli-data`, proxy/DNS handling in the host wrapper, and browser opening through the host bridge.
+- Keep manager updates aligned across `module.prop`, `update.json`, the core version, the registry version, and the `ancli-v1.2.601.zip` asset.
 
 ## v1.2.5
 

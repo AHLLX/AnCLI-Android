@@ -8,12 +8,13 @@ import time
 import subprocess
 import shutil
 import urllib.request
+import urllib.parse
 import re
 import ssl
 import contextlib
 
-# SSL verification is scoped per-request in fetch_registry() and _install_pipe_script()
-# to handle incomplete CAs inside the PRoot container.
+# 2026-11-13: Keep TLS fallback scoped to individual requests; do not alter the
+# process-wide SSL context because the PRoot CA store may be incomplete.
 # The global ssl context is intentionally NOT monkey-patched to preserve security.
 
 # Paths inside the PRoot environment
@@ -25,10 +26,7 @@ MOD_DIR = "/data/adb/modules/ancli"
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
-# Termux Host backend paths
-TERMUX_PREFIX = "/data/data/com.termux/files/usr"
-
-VERSION = "1.2.6"
+VERSION = "1.2.601"
 
 REGISTRY_URL   = "https://raw.githubusercontent.com/AHLLX/AnCLI-Android/main/src/registry.json"
 LOCAL_REGISTRY = "/root/.ancli-registry.json"   # persistent and writable inside proot
@@ -42,6 +40,10 @@ CONFIG_FILE    = "/root/.ancli-config.json"
 # directory. Users can point this at a project tree with
 # `ancli config --set default_cwd=/sdcard/projects` (also editable in the WebUI).
 DEFAULT_CWD    = "/root"
+# 2026-11-13: These are the only global settings accepted by `ancli config`.
+# Per-tool API keys and endpoints remain registry-defined and are stored in
+# `/data/local/tmp/ancli/secrets/<tool>.env`.
+GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url")
 # Directories that are bind-mounted into the rootfs at run time (they do not
 # exist under $ROOTFS on disk), so an existence check must skip them.
 BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
@@ -156,7 +158,7 @@ def set_proxy_mode(value):
 
 
 def settings_command(argv):
-    """`ancli config` with no app id: global settings (default cwd, language)."""
+    """Handle `ancli config` without an app id (global settings only)."""
     errors = []
     memory = None
     changed_default_cwd = False
@@ -171,14 +173,14 @@ def settings_command(argv):
         elif key == "proxy_mode":
             ok, err = set_proxy_mode(value)
         else:
-            ok, err = False, f"未知配置项：{key}（支持 default_cwd、lang、proxy_mode、proxy_url）"
+            ok, err = False, f"未知配置项：{key}（支持 {', '.join(GLOBAL_CONFIG_KEYS)}）"
         if not ok:
             errors.append(err)
 
     cfg = load_config()
     if changed_default_cwd:
-        # Keep the memory file beside the new default directory.  JSON callers
-        # receive the result as data; human callers get the normal progress line.
+        # Refresh the guest-global context after a configuration change. JSON
+        # callers receive the result as data; human callers get the progress line.
         memory = setup_runtime_context(verbose="--json" not in argv)
     if "--json" in argv:
         payload = {
@@ -187,6 +189,7 @@ def settings_command(argv):
             "effective_cwd": cfg.get("default_cwd") or DEFAULT_CWD,
             "proxy_url": cfg.get("proxy_url", ""),
             "proxy_mode": cfg.get("proxy_mode", "system"),
+            "supported_keys": list(GLOBAL_CONFIG_KEYS),
         }
         if memory is not None:
             payload["runtime_context"] = memory
@@ -198,7 +201,8 @@ def settings_command(argv):
         print("  从 / 启动工具时使用；设置示例："
               "ancli config --set default_cwd=/sdcard/projects")
         print(f"语言: {cfg.get('lang', 'zh')}")
-        print(f"代理: {cfg.get('proxy_url') or '系统自动探测'}")
+        print(f"代理模式: {cfg.get('proxy_mode', 'system')}")
+        print(f"代理地址: {cfg.get('proxy_url') or '未设置'}")
     for err in errors:
         print(f"\033[91m[X] {err}\033[0m")
     if errors:
@@ -207,54 +211,64 @@ def settings_command(argv):
 CURRENT_CONFIG = load_config()
 LANG = CURRENT_CONFIG.get("lang", "zh")
 
+# 2026-11-13: Keep the terminal menu short; details belong in help and logs.
 STRINGS = {
     "zh": {
-        "title": "=== 🚀 AnCLI 应用商店 ===",
-        "repair_opt": "修复环境 (修复 DNS、权限、封装)",
-        "check_opt": "检查官方更新 (联网查询工具最新版本)",
-        "check_title": "=== 🔄 官方版本检查 ===",
-        "uninstall_opt": "卸载应用",
-        "lang_opt": "切换语言 (当前: 中文)",
+        "title": "AnCLI",
+        "repair_opt": "修复环境",
+        "check_opt": "检查更新",
+        "check_title": "检查更新",
+        "uninstall_opt": "卸载",
+        "lang_opt": "切换语言（中文）",
         "exit_opt": "退出",
         "choose_opt": "请选择一个选项: ",
         "installed": "[已安装]",
         "invalid_choice": "无效的选择。",
         
-        "uninstall_menu_title": "=== 🗑️ 卸载菜单 ===",
-        "uninstall_specific": "卸载特定应用",
-        "uninstall_all": "卸载所有应用 (保留 AnCLI 环境)",
-        "uninstall_complete": "完全卸载 AnCLI (框架和所有应用)",
+        "uninstall_menu_title": "卸载",
+        "uninstall_specific": "卸载指定应用",
+        "uninstall_all": "卸载全部应用（保留环境）",
+        "uninstall_complete": "完全卸载",
         "cancel": "取消",
         "no_apps_installed": "尚未安装任何应用。",
         "select_app_uninstall": "选择要卸载的应用:",
         "enter_num_uninstall": "输入数字进行卸载 (0 取消): ",
         "confirm_uninstall_all": "确定要卸载所有应用吗？(y/n): ",
         "all_apps_uninstalled": "[OK] 所有应用已卸载。",
-        "uninstall_instructions": "\n\033[91m⚠️ 要完全卸载 AnCLI 并删除容器、安装状态、密钥和配置，请退出此菜单，\n在 root Android shell 中创建一次性清除标记，然后从 Magisk/KernelSU/APatch 管理器卸载模块：\033[0m\n\n    \033[1;33mtouch /data/local/tmp/ancli_force_purge\033[0m\n\n\033[90m卸载脚本会消费并删除这个标记，同时清理模块动态 wrapper。\033[0m",
+        "uninstall_instructions": "\n\033[91m完全卸载会删除容器、安装状态、密钥和配置。退出此菜单，在 root Android shell 中创建清除标记，再从 Magisk、KernelSU 或 APatch 管理器卸载模块：\033[0m\n\n    \033[1;33mtouch /data/local/tmp/ancli_force_purge\033[0m\n\n\033[90m卸载脚本会清理标记和动态 wrapper。\033[0m",
         
-        "manage_title": "=== 管理: {} ===",
+        "manage_title": "管理 {}",
         "manage_update": "更新",
         "manage_uninstall": "卸载",
-        "manage_config": "重新配置环境变量",
+        "manage_config": "配置环境变量",
         "manage_cancel": "取消",
         "action_prompt": "操作: ",
         
-        "help_text": """\033[1;36mAnCLI (Android CLI) - 统一的免重启命令行环境管理器\033[0m
+        "help_text": """\033[1;36mAnCLI (Android CLI) - 命令行环境管理器\033[0m
 
 \033[1m用法:\033[0m
-  ancli                          打开交互式应用商店菜单
+  ancli                          打开交互式菜单
   ancli install <app_id>         安装指定的应用
   ancli uninstall <app_id>       卸载指定的应用
   ancli update <app_id>          更新指定的应用
   ancli config <app_id>          重新配置应用的环境变量
-  ancli config                   查看全局设置（默认工作目录、语言）
+  ancli config                   查看全局设置（目录、语言、代理）
+  ancli config --help            查看全部全局配置项
+  ancli config --json            输出全局配置和支持的配置键
   ancli config --set default_cwd=/sdcard/projects
                                  设置从 / 启动工具时的默认目录
+  ancli config --set lang=zh      设置交互界面语言（或 en）
+  ancli config --set proxy_mode=system
+                                 也可设为 manual 或 direct
+  ancli config --set proxy_url=http://host:port
+                                 设置手动代理地址（manual 模式生效）
+  ancli config <app_id> --set KEY=VALUE
+                                 设置该工具声明的环境变量
   ancli list                     列出所有已安装的应用
-  ancli check                    联网检查官方最新版本与可更新项
+  ancli check                    联网检查版本与可更新项
   ancli doctor --json            输出只读路径、挂载和工具诊断
   ancli skills                   统一各 Agent 的全局 skills 目录（~/.agents/skills）
-  ancli agent-init               在默认工作目录生成 Agent 记忆与环境指导
+  ancli agent-init               生成容器全局 Agent 记忆与环境指导
   ancli agent-init --refresh     仅更新此前由 AnCLI 生成的记忆文件
   ancli repair                   检测并修复 DNS、权限和封装
   ancli --version                显示版本
@@ -275,11 +289,11 @@ STRINGS = {
   ancli config aider
   ancli list
 """,
-        "installed_apps_title": "=== 已安装应用 ===",
-        "no_apps_installed_msg": "\033[93m[i] 尚未安装任何应用。运行 'ancli' 浏览应用商店。\033[0m",
-        "app_active": "[正常]",
-        "app_broken": "[损坏: 缺少二进制文件]",
-        "app_update_available": " (有新版本: v{})",
+        "installed_apps_title": "已安装应用",
+        "no_apps_installed_msg": "\033[93m[i] 暂无已安装应用。\033[0m",
+        "app_active": "[就绪]",
+        "app_broken": "[缺少文件]",
+        "app_update_available": "（可更新至 v{}）",
         "app_installed_at": "    安装时间: {}",
         "check_no_apps": "[i] 没有已安装的应用可检查。",
         "check_installed": "[OK] {}：已安装 v{}",
@@ -291,56 +305,65 @@ STRINGS = {
         "check_no_source": "[i] {}：未配置官方版本来源",
         "check_update_available": "可更新",
         "check_up_to_date": "已是最新",
-        "app_config_keys": "    配置的 Key: {}",
+        "app_config_keys": "    配置: {}",
         "lang_switched": "\033[92m[OK] 已切换语言为：中文\033[0m",
     },
     "en": {
-        "title": "=== 🚀 AnCLI App Store ===",
-        "repair_opt": "Repair environment (Fix DNS, permissions, wrappers)",
-        "check_opt": "Check for updates (query official latest versions)",
-        "check_title": "=== 🔄 Official version check ===",
-        "uninstall_opt": "Uninstall an app",
-        "lang_opt": "Switch Language (Current: English)",
+        "title": "AnCLI",
+        "repair_opt": "Repair environment",
+        "check_opt": "Check updates",
+        "check_title": "Update check",
+        "uninstall_opt": "Uninstall",
+        "lang_opt": "Switch language (English)",
         "exit_opt": "Exit",
         "choose_opt": "Choose an option: ",
         "installed": "[Installed]",
         "invalid_choice": "Invalid choice.",
         
-        "uninstall_menu_title": "=== 🗑️ Uninstall Menu ===",
-        "uninstall_specific": "Uninstall a specific app",
-        "uninstall_all": "Uninstall ALL apps (keep AnCLI environment)",
-        "uninstall_complete": "Completely uninstall AnCLI (Framework & All Apps)",
+        "uninstall_menu_title": "Uninstall",
+        "uninstall_specific": "Uninstall an app",
+        "uninstall_all": "Uninstall all apps (keep environment)",
+        "uninstall_complete": "Remove AnCLI and apps",
         "cancel": "Cancel",
         "no_apps_installed": "No apps installed yet.",
         "select_app_uninstall": "Select app to uninstall:",
         "enter_num_uninstall": "Enter number to uninstall (0 to cancel): ",
         "confirm_uninstall_all": "Are you sure you want to uninstall ALL apps? (y/n): ",
         "all_apps_uninstalled": "[OK] All apps uninstalled.",
-        "uninstall_instructions": "\n\033[91m⚠️ To completely uninstall AnCLI and remove the container, install state, secrets, and config,\nexit this menu, create the one-shot purge marker in a root Android shell, then uninstall the module\nfrom your Magisk, KernelSU, or APatch Manager:\033[0m\n\n    \033[1;33mtouch /data/local/tmp/ancli_force_purge\033[0m\n\n\033[90mThe uninstall script consumes and removes the marker, then cleans the dynamic module wrappers.\033[0m",
+        "uninstall_instructions": "\n\033[91mComplete removal deletes the container, install state, secrets, and config. Exit this menu, create the purge marker in a root Android shell, then uninstall the module from Magisk, KernelSU, or APatch:\033[0m\n\n    \033[1;33mtouch /data/local/tmp/ancli_force_purge\033[0m\n\n\033[90mThe uninstall script removes the marker and dynamic wrappers.\033[0m",
         
-        "manage_title": "=== Manage: {} ===",
+        "manage_title": "Manage {}",
         "manage_update": "Update",
         "manage_uninstall": "Uninstall",
-        "manage_config": "Reconfigure env vars",
+        "manage_config": "Configure env vars",
         "manage_cancel": "Cancel",
         "action_prompt": "Action: ",
         
-        "help_text": """\033[1;36mAnCLI (Android CLI) - Unified Systemless CLI Environment Manager\033[0m
+        "help_text": """\033[1;36mAnCLI (Android CLI) - CLI environment manager\033[0m
 
 \033[1mUsage:\033[0m
-  ancli                          Open interactive App Store menu
+  ancli                          Open the interactive menu
   ancli install <app_id>         Install an app from the registry
   ancli uninstall <app_id>       Uninstall an installed app
   ancli update <app_id>          Update an installed app
   ancli config <app_id>          Reconfigure env vars for an app
-  ancli config                   Show global settings (default dir, language)
+  ancli config                   Show global settings (directory, language, proxy)
+  ancli config --help            Show all global configuration keys
+  ancli config --json            Print global configuration and supported keys
   ancli config --set default_cwd=/sdcard/projects
                                  Where tools start when launched from /
+  ancli config --set lang=zh      Set the interactive language (or en)
+  ancli config --set proxy_mode=system
+                                 Select system detection (or manual/direct)
+  ancli config --set proxy_url=http://host:port
+                                 Set the manual proxy URL (used in manual mode)
+  ancli config <app_id> --set KEY=VALUE
+                                 Set a registry-declared environment variable
   ancli list                     List all installed apps
-  ancli check                    Check official latest versions and available updates
+  ancli check                    Check versions and available updates
   ancli doctor --json            Print read-only path, mount, and tool diagnostics
   ancli skills                   Unify the agent CLIs' global skills dir (~/.agents/skills)
-  ancli agent-init               Create the default-cwd Agent memory and environment guide
+  ancli agent-init               Create the guest-global Agent memory and environment guide
   ancli agent-init --refresh     Refresh only a memory file previously generated by AnCLI
   ancli repair                   Detect and repair DNS, permissions, and wrappers
   ancli --version                Show version
@@ -361,11 +384,11 @@ STRINGS = {
   ancli config aider
   ancli list
 """,
-        "installed_apps_title": "=== Installed Apps ===",
-        "no_apps_installed_msg": "\033[93m[i] No apps installed yet. Run 'ancli' to browse the App Store.\033[0m",
-        "app_active": "[Active]",
-        "app_broken": "[Broken: Missing Binary]",
-        "app_update_available": " (Update Available: v{})",
+        "installed_apps_title": "Installed apps",
+        "no_apps_installed_msg": "\033[93m[i] No apps installed.\033[0m",
+        "app_active": "[Ready]",
+        "app_broken": "[Missing files]",
+        "app_update_available": " (update to v{})",
         "app_installed_at": "    Installed: {}",
         "check_no_apps": "[i] No installed apps to check.",
         "check_installed": "[OK] {}: installed v{}",
@@ -377,7 +400,7 @@ STRINGS = {
         "check_no_source": "[i] {}: no official version source configured",
         "check_update_available": "update available",
         "check_up_to_date": "up to date",
-        "app_config_keys": "    Configured keys: {}",
+        "app_config_keys": "    Config: {}",
         "lang_switched": "\033[92m[OK] Language switched to: English\033[0m",
     }
 }
@@ -1107,10 +1130,10 @@ SKILL_LINK_DIRS = (
     "/root/.dsh/skills"
 )
 
-# A small, generated memory file in the effective default working directory gives
-# every agent launched there the same paths, environment contract and Android
-# safety rules.  Keep the template in the module package so a release can update
-# the guidance without embedding a large document in this core script.
+# 2026-11-13: Maintain one generated guest-global context file.  The configured
+# default working directory controls tool launch location only; it is not a
+# second memory-file location.  Keep the template in the module package so a
+# release can update the guidance without embedding it in this core script.
 RUNTIME_CONTEXT_NAME = "AGENTS.md"
 RUNTIME_CONTEXT_MARKER = "<!-- ancli:runtime-context v1 -->"
 
@@ -1294,7 +1317,7 @@ def _render_runtime_context(template):
 
 
 def setup_runtime_context(verbose=True, refresh=False):
-    """Create the default-cwd `AGENTS.md` without overwriting user guidance.
+    """Create the guest-global `AGENTS.md` without overwriting user guidance.
 
     The first run creates the file.  Later runs leave any existing file alone;
     `--refresh` may replace only a file carrying AnCLI's own marker, so a user
@@ -1905,7 +1928,6 @@ def _install_proot(app_id, app, registry=None):
       'pipe_script' — downloads an installer script via Python urllib (bypasses ADB escaping)
       'cmd'         — runs install_cmd directly inside the container (default)
     Returns True only when the tool was actually installed."""
-    import shutil
     # Ensure 'curl' and 'ca-certificates' exist in container before executing any install commands.
     # The rootfs ships a minimal apt keyring and a half-configured systemd, so a
     # plain `apt-get install` fails signature checks — use the same permissive
@@ -2462,7 +2484,6 @@ def _app_record(aid, app, installed_flag, info, entry=None):
         "id": aid,
         "name": app.get('name', aid),
         "description": app.get('description', ''),
-        "native": False,
         "installed": installed_flag,
         "active": _binary_exists(exec_name) if installed_flag else False,
         "installed_version": local_ver,
@@ -2823,6 +2844,11 @@ if __name__ == "__main__":
                 sys.exit(0)
             elif action == "doctor":
                 doctor_json()
+                sys.exit(0)
+            elif action == "config" and app_id in ("--help", "-h"):
+                # 2026-11-13: Keep config help offline and independent of the
+                # registry; app-specific keys are listed by `ancli list --json`.
+                print_help()
                 sys.exit(0)
             elif action == "config" and (not app_id or app_id.startswith("-")):
                 # Global settings, not a per-app env dialog: no registry needed,

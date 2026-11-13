@@ -4,13 +4,17 @@
 
 ## 当前基线
 
-- 当前仓库版本：`v1.2.6`，模块 `versionCode=12`，Release 尚未发布。
+- 当前仓库版本：`v1.2.601`，模块 `versionCode=13`。
 - 运行后端：Android 宿主 wrapper → 单层 PRoot → Ubuntu 24.04 arm64 glibc rootfs。
 - 核心：[`src/ancli-core.py`](src/ancli-core.py)，只使用 Python 标准库。
 - registry：[`src/registry.json`](src/registry.json)，安装、卸载、版本探测和官方 latest 来源都由数据定义。
 - 模块安装入口：[`src/module/customize.sh`](src/module/customize.sh)。
 - 宿主环境桥接：[`src/module/ancli_env.sh`](src/module/ancli_env.sh)。
 - WebUI：[`src/module/webroot/index.html`](src/module/webroot/index.html)。
+
+WebUI 设置窗口可视化编辑 `lang`、主题、`default_cwd`、`proxy_mode` 和 `proxy_url`，并显示
+当前 PRoot 后端、Android 数据通道、生效目录和代理模式。主题保存在 WebUI 本地，其他四项写入
+容器内 `/root/.ancli-config.json`。
 
 ## 路径和生命周期
 
@@ -33,7 +37,7 @@
 - 写 wrapper 前先删除旧 inode；KSU/APatch 路径从临时文件通过 `cp -f` 覆盖。
 - 不嵌套 PRoot；完整绑定 `/dev`、`/proc`、`/sys`、`/sdcard`、`/storage`、`/mnt`、`/data`、`/apex`、`/linkerconfig`、`/system` 和 `/data/adb`。
 - wrapper 不能 `exec` PRoot：必须保存并恢复 TTY，避免 TUI 退出后破坏调用者终端。
-- 宿主侧维护 Android 代理、DNS、`/mnt/ancli-data` 和浏览器 URL 队列；容器不能直接运行 Android 的 `dumpsys`、`getprop` 或 `am`。
+- 宿主侧维护 Android 代理、DNS、`/mnt/ancli-data` 和浏览器 URL 队列；容器默认不依赖 Android bionic 命令。若 `/system/bin` 已暴露，`getprop`、`pm`、`dumpsys`、`cmd` 可作为只读能力按需探测，`am` 仍由宿主桥接。
 
 ## 默认工作目录和 Agent 记忆
 
@@ -45,6 +49,8 @@ ancli config --set default_cwd=
 ```
 
 `ancli agent-init` 会在容器全局目录 `/root/.agents/AGENTS.md` 生成运行时上下文，内容包括当前 AnCLI 路径、代理/DNS/浏览器约定、工具状态、配置变量名、共享 skills 位置和安全边界；绝不写入变量值。`ancli repair`、`ancli skills` 和成功安装工具时会幂等补齐。项目目录中的用户 `AGENTS.md` 默认保留。
+
+全局可配置键只有 `default_cwd`、`lang`、`proxy_mode` 和 `proxy_url`；用 `ancli config --json` 查看当前值与键名。工具级环境变量由 `registry.json` 声明，使用 `ancli config <app_id> --set KEY=VALUE` 设置。
 
 ```sh
 ancli agent-init

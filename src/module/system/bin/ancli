@@ -24,15 +24,13 @@ case "$PROOT_CWD" in
         fi
         ;;
 esac
-# Launching from / means scanning the whole container filesystem at startup
-# (rootfs plus /data and /sdcard bindings), which hangs TUI tools; use the
-# configured default directory when there is one, else the container HOME.
+# 2026-11-13: Redirect only the working directory; keep the launcher silent so
+# status and task logs contain command output rather than framework hints.
 if [ "$PROOT_CWD" = "/" ]; then
     if [ -n "$_ancli_default_cwd" ]; then
         PROOT_CWD="$_ancli_default_cwd"
     else
         PROOT_CWD=/root
-        echo "[AnCLI] Launched from /; using /root (container HOME) as working directory." >&2
     fi
 fi
 : "${PROOT_CWD:=/root}"
