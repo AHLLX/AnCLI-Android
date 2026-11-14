@@ -1,3 +1,11 @@
+## v1.2.611 (2026-11-14)
+
+### Environment script optimization & code documentation
+
+- Deduplicate `direct` and `manual` proxy branches in `ancli_env.sh` so non-system proxy modes skip redundant `dumpsys connectivity` probing.
+- Remove duplicate `datetime` import in `ancli-core.py` and add `.pytest_cache/` to `.gitignore`.
+- Add detailed Chinese comments and docstrings across `ancli-core.py` and core shell scripts (`ancli_env.sh`, `customize.sh`, `service.sh`, `uninstall.sh`, `install.sh`, `bash-host-compat`, `system/bin/ancli`).
+
 ## v1.2.610 (2026-11-13)
 
 ### Mobile WebUI layout

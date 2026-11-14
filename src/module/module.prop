@@ -1,7 +1,7 @@
 id=ancli
 name=AnCLI
-version=v1.2.610
-versionCode=22
+version=v1.2.611
+versionCode=23
 author=AHLLX
 description=Unified CLI environment manager. [Safe Uninstall] Manager removal keeps your data safe. Use 'ancli' menu for full purge.
 updateJson=https://raw.githubusercontent.com/AHLLX/AnCLI/main/update.json
