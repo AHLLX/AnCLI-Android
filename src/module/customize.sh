@@ -1,10 +1,12 @@
 #!/system/bin/sh
 # ============================================================
-# AnCLI Module Installer (customize.sh)
-# Runs automatically when module ZIP is flashed via Manager
+# AnCLI 模块刷入安装钩子 (customize.sh)
+# 触发时机：用户通过 Magisk / KernelSU / APatch 刷入模块 ZIP 时自动执行。
+# 职责：准备运行目录、部署 PRoot、下载并解压 Ubuntu Base rootfs、
+#       初始化 APT 基础工具链与 npm 路径、部署核心脚本与动态快捷入口。
 # ============================================================
 
-# Framework provides: $MODPATH, ui_print(), abort(), set_perm()
+# 管理器框架自动注入环境变量与函数：$MODPATH, ui_print(), abort(), set_perm()
 ANCLI_DIR="/data/local/tmp/ancli"
 ROOTFS="${ANCLI_DIR}/rootfs"
 BIN_DIR="${ANCLI_DIR}/bin"
@@ -12,7 +14,7 @@ UBUNTU_MIRROR="${ANCLI_MIRROR:-mirrors.tuna.tsinghua.edu.cn}"
 
 UBUNTU_PATH="ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
 
-# Read the version from module.prop so the flash banner follows the release metadata.
+# 从 module.prop 动态读取版本号用于刷入日志横幅，避免硬编码与发布元数据脱节
 MODULE_VERSION="$(grep '^version=' "${MODPATH:-$(dirname "$0")}/module.prop" 2>/dev/null | cut -d= -f2)"
 [ -n "$MODULE_VERSION" ] || MODULE_VERSION="unknown"
 
@@ -21,26 +23,25 @@ ui_print "  AnCLI Bootstrap Installer ${MODULE_VERSION}"
 ui_print "============================================"
 ui_print ""
 
-# 1. Prepare directories
+# 1. 创建运行目录与共享内存目录
 ui_print ">> Preparing directories..."
 mkdir -p "$ROOTFS" "$BIN_DIR" "$ANCLI_DIR/shm"
-# /dev/shm backing dir must be writable by the shell user (uid 2000) inside
-# the container — sticky 1777, /tmp-style.
+# 挂载到容器 /dev/shm 的目录设为 1777（粘滞位），确保普通 shell 用户（uid 2000）可读写
 chmod 1777 "$ANCLI_DIR/shm" 2>/dev/null || true
 
-# 2. Deploy PRoot from module package
+# 2. 从模块包部署静态编译的 PRoot 二进制
 ui_print ">> Deploying PRoot..."
 cp "$MODPATH/bin/proot" "$BIN_DIR/proot"
 chmod 755 "$BIN_DIR/proot"
 ui_print ">> PRoot deployed successfully."
 
-# 3. Download & Extract Ubuntu Base
+# 3. 下载并解压 Ubuntu Base (arm64) 根文件系统（若已存在则幂等跳过）
 if [ ! -f "$ROOTFS/bin/bash" ]; then
     ui_print ">> Downloading Ubuntu Base (arm64)..."
     TAR_PATH="$ANCLI_DIR/ubuntu-base.tar.gz"
     success=0
     
-    # Try Tsinghua TUNA first, then fallback to USTC and official ports mirror
+    # 依次尝试清华 TUNA、中科大 USTC 与 Ubuntu 官方 ports 镜像
     for mirror in \
         "https://${UBUNTU_MIRROR}/${UBUNTU_PATH}" \
         "https://mirrors.tuna.tsinghua.edu.cn/${UBUNTU_PATH}" \
@@ -64,11 +65,7 @@ if [ ! -f "$ROOTFS/bin/bash" ]; then
     tar -xf "$TAR_PATH" -C "$ROOTFS" || abort "Failed to extract rootfs (corrupted download?)"
     rm -f "$TAR_PATH"
 
-    # Fix DNS inside rootfs: use the real Android DNS servers first (matches
-    # the user's network, incl. VPN), then Google DNS, then China-friendly
-    # fallbacks. Duplicates are skipped; glibc only reads the first 3 entries.
-    # /etc/resolv.conf is a symlink in some ubuntu-base images — remove it
-    # first so the writes land in a real file.
+    # 初始化容器内 resolv.conf：优先写入宿主机 net.dns1/2，随后追加备用公共 DNS（去重且最多 3 条）
     rm -f "$ROOTFS/etc/resolv.conf"
     : > "$ROOTFS/etc/resolv.conf"
     _dns_seen=""
@@ -90,7 +87,7 @@ else
     ui_print ">> Rootfs already present, skipping download."
 fi
 
-# 4. Install APT Dependencies via PRoot (with idempotency guard)
+# 4. 通过 PRoot 引导或补齐容器内 APT 基础依赖（带幂等检查）
 PROOT_CMD="$BIN_DIR/proot -r $ROOTFS -b /dev -b /proc -b /sys -w /root"
 
 # APT 依赖脚本生成（幂等）：基础工具链 = python/git/node + Java 17 + binutils
@@ -104,7 +101,7 @@ export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export TMPDIR=/tmp
 
-# Run update and install with GPG verification disabled to bypass PRoot syscall compatibility issues
+# 禁用 APT GPG 校验以规避 PRoot 下部分沙箱/签名系统调用兼容性问题
 apt-get update -y -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowUnauthenticated=true
 apt-get install -y --no-install-recommends \\
     -o Acquire::AllowInsecureRepositories=true \\
@@ -114,9 +111,7 @@ apt-get install -y --no-install-recommends \\
     openjdk-17-jre-headless binutils $FCITX_PKGS
 apt-get clean
 
-# Unlock pip: Ubuntu 24.04 ships PEP 668 (externally-managed-environment),
-# which rejects 'pip install' on the system Python. This container is fully
-# user-managed, so remove the guard and default to the Tsinghua mirror.
+# 移除 PEP 668 限制标记并配置清华 PyPI 镜像，允许在容器系统 Python 中直接 pip install
 rm -f /usr/lib/python3.12/EXTERNALLY-MANAGED
 printf '[global]\nindex-url = https://pypi.tuna.tsinghua.edu.cn/simple\n' > /etc/pip.conf
 SETUP
@@ -126,7 +121,7 @@ SETUP
 if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
     ui_print ">> Bootstrapping APT dependencies (Python, Git, Node.js)..."
 
-    # Pre-configure APT mirror from host side
+    # 宿主机侧预先替换 Ubuntu APT 源为国内镜像
     if [ -f "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" ]; then
         sed -i "s/ports.ubuntu.com/${UBUNTU_MIRROR}/g" \
             "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
@@ -135,9 +130,7 @@ if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
         ui_print ">> APT mirror: ${UBUNTU_MIRROR}"
     fi
 
-    # Detect system locale to determine whether CJK input support (Fcitx5) is needed.
-    # Fcitx5 + fcitx5-chinese-addons add ~50 MB to the bootstrap image and are only
-    # useful for CJK-locale (Chinese / Japanese / Korean) devices.
+    # 按系统语言决定是否安装 Fcitx5 中文输入法（约 50MB，仅对中/日/韩系统启用）
     SYS_LANG=$(getprop persist.sys.locale 2>/dev/null || getprop ro.product.locale 2>/dev/null || echo "en-US")
     case "$SYS_LANG" in
         zh*|ja*|ko*)
@@ -156,9 +149,7 @@ if ! $PROOT_CMD /usr/bin/python3 --version >/dev/null 2>&1; then
     ui_print ">> Dependencies installed successfully."
 else
     ui_print ">> Dependencies already installed, skipping APT."
-    # Module-upgrade path: backfill tools added after the initial bootstrap
-    # (Java 17, binutils/strings) and unlock pip (PEP 668). apt install is
-    # idempotent, so re-running setup.sh only installs what is missing.
+    # 模块覆盖升级路径：若旧版 rootfs 缺失新版本追加的 Java 17 或 binutils，则幂等补装
     if ! $PROOT_CMD /usr/bin/java -version >/dev/null 2>&1 || \
        ! $PROOT_CMD /usr/bin/strings --version >/dev/null 2>&1; then
         ui_print ">> Backfilling base toolchain (Java 17 / binutils / pip unlock)..."
@@ -172,9 +163,7 @@ else
     fi
 fi
 
-# 4b. Ensure /usr/local directory structure exists for npm global installs
-#     Ubuntu Base 24.04 does not create /usr/local by default when nodejs/npm
-#     are installed via apt. npm -g requires /usr/local/lib/node_modules to exist.
+# 4b. 确保 /usr/local 目录结构存在（Ubuntu Base 24.04 默认不带 /usr/local/lib/node_modules，npm -g 依赖它）
 ui_print ">> Ensuring npm global install paths..."
 mkdir -p "$ROOTFS/usr/local/bin" \
          "$ROOTFS/usr/local/sbin" \
@@ -187,51 +176,39 @@ chmod 755 "$ROOTFS/usr/local/bin" \
           "$ROOTFS/usr/local/lib/node_modules"
 ui_print ">> npm paths ready."
 
-# 5. Deploy AnCLI Core from module package
+# 5. 部署 AnCLI 核心脚本、环境桥接脚本、宿主机 bash 兼容模板与运行时上下文模板
 ui_print ">> Deploying AnCLI Core..."
 cp "$MODPATH/ancli/ancli-core.py" "$BIN_DIR/ancli-core.py"
 cp "$MODPATH/ancli/ancli_env.sh" "$BIN_DIR/ancli_env.sh"
 chmod 755 "$BIN_DIR/ancli-core.py" "$BIN_DIR/ancli_env.sh"
 
-# Keep the host-side AGY command runner usable on Android. This is a narrow
-# POSIX `bash -c` compatibility entrypoint; it is not a native backend and it
-# never overlays /system/bin or starts a nested PRoot.
+# 部署 AGY 宿主机 POSIX `bash -c` 兼容模板（非原生后端，不覆盖 /system/bin，不启动嵌套 PRoot）
 if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
     cp "$MODPATH/ancli/bash-host-compat" "$ANCLI_DIR/bash-host-compat"
     chmod 755 "$ANCLI_DIR/bash-host-compat"
 fi
 
-# Default runtime context template. The live AGENTS.md is generated in the
-# guest-global /root/.agents directory by `ancli agent-init` / `ancli repair`;
-# this copy is only the immutable release template and is never written over a
-# user's existing memory file.
+# 部署不可变运行时上下文模板（仅作基准模板，实际 /root/.agents/AGENTS.md 由 ancli agent-init/repair 生成）
 if [ -f "$MODPATH/ancli/runtime-context/AGENTS.md" ]; then
     mkdir -p "$ANCLI_DIR/runtime-context"
     cp "$MODPATH/ancli/runtime-context/AGENTS.md" "$ANCLI_DIR/runtime-context/AGENTS.md"
     chmod 644 "$ANCLI_DIR/runtime-context/AGENTS.md"
 fi
 
-# Deploy bundled fallback registry to BOTH locations: the core reads
-# $BIN_DIR/registry.json (newest mtime wins), while older core builds looked for
-# $ANCLI_DIR/registry.json. Writing both keeps offline first-boot working on
-# every core version.
+# 同时部署 registry.json 到 $BIN_DIR 和 $ANCLI_DIR，兼容新旧核心版本的离线首启读取路径
 cp "$MODPATH/ancli/registry.json" "$BIN_DIR/registry.json" 2>/dev/null || true
 cp "$MODPATH/ancli/registry.json" "$ANCLI_DIR/registry.json" 2>/dev/null || true
 
 
-# 6. Instant access injection for KSU/AP dynamic paths.
-#    We inject both 'ancli' and placeholder wrappers for all registry apps.
-#    SELinux only permits overwriting existing files in /data/adb/ksu/bin after boot,
-#    so we MUST pre-create all app entries now (during flash) when the context allows it.
-#    The real wrappers will be written by 'ancli install' or 'ancli repair' later.
+# 6. 向 KernelSU / APatch 动态路径注入即时生效入口（无需重启即可使用）：
+#    由于 SELinux 仅允许开机后覆写动态 bin 中已存在的文件，刷入阶段必须预先创建
+#    主命令 `ancli`、AGY host bash 兼容脚本以及全部注册表工具的占位包装器。
 REGISTRY_FILE="$MODPATH/ancli/registry.json"
 
 for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
     [ -d "$INSTANT_BIN" ] || continue
 
-    # AGY's remote executor starts on the Android host and may invoke `bash -c`
-    # before AnCLI enters PRoot. Install only the marked compatibility script;
-    # preserve a real user-provided bash binary.
+    # 部署带 AnCLI 标记的 host bash 兼容脚本，不覆盖用户自己提供的真实 bash 二进制
     if [ -f "$MODPATH/ancli/bash-host-compat" ]; then
         host_bash="$INSTANT_BIN/bash"
         replace_host_bash=0
@@ -247,21 +224,17 @@ for INSTANT_BIN in /data/adb/ksu/bin /data/adb/ap/bin; do
         fi
     fi
 
-    # Inject main ancli command
+    # 注入主命令 ancli
     cp "$MODPATH/system/bin/ancli" "$INSTANT_BIN/ancli"
     chmod 755 "$INSTANT_BIN/ancli"
     ui_print ">> Instant access: $INSTANT_BIN/ancli"
 
-    # Pre-seed placeholder wrappers for all registry apps
+    # 为注册表中的每个工具预置占位入口（后续由 ancli install / ancli repair 生成真实包装器）
     if [ -f "$REGISTRY_FILE" ]; then
-        # Extract executable names from registry JSON using basic shell parsing
         executables=$(grep '"executable"' "$REGISTRY_FILE" | sed 's/.*"executable"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
         for exe in $executables; do
             placeholder="$INSTANT_BIN/$exe"
             if [ ! -f "$placeholder" ]; then
-                # Minimal placeholder — overwritten by 'ancli install'/'ancli repair'.
-                # It explains itself when the real wrapper is missing (e.g. after a
-                # manager uninstall wiped $ANCLI_DIR/bin and the user re-flashed).
                 {
                     printf '#!/system/bin/sh\n'
                     printf 'target="/data/local/tmp/ancli/bin/%s"\n' "$exe"

@@ -29,6 +29,7 @@ strace_local.log
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # KernelSU install logs
 KernelSU_install_log_*.log

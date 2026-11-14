@@ -1,19 +1,27 @@
 #!/system/bin/sh
+# ============================================================
+# AnCLI 主命令宿主机入口包装脚本 (/system/bin/ancli)
+# 职责：加载宿主机环境桥接 -> 解析容器内工作目录 -> 处理 reset 预清理
+#       -> 组装 PRoot 挂载参数并启动 ancli-core.py
+# ============================================================
 . /data/local/tmp/ancli/bin/ancli_env.sh 2>/dev/null || true
-# Default working directory configured with `ancli config --set default_cwd=...`
-# (also editable in the WebUI). Empty = built-in /root.
+
+# 1. 读取全局配置中的默认工作目录（通过 `ancli config --set default_cwd=...` 或 WebUI 设置）
+#    为空时默认回落至容器内的 /root
 _ancli_default_cwd=""
 _ancli_cfg=/data/local/tmp/ancli/rootfs/root/.ancli-config.json
 if [ -f "$_ancli_cfg" ]; then
     _ancli_default_cwd=$(sed -n 's/^[[:space:]]*"default_cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ancli_cfg" 2>/dev/null | head -n 1)
 fi
+# 校验 default_cwd 是否在容器内可见（要么是挂载的 Android 公共目录，要么是 rootfs 内存在的目录）
 case "$_ancli_default_cwd" in
     "") ;;
     /dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*) ;;
     *) [ -d "/data/local/tmp/ancli/rootfs$_ancli_default_cwd" ] || _ancli_default_cwd="" ;;
 esac
-# Resolve PRoot working directory: fall back to the container HOME when PWD
-# is not visible inside the rootfs (e.g. an unbound host path like /cache).
+
+# 2. 解析当前宿主机 PWD 在 PRoot 容器中的映射路径；
+#    若处于未挂载的宿主机路径（如 /cache），回退至 /root
 PROOT_CWD="$PWD"
 case "$PROOT_CWD" in
     /|/dev*|/proc*|/sys*|/sdcard*|/storage*|/mnt*|/data*|/apex*|/system*|/linkerconfig*)
@@ -24,8 +32,8 @@ case "$PROOT_CWD" in
         fi
         ;;
 esac
-# 2026-11-13: Redirect only the working directory; keep the launcher silent so
-# status and task logs contain command output rather than framework hints.
+# 若从根目录 "/" 启动（例如管理器 WebUI 或无目录上下文的 su 会话），优先跳转到配置的 default_cwd，否则进入 /root；
+# 保持静默切换，避免向任务日志或 --json 输出混入提示文本。
 if [ "$PROOT_CWD" = "/" ]; then
     if [ -n "$_ancli_default_cwd" ]; then
         PROOT_CWD="$_ancli_default_cwd"
@@ -34,9 +42,10 @@ if [ "$PROOT_CWD" = "/" ]; then
     fi
 fi
 : "${PROOT_CWD:=/root}"
-# 2026-11-13: reset must stop existing Agent processes before deleting their
-# files. A root shell can outlive the Termius tab that launched it, so perform
-# this preflight on the Android side, before entering PRoot.
+
+# 3. `ancli reset` 宿主机预清理（仅 root）：
+#    在进入 PRoot 删除文件前，先向存活的 Agent 与 PRoot 进程发送 SIGTERM/SIGKILL，
+#    防止旧进程占用文件或残留后台实例。
 if [ "${1:-}" = "reset" ] && [ "$(id -u 2>/dev/null)" = "0" ]; then
     _ancli_agent_re='(/data/adb/(ksu|ap)/bin|/usr/local/bin)/(aider|mimo|agy|dsh|claude|opencode|grok)'
     /system/bin/toybox pkill -TERM -f "$_ancli_agent_re" 2>/dev/null || true
@@ -45,21 +54,23 @@ if [ "${1:-}" = "reset" ] && [ "$(id -u 2>/dev/null)" = "0" ]; then
     /system/bin/toybox pkill -KILL -f "$_ancli_agent_re" 2>/dev/null || true
     /system/bin/toybox pkill -KILL -f "proot.*\/data\/local\/tmp\/ancli\/rootfs" 2>/dev/null || true
 fi
-# Provide /dev/shm: Android's /dev has no shm, and Node/Bun workers plus some
-# libraries require shared memory. Bound only when the dir is usable.
+
+# 4. 挂载共享内存目录到容器内 /dev/shm（Android 原生 /dev 无 shm，Node/Bun worker 依赖它）
 SHM_BIND=""
 if mkdir -p /data/local/tmp/ancli/shm 2>/dev/null; then
-    # 1777 (sticky, /tmp-style) so the shell user (uid 2000) can write inside
+    # 设为 1777（粘滞位），保证普通 shell 用户（uid 2000）也可读写
     chmod 1777 /data/local/tmp/ancli/shm 2>/dev/null || true
     SHM_BIND="-b /data/local/tmp/ancli/shm:/dev/shm"
 fi
-# Some adb-root namespaces omit the /sdcard alias. Keep every available
-# Android tree mapped and skip only an absent alias to avoid a noisy proot
-# warning during the launcher itself.
+
+# 5. 按当前挂载命名空间中实际存在的路径组装 PRoot 绑定列表：
+#    部分 adb-root 命名空间没有 /sdcard 别名，跳过不存在的路径可避免 PRoot 启动时输出冗余警告。
 ANCLI_BIND_ARGS=""
 for _ancli_bind in /sdcard /storage /mnt /data /apex /linkerconfig /system; do
     if [ -e "$_ancli_bind" ] || [ -d "$_ancli_bind" ]; then
         ANCLI_BIND_ARGS="$ANCLI_BIND_ARGS -b $_ancli_bind"
     fi
 done
+
+# 6. 替换当前进程启动 PRoot 容器并执行 ancli-core.py
 exec /data/local/tmp/ancli/bin/proot -r /data/local/tmp/ancli/rootfs -b /dev -b /proc -b /sys -b /data/local/tmp/ancli $ANCLI_BIND_ARGS -b /data/local/tmp/ancli/hosts:/etc/hosts -b /data/adb $SHM_BIND -w "$PROOT_CWD" /usr/bin/env python3 /data/local/tmp/ancli/bin/ancli-core.py "$@"

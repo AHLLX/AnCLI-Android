@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""AnCLI 核心包管理器与容器运行态控制器 (ancli-core.py)。
+
+运行于 Ubuntu PRoot 容器内部，严格仅依赖 Python 标准库，负责：
+1. 全局配置管理（default_cwd、lang、proxy_mode、proxy_url）与多语言文案；
+2. 随模块打包的离线应用目录 (registry.json) 加载与已安装状态 (installed.json) 持久化；
+3. 双注入 (Dual-Injection) 包装脚本生成（/data/adb/modules/ancli/system/bin 与 KSU/AP 动态 bin）及密钥隔离；
+4. 命令白名单校验、本地版本探针与上游最新版本检查 (.update_cache.json)；
+5. 运行时上下文 (AGENTS.md)、共享技能目录 (~/.agents/skills)、DNS/app-data 通道、dsh Cookie 补丁与 xdg-open 宿主机桥接；
+6. 交互式终端菜单及供 WebUI / 自动化调用的 `--json` 结构化接口。
+"""
+
 import os
 import sys
 import glob
@@ -13,62 +24,51 @@ import re
 import ssl
 import contextlib
 import datetime
-import datetime
 
-# 2026-11-13: Keep TLS fallback scoped to individual requests; do not alter the
-# process-wide SSL context because the PRoot CA store may be incomplete.
-# The global ssl context is intentionally NOT monkey-patched to preserve security.
+# 2026-11-13: TLS 降级回退仅限定在单次请求作用域内，严禁修改全局 ssl 上下文，
+# 以防止容器内 CA 证书库不完整时意外削弱全进程 TLS 校验安全性。
 
-# Paths inside the PRoot environment
+# PRoot 容器内部与宿主机映射核心路径
 ANCLI_DIR = "/data/local/tmp/ancli"
 ROOTFS = f"{ANCLI_DIR}/rootfs"
 MOD_DIR = "/data/adb/modules/ancli"
 
-# Optional dynamic bin paths (KSU/Apatch)
+# KernelSU / APatch 动态即时生效 bin 目录
 KSU_BIN = "/data/adb/ksu/bin"
 AP_BIN  = "/data/adb/ap/bin"
 
 VERSION = "1.2.610"
 
-# 2026-11-13: Keep the application catalog in the flashed module. Official
-# release checks use each app's own `latest` entry and never fetch a second
-# AnCLI registry from the network.
+# 2026-11-13: 应用目录随模块固化打包；官方版本检查直接读取各应用自身的 `latest` 字段，
+# 不再从网络拉取第二份 AnCLI 注册表。
 INSTALLED_FILE = f"{ANCLI_DIR}/installed.json"
-SECRETS_DIR    = f"{ANCLI_DIR}/secrets"   # Per-tool API key files (mode 0600)
+SECRETS_DIR    = f"{ANCLI_DIR}/secrets"   # 各工具独立的 API 密钥文件（权限 0600）
 CONFIG_FILE    = "/root/.ancli-config.json"
 
-# Where a tool starts when the caller launched it from "/" (Termius, `su` after a
-# fresh shell, ...). "/" makes every TUI walk the whole container plus the /data
-# and /sdcard bindings at startup, so launches are redirected to a small, known
-# directory. Users can point this at a project tree with
-# `ancli config --set default_cwd=/sdcard/projects` (also editable in the WebUI).
+# 当调用方从根目录 "/" 启动时（如 Termius 或新 su 会话），默认重定向至较小且已知的目录，
+# 避免 TUI 工具在 "/" 下扫描整个容器及 /data、/sdcard 挂载树。
 DEFAULT_CWD    = "/root"
-# 2026-11-13: These are the only global settings accepted by `ancli config`.
-# Per-tool API keys and endpoints remain registry-defined and are stored in
-# `/data/local/tmp/ancli/secrets/<tool>.env`.
+# 2026-11-13: `ancli config` 仅接受以下全局配置键；各工具的 API 密钥仍由注册表定义并保存在 secrets/<tool>.env。
 GLOBAL_CONFIG_KEYS = ("default_cwd", "lang", "proxy_mode", "proxy_url")
-# Directories that are bind-mounted into the rootfs at run time (they do not
-# exist under $ROOTFS on disk), so an existence check must skip them.
+# 运行时动态绑定挂载的 Android 根目录（在 $ROOTFS 磁盘上不存在实体目录，校验存在性时跳过）
 BIND_MOUNT_ROOTS = ("/dev", "/proc", "/sys", "/sdcard", "/storage", "/mnt",
                     "/data", "/apex", "/system", "/linkerconfig")
-# Official latest-version cache written by `ancli check` and merged into
-# `ancli list --json`; it supplies offline fallback data after the WebUI login
-# check completes.
+# `ancli check` 写入的官方最新版本缓存，会合并到 `ancli list --json` 输出中供 WebUI 离线兜底
 UPDATE_CACHE   = f"{ANCLI_DIR}/.update_cache.json"
-DNS_CACHE      = f"{ANCLI_DIR}/.dns_cache"   # real DNS servers, probed on the host by ancli_env.sh
-CHECK_TTL      = 6 * 3600                 # cache hint exposed to older WebUI clients
-CHECK_TTL_FAILED = 15 * 60                # shorter retry hint after a failed check
-PROBE_TIMEOUT  = 20                       # seconds per `version_cmd` probe (a --version must be fast)
+DNS_CACHE      = f"{ANCLI_DIR}/.dns_cache"   # 由宿主机 ancli_env.sh 探测写入的真实 DNS 缓存
+CHECK_TTL      = 6 * 3600                 # 旧版 WebUI 客户端参考的缓存提示周期（6 小时）
+CHECK_TTL_FAILED = 15 * 60                # 检查失败后的较短重试提示周期（15 分钟）
+PROBE_TIMEOUT  = 20                       # 单次 `version_cmd` 版本探针超时时间（秒）
 
-# Allowed command prefixes for security validation.
-# 'env ' is used by pipe-script installs to inject env vars before 'bash'.
+# 容器内命令执行安全白名单前缀（管道安装脚本使用 `env` 注入变量后再调用 `bash`）
 ALLOWED_CMD_PREFIXES = ("pip ", "npm ", "apt-get ", "apt ", "curl ", "rm ", "agy ", "bash ", "sh ", "env ")
 
 # ---------------------------------------------------------------------------
-# Configuration & Multi-language Support
+# 全局配置与多语言支持 (Configuration & Multi-language Support)
 # ---------------------------------------------------------------------------
 
 def load_config():
+    """读取全局配置文件 `/root/.ancli-config.json`，缺失或损坏时回退默认中文配置。"""
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r") as f:
@@ -78,6 +78,7 @@ def load_config():
     return {"lang": "zh"}
 
 def save_config(config):
+    """将全局配置字典持久化写入 `/root/.ancli-config.json`。"""
     try:
         with open(CONFIG_FILE, "w") as f:
             json.dump(config, f, indent=2)
@@ -151,6 +152,7 @@ def set_proxy_url(value):
 
 
 def set_proxy_mode(value):
+    """校验并持久化全局代理模式（system / manual / direct），返回 `(ok, error)`。"""
     value = (value or "").strip().lower()
     if value not in ("system", "manual", "direct"):
         return False, "代理模式必须是 system、manual 或 direct"
@@ -415,6 +417,7 @@ STRINGS = {
 }
 
 def _t(key, *args):
+    """按当前全局语言 `LANG` 查找并格式化本地化文案。"""
     global LANG
     text = STRINGS.get(LANG, STRINGS["zh"]).get(key, key)
     if args:
@@ -423,7 +426,7 @@ def _t(key, *args):
 
 
 # ---------------------------------------------------------------------------
-# Bundled catalog, official version checks, and state
+# 内置应用目录、上游版本探测与安装状态持久化 (Catalog, Version Checks & State)
 # ---------------------------------------------------------------------------
 
 def _urlopen_verified(url, headers, timeout):
@@ -502,6 +505,7 @@ def load_registry(required=True):
     return {}
 
 def load_installed():
+    """读取 `installed.json` 已安装工具元数据；文件损坏时给出警告并重置为空字典。"""
     if os.path.exists(INSTALLED_FILE):
         try:
             with open(INSTALLED_FILE, "r") as f:
@@ -883,6 +887,7 @@ def _write_wrapper_to_paths(executable, wrapper):
             pass
 
 def remove_wrapper(executable):
+    """删除双注入路径中的工具包装脚本，并同步清理对应的 secrets 密钥文件。"""
     paths = [
         f"{ANCLI_DIR}/bin/{executable}",
         f"{MOD_DIR}/system/bin/{executable}",
@@ -1045,6 +1050,7 @@ def _is_safe_exec_name(exe):
 
 
 def run_cmd(cmd):
+    """在通过白名单校验后，于容器 `/bin/bash` 中以 `set -o pipefail` 执行命令。"""
     if not validate_cmd(cmd):
         return False
     print(f"\033[96m> {cmd}\033[0m")
@@ -1272,6 +1278,7 @@ def _runtime_context_template_paths():
 
 
 def _load_runtime_context_template():
+    """按优先级查找并加载带有 AnCLI 标记的 `AGENTS.md` 运行时上下文模板。"""
     for path in _runtime_context_template_paths():
         try:
             with open(path, "r", encoding="utf-8") as fh:
@@ -1355,6 +1362,7 @@ def _remove_legacy_runtime_contexts():
 
 
 def _installed_memory_summary():
+    """汇总当前已安装工具名称与已配置环境变量名（仅键名，绝不含密钥值）。"""
     installed = load_installed()
     if not installed:
         return "无（尚未安装工具）", "无"
@@ -1372,6 +1380,7 @@ def _installed_memory_summary():
 
 
 def _render_runtime_context(template):
+    """将环境路径、已安装工具与配置变量占位符渲染进运行时上下文模板。"""
     installed, configured_env = _installed_memory_summary()
     replacements = {
         "{{ANCLI_VERSION}}": VERSION,
@@ -2125,6 +2134,7 @@ def _install_proot_common(app_id, app, registry=None):
     return True
 
 def install_app(app_id, registry):
+    """根据应用目录定义在 PRoot 容器内安装指定 CLI 工具并生成双注入包装器。"""
     if app_id not in registry['apps']:
         print(f"\033[91m[X] App {app_id} not found in registry.\033[0m")
         return False
@@ -2241,6 +2251,7 @@ def _install_proot(app_id, app, registry=None):
 
 
 def uninstall_app(app_id, registry):
+    """卸载指定工具，清理双注入包装器、密钥文件、上下文记录及更新缓存。"""
     installed = load_installed()
     if app_id not in installed:
         print(f"\033[93m[!] App {app_id} is not installed.\033[0m")
@@ -3140,10 +3151,11 @@ def migrate_encoded_env(installed=None, save=True):
 
 
 # ---------------------------------------------------------------------------
-# UI
+# 交互式终端菜单与命令行入口 (Interactive UI & CLI Entry Point)
 # ---------------------------------------------------------------------------
 
 def show_menu():
+    """启动交互式文本菜单，支持安装、更新、修复、卸载与语言切换。"""
     global LANG
     registry = load_registry()
 
@@ -3227,10 +3239,11 @@ def show_menu():
             print(f"\033[91m{_t('invalid_choice')}\033[0m")
 
 def print_help():
+    """打印当前语言对应的 `ancli --help` 命令行帮助文档。"""
     print(_t("help_text"))
 
 # ---------------------------------------------------------------------------
-# Entry Point
+# 主程序入口 (Entry Point)
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":

@@ -1,15 +1,14 @@
 #!/system/bin/sh
 # AnCLI AGY host bash compatibility (2026-11-13).
 #
-# AGY's remote command runner may start `bash -c` before it enters the Ubuntu
-# PRoot. Android provides /system/bin/sh but normally has no host-side bash.
-# Keep this entrypoint deliberately narrow: it forwards POSIX-compatible
-# command execution to Android's shell and never starts a second PRoot.
-# GNU Bash-only syntax still belongs inside the container's /bin/bash.
-# Make AnCLI's dynamic wrapper visible to the host command runner even when its
-# inherited PATH contains only /system/bin. The wrapper then enters PRoot for
-# `ancli`, `agy`, `dsh`, and other managed commands.
+# 【职责说明】AGY 宿主机 bash 兼容入口（仅限 POSIX 语法转发）
+# - AGY 的远程命令执行器在进入 Ubuntu PRoot 容器之前，可能先在 Android 宿主机上调用 `bash -c`。
+# - Android 原生仅提供 `/system/bin/sh`（mksh），通常没有宿主机侧的 `bash`。
+# - 本脚本保持极简且克制：仅将 POSIX 兼容命令转发给 `/system/bin/sh` 执行，绝不在此启动第二层 PRoot（避免嵌套虚拟化 ptrace 死锁）。
+# - 若需使用 GNU Bash 专有语法，仍应进入容器内的 `/bin/bash` 执行。
+# - 注入动态与模块 bin 目录到 PATH，确保宿主机继承极简 PATH（仅 `/system/bin`）时也能找到 `ancli`/`agy`/`dsh` 等托管命令的包装脚本。
 export PATH=/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/modules/ancli/system/bin:/system/bin:/system/xbin:$PATH
+# 剥离 bash 常见的非交互启动参数（--noprofile / --norc），避免 mksh 因无法识别参数而报错退出
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --noprofile|--norc)
@@ -24,4 +23,5 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+# 使用 exec 直接替换为宿主机 sh 进程执行
 exec /system/bin/sh "$@"
